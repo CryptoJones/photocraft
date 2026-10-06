@@ -25,6 +25,7 @@ use crate::{Error, Sample, Update, deliver};
 pub struct Monitor {
     token: Retained<AnyObject>,
     _handler: RcBlock<dyn Fn(NonNull<NSEvent>) -> *mut NSEvent>,
+    coalescing: Option<bool>,
 }
 
 impl Monitor {
@@ -58,12 +59,22 @@ impl Monitor {
         // in `Monitor` as well, although AppKit copies it.
         let token = unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &handler) };
         let token = token.ok_or_else(|| Error::Platform("addLocalMonitorForEventsMatchingMask returned nil".into()))?;
-        Ok(Self { token, _handler: handler })
+        Ok(Self { token, _handler: handler, coalescing: None })
+    }
+
+    /// Experimental higher-detail mouse/trackpad input. Absolute OS cursor positions and
+    /// acceleration are unchanged. AppKit's previous setting is restored with the monitor.
+    pub fn disable_mouse_coalescing(&mut self) {
+        self.coalescing.get_or_insert_with(NSEvent::isMouseCoalescingEnabled);
+        NSEvent::setMouseCoalescingEnabled(false);
     }
 }
 
 impl Drop for Monitor {
     fn drop(&mut self) {
+        if let Some(previous) = self.coalescing {
+            NSEvent::setMouseCoalescingEnabled(previous);
+        }
         // SAFETY: `token` is exactly the object `addLocalMonitorForEventsMatchingMask:handler:`
         // returned, removed once (here). `Monitor` is not `Send`, so this runs on the main thread.
         unsafe { NSEvent::removeMonitor(&self.token) };

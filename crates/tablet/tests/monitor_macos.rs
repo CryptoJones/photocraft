@@ -28,10 +28,14 @@ fn main() {
     };
 
     let seen: Rc<RefCell<Vec<Option<Sample>>>> = Rc::default();
-    let monitor = {
+    let coalescing = NSEvent::isMouseCoalescingEnabled();
+    let mut monitor = {
         let seen = seen.clone();
         Monitor::install(move |s| seen.borrow_mut().push(s)).expect("install on the main thread")
     };
+    monitor.disable_mouse_coalescing();
+    monitor.disable_mouse_coalescing();
+    assert!(!NSEvent::isMouseCoalescingEnabled());
     app.sendEvent(&event(CGEventType::LeftMouseDragged, 0.5, (0.5, 0.0), CGEventMouseSubtype::TabletPoint));
     app.sendEvent(&event(CGEventType::LeftMouseDragged, 1.0, (0.0, 0.0), CGEventMouseSubtype::Default));
     {
@@ -42,6 +46,7 @@ fn main() {
         assert_eq!(seen[1], None, "a mouse event resets to mouse");
     }
     drop(monitor);
+    assert_eq!(NSEvent::isMouseCoalescingEnabled(), coalescing, "restore the original AppKit setting");
     app.sendEvent(&event(CGEventType::LeftMouseDragged, 0.5, (0.0, 0.0), CGEventMouseSubtype::TabletPoint));
     assert_eq!(seen.borrow().len(), 2, "the monitor is gone after drop");
     println!("monitor_macos: ok");
