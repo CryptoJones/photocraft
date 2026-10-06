@@ -7,18 +7,13 @@ use crate::PhotocraftApp;
 use crate::canvas::{ToolEvent, ViewXform, tool_event};
 use crate::state::Tool;
 
+#[derive(Default)]
 pub struct BrushInput {
     pub defer_preview: bool,
     button: Option<PointerButton>,
     last: Option<egui::Pos2>,
     owner: Option<(photocraft_doc::DocId, Tool)>,
     transform: Option<ViewXform>,
-}
-
-impl Default for BrushInput {
-    fn default() -> Self {
-        Self { defer_preview: false, button: None, last: None, owner: None, transform: None }
-    }
 }
 
 /// Returns true when this path owns painting; other tools retain their response-based gestures.
@@ -39,7 +34,7 @@ pub fn route_with_eligibility(app: &mut PhotocraftApp, response: &Response, xf: 
     let zoom = response.ctx.zoom_factor();
     let automation = app.automation_input;
     let motion = &mut app.services.motion_samples;
-    let samples = app.brush_input.events_with_motion(&events, xf, eligible, secondary, pressure, mods, |from, to| {
+    let samples = app.brush_input.events_with_motion(&events, xf, eligible, secondary, (pressure, mods), |from, to| {
         if automation {
             return Vec::new();
         }
@@ -124,7 +119,7 @@ impl BrushInput {
         pressure: f32,
         mods: Modifiers,
     ) -> Vec<(ToolEvent, Modifiers, bool)> {
-        self.events_with_motion(events, xf, eligible, secondary, pressure, mods, |_, _| Vec::new())
+        self.events_with_motion(events, xf, eligible, secondary, (pressure, mods), |_, _| Vec::new())
     }
 
     fn events_with_motion(
@@ -133,8 +128,7 @@ impl BrushInput {
         xf: &ViewXform,
         eligible: bool,
         secondary: bool,
-        mut pressure: f32,
-        mut mods: Modifiers,
+        (mut pressure, mut mods): (f32, Modifiers),
         mut motion: impl FnMut(Option<egui::Pos2>, egui::Pos2) -> Vec<egui::Pos2>,
     ) -> Vec<(ToolEvent, Modifiers, bool)> {
         let mut out = Vec::new();
@@ -192,6 +186,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn captured_resize_completes_without_painting() {
+        use egui_kittest::Harness;
+        use serde_json::json;
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        app.run("file.new", json!({"width":128,"height":128})).unwrap();
+        app.ui.tool = Tool::Brush;
+        let mut h = Harness::builder().with_size(egui::vec2(1000.0, 800.0)).build_eframe(|_| app);
+        h.run_steps(3);
+        let p = h.state().last_canvas_rect.center();
+        let mods = Modifiers { ctrl: true, alt: true, ..Modifiers::NONE };
+        h.event(Event::PointerButton { pos: p, pressed: true, button: PointerButton::Primary, modifiers: mods });
+        assert!(h.state().brush_resize.is_some());
+        assert!(h.state().drag.is_none());
+        h.event(Event::PointerMoved(p + egui::vec2(20.0, 0.0)));
+        h.event(Event::PointerButton { pos: p + egui::vec2(20.0, 0.0), pressed: false, button: PointerButton::Primary, modifiers: mods });
+        assert!(h.state().brush_resize.is_none());
+        assert!(h.state().brush_input.button.is_none());
+        assert!(!h.state().session.journal.iter().any(|(id, _)| id == "paint.stroke"));
+    }
+
+    #[test]
     fn interruption_commits_ink_to_owner_and_restores_current_document() {
         use serde_json::json;
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
@@ -225,7 +240,7 @@ mod tests {
         let ctx = egui::Context::default();
         ctx.begin_pass(egui::RawInput { focused: true, ..Default::default() });
         sync_capture(&mut app, &ctx);
-        let _ = ctx.end_pass();
+        ctx.end_pass().textures_delta.clear();
         assert!(app.brush_input.button.is_some());
         sync_effective_tool(&mut app, Tool::Hand);
         assert!(app.brush_input.button.is_none());
@@ -239,7 +254,7 @@ mod tests {
         input.events(&[button(p, true, PointerButton::Primary)], &transform, true, false, 1.0, Modifiers::NONE);
         transform.zoom = 3.0;
         let mut consumed = false;
-        let out = input.events_with_motion(&[Event::PointerMoved(pos2(30.0, 30.0))], &transform, true, false, 1.0, Modifiers::NONE, |_, _| {
+        let out = input.events_with_motion(&[Event::PointerMoved(pos2(30.0, 30.0))], &transform, true, false, (1.0, Modifiers::NONE), |_, _| {
             consumed = true;
             vec![pos2(25.0, 50.0)]
         });

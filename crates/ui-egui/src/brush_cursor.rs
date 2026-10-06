@@ -2,14 +2,9 @@
 
 use egui::{Context, CustomCursorImage};
 
+#[derive(Default)]
 pub struct BrushCursor {
     cached: Option<((u32, u32, bool), CustomCursorImage)>,
-}
-
-impl Default for BrushCursor {
-    fn default() -> Self {
-        Self { cached: None }
-    }
 }
 
 impl BrushCursor {
