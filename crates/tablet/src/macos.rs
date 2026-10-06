@@ -9,7 +9,7 @@
 
 #![allow(unsafe_code)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ptr::NonNull;
 use std::rc::Rc;
 
@@ -17,10 +17,10 @@ use crate::motion::{Aligner, Feed};
 use block2::RcBlock;
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyObject, NSObjectProtocol, ProtocolObject};
 use objc2_app_kit::{NSEvent, NSEventMask};
-use objc2_foundation::{NSOperatingSystemVersion, NSProcessInfo};
-use objc2_game_controller::{GCDevice, GCMouse, GCMouseInput};
+use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperatingSystemVersion, NSOperationQueue, NSProcessInfo};
+use objc2_game_controller::{GCDevice, GCMouse, GCMouseDidConnectNotification, GCMouseDidDisconnectNotification, GCMouseInput};
 
 use crate::appkit::{RawEvent, State};
 use crate::{Error, Sample, Update, deliver};
@@ -78,6 +78,7 @@ impl Monitor {
 
 impl Drop for Monitor {
     fn drop(&mut self) {
+        // Stop callbacks before releasing the Objective-C token, which can outlive this owner.
         if let Ok(mut motion) = self.motion.try_borrow_mut() {
             motion.stop();
         }
@@ -93,6 +94,8 @@ struct GcMotion {
     state: Rc<RefCell<Aligner>>,
     devices: Vec<(u64, Retained<GCMouse>)>,
     next_device: u64,
+    devices_dirty: Rc<Cell<bool>>,
+    observers: Vec<Retained<ProtocolObject<dyn NSObjectProtocol>>>,
     scope: Option<(usize, [f64; 2])>,
     previous: Option<[f64; 2]>,
     feed: Feed,
@@ -103,7 +106,36 @@ impl GcMotion {
     fn new(feed: Feed) -> Self {
         let available =
             NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(NSOperatingSystemVersion { majorVersion: 14, minorVersion: 0, patchVersion: 0 });
-        Self { state: Rc::default(), devices: Vec::new(), next_device: 0, scope: None, previous: None, feed, available, pressed: false }
+        let devices_dirty = Rc::new(Cell::new(true));
+        let mut observers = Vec::new();
+        if available {
+            // SAFETY: Foundation copies the blocks. Main-queue delivery confines Rc/Cell to
+            // this thread; observer tokens are retained and removed in stop().
+            unsafe {
+                for name in [GCMouseDidConnectNotification, GCMouseDidDisconnectNotification] {
+                    let dirty = devices_dirty.clone();
+                    let block = RcBlock::new(move |_: NonNull<NSNotification>| dirty.set(true));
+                    observers.push(NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+                        Some(name),
+                        None,
+                        Some(&NSOperationQueue::mainQueue()),
+                        &block,
+                    ));
+                }
+            }
+        }
+        Self {
+            state: Rc::default(),
+            devices: Vec::new(),
+            next_device: 0,
+            devices_dirty,
+            observers,
+            scope: None,
+            previous: None,
+            feed,
+            available,
+            pressed: false,
+        }
     }
     fn boundary(&mut self) {
         if let Ok(mut state) = self.state.try_borrow_mut() {
@@ -120,6 +152,9 @@ impl GcMotion {
     fn stop(&mut self) {
         // SAFETY: Each input object is retained by its device; nil removes our copied callback.
         unsafe {
+            for observer in self.observers.drain(..) {
+                NSNotificationCenter::defaultCenter().removeObserver((*observer).as_ref());
+            }
             for (_, device) in &self.devices {
                 if let Some(input) = device.mouseInput() {
                     input.setMouseMovedHandler(std::ptr::null_mut());
@@ -193,7 +228,14 @@ impl GcMotion {
             self.reset();
             return;
         }
-        self.refresh();
+        // Discovery runs once and on connection notifications, not on every mouse move.
+        if self.devices_dirty.replace(false) {
+            self.refresh();
+        }
+        let down = matches!(raw.kind, crate::appkit::event_type::LEFT_MOUSE_DOWN | crate::appkit::event_type::RIGHT_MOUSE_DOWN);
+        if !self.pressed && !down {
+            return;
+        }
         let bounds = view.bounds();
         let p = view.convertPoint_fromView(e.locationInWindow(), None);
         let size = [bounds.size.width, bounds.size.height];
@@ -203,7 +245,6 @@ impl GcMotion {
             raw.kind,
             crate::appkit::event_type::MOUSE_MOVED | crate::appkit::event_type::LEFT_MOUSE_DRAGGED | crate::appkit::event_type::RIGHT_MOUSE_DRAGGED
         );
-        let down = matches!(raw.kind, crate::appkit::event_type::LEFT_MOUSE_DOWN | crate::appkit::event_type::RIGHT_MOUSE_DOWN);
         let up = matches!(raw.kind, crate::appkit::event_type::LEFT_MOUSE_UP | crate::appkit::event_type::RIGHT_MOUSE_UP);
         if down {
             self.boundary();
@@ -218,6 +259,10 @@ impl GcMotion {
         } else if !moved {
             self.boundary();
             self.pressed = false;
+        }
+        // Down establishes the first anchor. Hover never accumulates/fits discarded curves.
+        if !self.pressed {
+            return;
         }
         let now = NSProcessInfo::processInfo().systemUptime();
         let extras = if let Ok(mut state) = self.state.try_borrow_mut() {
@@ -236,6 +281,12 @@ impl GcMotion {
         }
         self.previous = Some(point);
         self.scope = Some(scope);
+    }
+}
+
+impl Drop for GcMotion {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -278,8 +329,9 @@ fn is_mouse(kind: usize) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use objc2::MainThreadOnly;
     use objc2_core_graphics::{CGEvent, CGEventField, CGEventMouseSubtype, CGEventType, CGMouseButton};
     use objc2_foundation::NSPoint;
 
@@ -310,6 +362,116 @@ mod tests {
 
     fn dbl(e: &CGEvent, f: CGEventField, v: f64) {
         CGEvent::set_double_value_field(Some(e), f, v);
+    }
+
+    // Control focus without ordering/activating a window over the user's editor.
+    objc2::define_class!(
+        #[unsafe(super(objc2_app_kit::NSWindow))]
+        #[name = "PhotoCraftMotionTestWindow"]
+        #[thread_kind = MainThreadOnly]
+        #[ivars = Cell<bool>]
+        struct MotionTestWindow;
+        impl MotionTestWindow {
+            #[unsafe(method(isKeyWindow))]
+            fn is_key(&self) -> bool {
+                use objc2::DefinedClass;
+                self.ivars().get()
+            }
+        }
+    );
+
+    /// Called by the harness-free integration executable: AppKit windows require the main thread.
+    #[allow(dead_code)]
+    pub fn bound_motion_on_main_thread() {
+        use objc2::DefinedClass;
+        use objc2_app_kit::{NSApplication, NSBackingStoreType, NSEventModifierFlags, NSEventType, NSWindowStyleMask};
+        use objc2_foundation::{NSRect, NSSize};
+        if !NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(NSOperatingSystemVersion { majorVersion: 14, minorVersion: 0, patchVersion: 0 }) {
+            return; // Production deliberately retains OS-only input on older macOS.
+        }
+        // Covers cleanup when construction succeeds but monitor installation never does.
+        let dirty = objc2::rc::autoreleasepool(|_| {
+            let motion = GcMotion::new(Feed::default());
+            let dirty = motion.devices_dirty.clone();
+            drop(motion);
+            dirty
+        });
+        assert_eq!(Rc::strong_count(&dirty), 1, "notification observers are removed on drop");
+        let mtm = MainThreadMarker::new().expect("integration main thread");
+        let app = NSApplication::sharedApplication(mtm);
+        // SAFETY: constructed on the main thread, retained locally, and not autoreleased on close.
+        let window: Retained<MotionTestWindow> = unsafe {
+            let allocated = MotionTestWindow::alloc(mtm).set_ivars(Cell::new(true));
+            let window: Retained<MotionTestWindow> = objc2::msg_send![super(allocated),
+                initWithContentRect: NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(200.0, 200.0)),
+                styleMask: NSWindowStyleMask::Titled, backing: NSBackingStoreType::Buffered, defer: false];
+            window.setReleasedWhenClosed(false);
+            window
+        };
+        assert!(window.isKeyWindow());
+        let view = window.contentView().expect("content view");
+        let feed = Feed::default();
+        feed.bind_view(Retained::as_ptr(&view) as usize);
+        let monitor = Monitor::with_motion(|_| {}, feed.clone()).expect("bound monitor");
+        let send = |kind, point: [f64; 2], age| {
+            let bounds = view.bounds();
+            let point = NSPoint::new(point[0], if view.isFlipped() { point[1] } else { bounds.size.height - point[1] });
+            let location = view.convertPoint_toView(point, None);
+            let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+                kind,
+                location,
+                NSEventModifierFlags::empty(),
+                NSProcessInfo::processInfo().systemUptime() - age,
+                window.windowNumber(),
+                None,
+                1,
+                1,
+                1.0,
+            )
+            .expect("window mouse event");
+            app.sendEvent(&event);
+        };
+        let push = || {
+            let state = monitor.motion.borrow().state.clone();
+            state.borrow_mut().push(1, [1.0, 1.0]);
+            state.borrow_mut().push(1, [1.0, -1.0]);
+        };
+        let (a, b) = ([10.0, 20.0], [14.0, 20.0]);
+        // All native events arrive before the UI reads them, as in a single UI frame.
+        send(NSEventType::LeftMouseDown, a, 0.0);
+        assert!(monitor.motion.borrow().pressed);
+        push();
+        send(NSEventType::LeftMouseDragged, b, 0.0);
+        send(NSEventType::LeftMouseUp, b, 0.0);
+        feed.begin(a, 0);
+        assert_eq!(feed.take(a, b), vec![[12.0, 22.0]], "native window coordinates and clock map a curve");
+        assert!(feed.take(a, b).is_empty(), "consumed once");
+        send(NSEventType::MouseMoved, a, 0.0);
+        assert!(monitor.motion.borrow().previous.is_none(), "hover does not anchor GC motion");
+        // Stale OS events cannot use otherwise valid GC candidates.
+        send(NSEventType::LeftMouseDown, a, 0.0);
+        push();
+        send(NSEventType::LeftMouseDragged, b, 0.1);
+        feed.begin(a, 0);
+        assert!(feed.take(a, b).is_empty());
+        // Tablet provenance clears mouse candidates independently of UI pressure settings.
+        send(NSEventType::LeftMouseDown, a, 0.0);
+        push();
+        app.sendEvent(&event(CGEventType::LeftMouseDragged, |e| {
+            int(e, CGEventField::MouseEventSubtype, i64::from(CGEventMouseSubtype::TabletPoint.0));
+        }));
+        assert!(!monitor.motion.borrow().pressed);
+        assert!(feed.take(a, b).is_empty());
+        // A non-key window cannot publish a drawing interval.
+        send(NSEventType::LeftMouseDown, a, 0.0);
+        push();
+        window.ivars().set(false);
+        assert!(!window.isKeyWindow());
+        send(NSEventType::LeftMouseDragged, b, 0.0);
+        assert!(!monitor.motion.borrow().pressed);
+        assert!(feed.take(a, b).is_empty());
+        drop(monitor);
+        window.close();
     }
 
     /// Tablet mouse events read back through the same path as live ones.
