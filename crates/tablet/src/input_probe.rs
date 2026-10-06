@@ -90,6 +90,116 @@ pub struct Alignment {
     pub max_gain: Option<f64>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct Calibration {
+    pub lag_ms: i32,
+    pub gain: f64,
+    pub rotation_degrees: f64,
+    pub held_out_rmse_pixels: f64,
+    pub training_intervals: usize,
+    pub held_out_intervals: usize,
+}
+
+/// Fit a single gain/rotation on alternating intervals, then score untouched intervals.
+/// Searching receipt-time shifts diagnoses delivery skew. It cannot recover device timestamps
+/// or reproduce the OS's speed-dependent acceleration, and is not used to force preview fits.
+pub fn calibrate(capture: &Capture, source: &str) -> Option<Calibration> {
+    let mut groups = std::collections::BTreeMap::<u32, Vec<&Sample>>::new();
+    for s in &capture.samples {
+        if s.stroke > 0 {
+            groups.entry(s.stroke).or_default().push(s);
+        }
+    }
+    let mut best: Option<(f64, Calibration)> = None;
+    for lag_ms in -20..=20 {
+        let mut pairs = Vec::new();
+        for group in groups.values() {
+            let mut os = group.iter().copied().filter(|s| s.source == "os").collect::<Vec<_>>();
+            let mut raw = capture.samples.iter().filter(|s| s.source == source && !s.resting).collect::<Vec<_>>();
+            os.sort_by(|a, b| a.clock().total_cmp(&b.clock()));
+            raw.sort_by(|a, b| a.clock().total_cmp(&b.clock()));
+            for w in os.windows(2) {
+                let Some((a, b)) = w.first().zip(w.get(1)) else { continue };
+                if b.clock() - a.clock() > 0.05 || b.clock() <= a.clock() {
+                    continue;
+                }
+                let shift = f64::from(lag_ms) / 1000.0;
+                let start = raw.partition_point(|s| s.clock() <= a.clock() + shift);
+                let end = raw.partition_point(|s| s.clock() <= b.clock() + shift);
+                let samples = raw.get(start..end).unwrap_or(&[]);
+                let Some(first) = samples.first() else { continue };
+                if samples
+                    .iter()
+                    .any(|s| s.device != first.device || s.identity != first.identity || (source == "touch" && (s.contacts != 1 || s.phase != "moved")))
+                {
+                    continue;
+                }
+                let delta = if source == "gc" {
+                    samples.iter().fold([0.0; 2], |p, s| [p[0] + s.point[0], p[1] + s.point[1]])
+                } else {
+                    let Some(previous) = raw.get(..start).unwrap_or(&[]).last().filter(|s| {
+                        s.identity == first.identity
+                            && s.device == first.device
+                            && s.contacts == 1
+                            && ["began", "moved"].contains(&s.phase.as_str())
+                            && a.clock() + shift - s.clock() <= 0.05
+                    }) else {
+                        continue;
+                    };
+                    let Some(last) = samples.last() else { continue };
+                    [last.point[0] - previous.point[0], last.point[1] - previous.point[1]]
+                };
+                if delta[0] * delta[0] + delta[1] * delta[1] > 1e-8 {
+                    pairs.push((delta, [b.point[0] - a.point[0], b.point[1] - a.point[1]]));
+                }
+            }
+        }
+        let mut norm = 0.0;
+        let mut re = 0.0;
+        let mut im = 0.0;
+        for (i, (raw, screen)) in pairs.iter().enumerate() {
+            if i % 2 == 0 {
+                norm += raw[0] * raw[0] + raw[1] * raw[1];
+                re += raw[0] * screen[0] + raw[1] * screen[1];
+                im += raw[0] * screen[1] - raw[1] * screen[0];
+            }
+        }
+        if norm <= 1e-8 || pairs.len() < 10 {
+            continue;
+        }
+        re /= norm;
+        im /= norm;
+        let mut train = 0.0;
+        let mut test = 0.0;
+        let mut n_train = 0;
+        let mut n_test = 0;
+        for (i, (raw, screen)) in pairs.iter().enumerate() {
+            let dx = re * raw[0] - im * raw[1] - screen[0];
+            let dy = im * raw[0] + re * raw[1] - screen[1];
+            if i % 2 == 0 {
+                train += dx * dx + dy * dy;
+                n_train += 1;
+            } else {
+                test += dx * dx + dy * dy;
+                n_test += 1;
+            }
+        }
+        let score = train / f64::from(n_train);
+        let c = Calibration {
+            lag_ms,
+            gain: re.hypot(im),
+            rotation_degrees: im.atan2(re).to_degrees(),
+            held_out_rmse_pixels: (test / f64::from(n_test)).sqrt(),
+            training_intervals: n_train as usize,
+            held_out_intervals: n_test as usize,
+        };
+        if best.as_ref().is_none_or(|(error, _)| score < *error) {
+            best = Some((score, c));
+        }
+    }
+    best.map(|(_, calibration)| calibration)
+}
+
 pub fn reports(capture: &Capture) -> Vec<StreamReport> {
     ["os", "gc", "touch", "direct-coalesced"]
         .into_iter()
@@ -303,6 +413,27 @@ mod tests {
         let r = reports(&c);
         assert!((r[2].callbacks_per_second - 100.0).abs() < 1e-5);
     }
+    #[test]
+    fn calibration_scores_unforced_held_out_positions() {
+        let mut c = Capture::default();
+        c.samples.push(sample("os", 0.0, [0.0, 0.0]));
+        for i in 1..=20 {
+            let t = f64::from(i) * 0.01;
+            c.samples.push(sample("gc", t - 0.002, [1.0, 0.0]));
+            c.samples.push(sample("os", t, [f64::from(i) * 2.0, 0.0]));
+        }
+        let audit = calibrate(&c, "gc").unwrap();
+        assert!((audit.gain - 2.0).abs() < 1e-6);
+        assert!(audit.held_out_rmse_pixels < 1e-6);
+        assert!(audit.held_out_intervals >= 5);
+        // Variable OS acceleration breaks a single global gain even though endpoint-fitted
+        // previews still match their anchors exactly.
+        for (i, s) in c.samples.iter_mut().filter(|s| s.source == "os").enumerate() {
+            s.point[0] += if i % 2 == 0 { 3.0 } else { 0.0 };
+        }
+        assert!(calibrate(&c, "gc").unwrap().held_out_rmse_pixels > 1.0);
+    }
+
     #[test]
     fn receipt_shift_does_not_change_os_anchor_positions() {
         let mut c = capture();
