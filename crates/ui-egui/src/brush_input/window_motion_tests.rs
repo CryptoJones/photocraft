@@ -108,7 +108,7 @@ fn wayland_batched_absolute_positions_do_not_compress_a_raw_curve() {
 
 #[test]
 fn touch_native_collector_and_automation_do_not_mix_with_raw_mouse_motion() {
-    for mode in ["touch", "native", "automation"] {
+    for mode in ["touch", "pen", "native", "automation"] {
         let services = if mode == "native" {
             crate::Services {
                 motion_samples: Some(Box::new(|event, _| match event {
@@ -124,6 +124,9 @@ fn touch_native_collector_and_automation_do_not_mix_with_raw_mouse_motion() {
         app.run("file.new", json!({"width":128,"height":128})).unwrap();
         app.ui.tool = Tool::Brush;
         app.stylus.use_pressure = false;
+        if mode == "pen" {
+            app.stylus.feed.set(Some(crate::stylus::PenSample { pressure: 0.5, ..Default::default() }));
+        }
         let mut h = Harness::builder().with_size(vec2(1000.0, 800.0)).build_eframe(|_| app);
         h.run_steps(3);
         h.state_mut().automation_input = mode == "automation";
