@@ -79,6 +79,8 @@ PHOTOCRAFT_BRUSH_RECORDING=/absolute/path/scribble.brush-replay.json cargo test 
 Automation: `ui.brushReplay.record {enabled:true|false}`, `ui.brushReplay.read`,
 `ui.brushReplay.load` (recording JSON as params), and `ui.brushReplay.compare`.
 
+For simultaneous OS/GC/trackpad capture and alignment experiments, see [the native input probe](input-probe.md).
+
 ## Driving the app programmatically
 
 Start the app with a private token file. It then accepts authenticated JSON lines on `127.0.0.1:7878`:
