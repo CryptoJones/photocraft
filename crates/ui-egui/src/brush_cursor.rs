@@ -71,7 +71,7 @@ mod tests {
             let image = image(20.0, scale, true).unwrap();
             assert_eq!(image.rgba.len(), usize::from(image.size[0]).pow(2) * 4);
             assert_eq!(image.hotspot[0] * 2 + 1, image.size[0]);
-            assert!(image.rgba.chunks_exact(4).any(|p| p[3] > 0));
+            assert!(image.rgba.as_chunks::<4>().0.iter().any(|p| p[3] > 0));
         }
         for radius in [f32::NAN, f32::INFINITY, -1.0, 0.0, 10000.0] {
             assert!(image(radius, 2.0, false).is_none());
