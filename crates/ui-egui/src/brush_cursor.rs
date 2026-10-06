@@ -18,7 +18,9 @@ impl BrushCursor {
         if !self.native || cfg!(target_arch = "wasm32") {
             return false;
         }
-        let scale = ctx.pixels_per_point();
+        // winit 0.30 builds macOS NSImages with size == bitmap dimensions in logical points.
+        // Other native backends consume physical cursor pixels. Scaling twice breaks Retina tips.
+        let scale = if cfg!(target_os = "macos") { ctx.zoom_factor() } else { ctx.pixels_per_point() };
         let key = (radius.to_bits(), scale.to_bits(), crosshair);
         if self.cached.as_ref().is_none_or(|(k, _)| *k != key) {
             self.cached = image(radius, scale, crosshair).map(|image| (key, image));
@@ -118,6 +120,15 @@ mod tests {
                 h.run_steps(2);
                 let out = &h.output().platform_output;
                 assert_eq!(out.cursor_image.is_some(), matches!(preference, "normalTip" | "fullSizeTip"), "{preference}, {dpi}");
+                if cfg!(target_os = "macos")
+                    && let Some(image) = &out.cursor_image
+                {
+                    let brush = &h.state().session.tools.brush;
+                    let full = brush.size / 2.0 * h.state().current_zoom();
+                    let radius = if preference == "normalTip" { (full * (0.5 + 0.5 * brush.hardness)).max(1.0) } else { full.max(1.0) };
+                    let scale = h.ctx.zoom_factor();
+                    assert_eq!(image.hotspot[0], (((radius + 2.0).max(5.0)) * scale).ceil() as u16, "NSImage uses logical points even on Retina");
+                }
                 assert_ne!(out.cursor_icon, egui::CursorIcon::None);
             }
         }
