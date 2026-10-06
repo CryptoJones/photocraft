@@ -24,6 +24,9 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+#[cfg(feature = "input-probe")]
+pub mod input_probe;
+
 pub mod appkit;
 pub mod xi;
 

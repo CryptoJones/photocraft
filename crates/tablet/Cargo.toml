@@ -8,6 +8,13 @@ description = "Pen tablet pressure, tilt, rotation and eraser end on macOS (AppK
 # The one isolated `unsafe` helper crate (craftrules never-crash, AGENTS.md): the AppKit event
 # monitor needs Objective-C interop. Only `src/macos.rs` allows `unsafe`; everything else is
 # denied, and every other crate keeps the workspace's `unsafe_code = "forbid"`.
+[features]
+input-probe = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
 [lints.rust]
 unsafe_code = "deny"
 
