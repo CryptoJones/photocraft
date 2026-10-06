@@ -14,6 +14,8 @@ pub struct BrushInput {
     last: Option<egui::Pos2>,
     owner: Option<(photocraft_doc::DocId, Tool)>,
     transform: Option<ViewXform>,
+    window_motion: photocraft_tablet::motion::Aligner,
+    raw_frame_time: Option<f64>,
 }
 
 /// Returns true when this path owns painting; other tools retain their response-based gestures.
@@ -22,13 +24,29 @@ pub fn route(app: &mut PhotocraftApp, response: &Response, xf: &ViewXform, tool:
     if !tool.is_brushlike() && tool != Tool::QuickSelection {
         return false;
     }
-    let (events, mods) = response
-        .ctx
-        .input(|i| (i.raw.events.iter().filter(|e| app.stylus.use_pressure || !matches!(e, Event::Touch { .. })).cloned().collect::<Vec<_>>(), i.modifiers));
+    let (events, mods, frame_time, touch) = response.ctx.input(|i| {
+        (
+            i.raw.events.iter().filter(|e| app.stylus.use_pressure || !matches!(e, Event::Touch { .. })).cloned().collect::<Vec<_>>(),
+            i.modifiers,
+            i.time,
+            i.raw.events.iter().any(|e| matches!(e, Event::Touch { .. })),
+        )
+    });
     let secondary = crate::paint_mouse::right_erases(app, tool);
     let pressure = app.stylus.pressure();
     let zoom = response.ctx.zoom_factor();
     let automation = app.automation_input;
+    // eframe forwards Windows Raw Input, XI2 and Wayland relative motion. Unit harnesses also
+    // exercise that path on macOS; the production Mac collector retains its own provenance.
+    let raw = cfg!(any(target_os = "windows", target_os = "linux", test))
+        && !automation
+        && !touch
+        && app.stylus.feed.get().is_none()
+        && app.services.motion_samples.is_none();
+    app.brush_input.raw_frame_time = raw.then_some(frame_time);
+    if !raw {
+        app.brush_input.window_motion.reset();
+    }
     let motion = &mut app.services.motion_samples;
     let samples = app.brush_input.events_with_motion(&events, xf, eligible, secondary, (pressure, mods), |event| {
         if automation {
@@ -62,6 +80,8 @@ pub fn interrupt(app: &mut PhotocraftApp) {
     app.brush_input.last = None;
     let transform = app.brush_input.transform.take();
     app.brush_input.defer_preview = false;
+    app.brush_input.window_motion.reset();
+    app.brush_input.raw_frame_time = None;
     app.brush_resize = None;
     let Some((doc, tool)) = owner else { return };
     let previous = app.session.active().map(|st| st.doc.id);
@@ -128,7 +148,10 @@ impl BrushInput {
         mut motion: impl FnMut(MouseMotion) -> Vec<egui::Pos2>,
     ) -> Vec<(ToolEvent, Modifiers, bool)> {
         let mut out = Vec::new();
-        for event in events {
+        for (index, event) in events.iter().enumerate() {
+            if matches!(event, Event::PointerButton { .. } | Event::WindowFocused(false) | Event::PointerGone) {
+                self.window_motion.reset();
+            }
             // Native records every press; synchronize ignored presses too, before hit testing.
             if let Event::PointerButton { pos, button, pressed: true, .. } = *event
                 && matches!(button, PointerButton::Primary | PointerButton::Secondary)
@@ -145,6 +168,9 @@ impl BrushInput {
                     self.button = Some(button);
                     self.last = Some(pos);
                     self.transform = Some(*xf);
+                    if let Some(time) = self.raw_frame_time {
+                        self.window_motion.frame_endpoint([f64::from(pos.x), f64::from(pos.y)], time);
+                    }
                     mods = modifiers;
                     let [x, y] = xf.to_doc(pos);
                     out.push((ToolEvent::Down { x, y, pressure }, mods, button == PointerButton::Secondary));
@@ -152,13 +178,34 @@ impl BrushInput {
                 Event::PointerMoved(pos) if self.button.is_some() => {
                     let same_transform = self.transform == Some(*xf);
                     self.transform = Some(*xf);
-                    for point in self
-                        .last
-                        .map_or_else(Vec::new, |from| motion(MouseMotion::Move { from, to: pos }))
-                        .into_iter()
-                        .take(64)
-                        .filter(|p| same_transform && p.x.is_finite() && p.y.is_finite())
-                    {
+                    let points = if let Some(time) = self.raw_frame_time {
+                        // Wayland may deliver a raw batch before several absolute positions.
+                        // With no timestamps, that batch cannot belong to the first endpoint.
+                        let batched_positions = events[index + 1..]
+                            .iter()
+                            .find(|event| {
+                                matches!(
+                                    event,
+                                    Event::MouseMoved(_)
+                                        | Event::PointerMoved(_)
+                                        | Event::PointerButton { .. }
+                                        | Event::PointerGone
+                                        | Event::WindowFocused(false)
+                                )
+                            })
+                            .is_some_and(|event| matches!(event, Event::PointerMoved(_)));
+                        if !same_transform || batched_positions {
+                            self.window_motion.reset();
+                        }
+                        self.window_motion
+                            .frame_endpoint([f64::from(pos.x), f64::from(pos.y)], time)
+                            .into_iter()
+                            .map(|p| egui::pos2(p[0] as f32, p[1] as f32))
+                            .collect()
+                    } else {
+                        self.last.map_or_else(Vec::new, |from| motion(MouseMotion::Move { from, to: pos }))
+                    };
+                    for point in points.into_iter().take(64).filter(|p| same_transform && p.x.is_finite() && p.y.is_finite()) {
                         let [x, y] = xf.to_doc(point);
                         out.push((ToolEvent::Move { x, y, pressure }, mods, false));
                     }
@@ -176,6 +223,10 @@ impl BrushInput {
                         let [x, y] = xf.to_doc(pos);
                         out.push((ToolEvent::Up { x, y }, mods, false));
                     }
+                }
+                Event::MouseMoved(delta) if self.button.is_some() && self.raw_frame_time.is_some() => {
+                    // Device IDs are not forwarded by eframe. Never claim per-device correlation.
+                    self.window_motion.push(0, [f64::from(delta.x), f64::from(delta.y)]);
                 }
                 Event::Touch { force: Some(force), .. } if force.is_finite() => pressure = force.clamp(0.0, 1.0),
                 Event::Key { modifiers, .. } | Event::ModifiersChanged(modifiers) => mods = modifiers,
@@ -487,3 +538,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "brush_input/window_motion_tests.rs"]
+mod window_motion_tests;

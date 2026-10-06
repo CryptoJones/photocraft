@@ -1,4 +1,4 @@
-//! GC supplies candidate interior motion; OS positions remain authoritative.
+//! Relative device motion supplies candidate interior points; OS positions remain authoritative.
 //! Online only: no waiting, timestamp calibration, prediction or retrospective edits.
 use std::{
     collections::VecDeque,
@@ -55,8 +55,16 @@ impl Aligner {
     }
     /// Candidate points strictly before `to`; the caller always delivers the OS endpoint.
     pub fn endpoint(&mut self, to: [f64; 2], event_time: f64, receipt: f64) -> Vec<[f64; 2]> {
+        self.endpoint_with_clock(to, event_time, receipt, false)
+    }
+    /// Window-event streams expose only a frame clock. Events in the same frame retain their
+    /// arrival order, but their individual age and device identity cannot be established.
+    pub fn frame_endpoint(&mut self, to: [f64; 2], frame_time: f64) -> Vec<[f64; 2]> {
+        self.endpoint_with_clock(to, frame_time, frame_time, true)
+    }
+    fn endpoint_with_clock(&mut self, to: [f64; 2], event_time: f64, receipt: f64, same_frame: bool) -> Vec<[f64; 2]> {
         let previous = self.anchor.replace(Anchor { point: to, event_time, receipt });
-        let points = self.fit(previous, to, event_time, receipt);
+        let points = self.fit(previous, to, event_time, receipt, same_frame);
         self.deltas.clear();
         self.device = None;
         self.invalid = false;
@@ -65,14 +73,15 @@ impl Aligner {
         }
         points
     }
-    fn fit(&self, previous: Option<Anchor>, to: [f64; 2], event_time: f64, receipt: f64) -> Vec<[f64; 2]> {
+    fn fit(&self, previous: Option<Anchor>, to: [f64; 2], event_time: f64, receipt: f64, same_frame: bool) -> Vec<[f64; 2]> {
         let Some(a) = previous else { return Vec::new() };
         if self.invalid
             || self.deltas.len() < 2
             || !finite(to)
             || !event_time.is_finite()
             || !receipt.is_finite()
-            || event_time <= a.event_time
+            || event_time < a.event_time
+            || (!same_frame && event_time == a.event_time)
             || event_time - a.event_time > MAX_INTERVAL_SECONDS
             || receipt < a.receipt
             || receipt < event_time
@@ -203,6 +212,22 @@ mod tests {
         let mut a = Aligner::default();
         a.endpoint([10.0, 20.0], 1.0, 1.0);
         a
+    }
+    #[test]
+    fn frame_clock_accepts_ordered_same_frame_events_without_relaxing_native_timestamps() {
+        for native in [false, true] {
+            let mut a = start();
+            a.push(1, [1.0, 1.0]);
+            a.push(1, [1.0, -1.0]);
+            let points = if native { a.endpoint([14.0, 20.0], 1.0, 1.0) } else { a.frame_endpoint([14.0, 20.0], 1.0) };
+            assert_eq!(points, if native { vec![] } else { vec![[12.0, 22.0]] });
+        }
+        for time in [0.9, 1.1, f64::NAN, f64::INFINITY] {
+            let mut a = start();
+            a.push(1, [1.0, 1.0]);
+            a.push(1, [1.0, -1.0]);
+            assert!(a.frame_endpoint([14.0, 20.0], time).is_empty());
+        }
     }
     #[test]
     fn online_curve_fits_without_waiting_or_including_endpoint() {

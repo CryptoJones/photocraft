@@ -58,8 +58,15 @@ On macOS, GC motion adds bounded intermediate points aligned to consecutive OS e
 The OS cursor and acceleration remain authoritative; absent or ambiguous samples automatically
 use the original endpoint. GC callback order estimates the interior path: GC does not expose a
 reliable timestamp per delta, so delayed callbacks cannot be perfectly synchronized. No waiting
-or retroactive stroke edits are introduced. Supported on macOS 14 and later; other platforms
-retain ordered OS input. No input-engine switches or comparison windows are exposed.
+or retroactive stroke edits are introduced. Supported on macOS 14 and later.
+Windows and Linux reuse eframe's relative mouse events (Windows Raw Input, XInput2, and the
+Wayland relative-pointer protocol when available). Multiple relative samples can add an interior
+curve between OS endpoints. Batched absolute positions, missing samples and uncertain geometry
+keep the OS-only path. These normalized events omit device IDs and individual timestamps;
+arrival order and a frame clock provide estimates, not measured device-rate coordinates.
+Hardware and compositor event delivery determine whether extra points are available; no higher
+sampling rate is guaranteed. Pen/touch input and automation retain their existing paths.
+No input-engine switches or comparison windows are exposed.
 
 ## Driving the app programmatically
 

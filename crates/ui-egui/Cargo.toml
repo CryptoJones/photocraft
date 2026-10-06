@@ -8,6 +8,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+photocraft-tablet = { workspace = true }
 photocraft-geom = { workspace = true }
 photocraft-color = { workspace = true }
 photocraft-raster = { workspace = true }
@@ -31,7 +32,6 @@ base64 = "0.22"
 rayon = { workspace = true }
 
 [dev-dependencies]
-photocraft-tablet = { workspace = true }
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot", "eframe"] }
 # Only for examples/snapshot.rs (offscreen UI renders of real files).
 photocraft-io = { workspace = true }
