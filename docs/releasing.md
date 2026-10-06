@@ -83,6 +83,14 @@ Mac symbol stripping happens before signing; Windows PDBs are never archive inpu
 use level 9, and DMGs retain zlib level 9. Existing default/fallback fonts, accessibility, codecs
 and GPU backends remain available; the shared bundled-font bytes avoid duplicate embeddings.
 
+Every desktop build job (macOS, Windows, Linux, FreeBSD) also checks out [craft-fonts](https://github.com/storytold/craft-fonts)
+at the commit in `CRAFT_FONTS_REF` (top of `release.yml`) and builds with `CRAFT_FONTS_DIR` and
+`CRAFT_FONTS_REQUIRED=1`, so desktop releases embed its Japanese fonts (the web build embeds none: see
+`docs/development.md` › Fonts) and fail rather than ship without them. The packages carry each font's licence as
+`OFL-<family>.txt` (`copy_font_licences` in `packaging/env.sh`; the portable zip on Windows;
+`Contents/Resources/Licenses` in the macOS app). Bump the pin deliberately, together with the one
+in `ci.yml`. Rules: `../craftrules/standards/fonts.md`; build option: `docs/development.md` › Fonts.
+
 ### macOS
 
 `packaging/macos/package.sh --arch aarch64|x86_64` builds one architecture with

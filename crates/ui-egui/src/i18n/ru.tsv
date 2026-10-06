@@ -1758,6 +1758,8 @@
 	Merge Layers	Объединить слои
 	Merge Shape Components	Объединить компоненты фигуры
 	Merge Visible	Свести видимые
+	Stamp Visible	Штамп видимых
+	Stamp Down	Штамп вниз
 	Mesh	Сетка
 	Middle Eastern & South Asian Composer	Компоновка для Ближнего Востока и Южной Азии
 	Modifier Keys	Клавиши-модификаторы
@@ -2244,3 +2246,12 @@
 	Zoom with trackpad pinch	Масштаб щипком на трекпаде
 	Alt-click to define a source point to clone from	Alt+щелчок, чтобы задать точку-источник клонирования
 	No path to make a selection from: draw one with the Pen tool or select one in the Paths panel.	Нет контура для создания выделения: нарисуйте его инструментом «Перо» или выберите на панели «Контуры».
+	Cancel opening	Отменить открытие
+	Cancelled opening {name}	Открытие {name} отменено
+	Cancelled {label}	{label}: отменено
+	Esc to cancel	Esc — отмена
+	Opening {name}	Открытие {name}
+	Opening {name}…	Открытие {name}…
+	Opening…	Открытие…
+	Reading…	Чтение…
+	Working…	Обработка…

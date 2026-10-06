@@ -58,7 +58,9 @@ pub mod hold_keys;
 pub mod i18n;
 mod icon_data;
 pub mod icons;
+pub mod jobs_ui;
 pub mod layer_menu_ui;
+pub mod layer_pick_ui;
 pub mod layer_props_ui;
 mod layer_reveal;
 pub mod layer_row_ui;
@@ -90,6 +92,7 @@ pub mod puppet_ui;
 pub mod rasterize_prompt;
 pub mod retouch_ui;
 pub mod rulers;
+pub mod scrollbars;
 pub mod shortcut_dispatch;
 pub mod shortcuts;
 mod sizing;
@@ -112,6 +115,7 @@ pub mod type_tool;
 mod variables_ui;
 pub mod vector_ui;
 pub mod view_cmds;
+pub mod wheel_nav;
 pub mod wide_angle_ui;
 pub mod widgets;
 pub mod work_area;
@@ -241,6 +245,9 @@ pub struct PhotocraftApp {
     last_stroke_end: Option<(DocId, [f64; 2])>,
     /// Control+Alt-drag brush resize in progress (`brush_resize`, #231).
     pub(crate) brush_resize: Option<brush_resize::Resize>,
+    /// The next tool `Down` is an Alt+right-drag that resizes the brush (#297). `tool_event`
+    /// takes it on every event, so a press another handler consumes can't leave it set.
+    pub(crate) brush_resize_armed: bool,
     control_rx: Option<Receiver<ControlRequest>>,
     pending_screenshots: Vec<(u64, Option<String>, Sender<ControlResponse>)>,
     /// Screenshots not yet requested from the viewport: (token, earliest time in ms, frames seen).
@@ -339,6 +346,12 @@ pub struct PhotocraftApp {
     pub(crate) allow_close: bool,
     /// Pen pressure/tilt from the platform (see `stylus`).
     pub stylus: stylus::Stylus,
+    /// Run long commands and file opens as background jobs with progress and Cancel (#210; see
+    /// `jobs_ui`). The desktop app turns it on; off (the default), everything runs inline as
+    /// before, which tests and scripts rely on.
+    pub background_jobs: bool,
+    /// Background job bookkeeping: opening tabs, control replies waiting on a job.
+    pub jobs: jobs_ui::JobsUi,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
     live_tokens: theme::live::LiveTokens,
 }
@@ -359,6 +372,7 @@ impl PhotocraftApp {
             defer_live_stroke: false,
             last_stroke_end: None,
             brush_resize: None,
+            brush_resize_armed: false,
             control_rx: None,
             pending_screenshots: Vec::new(),
             queued_screenshots: Vec::new(),
@@ -408,6 +422,8 @@ impl PhotocraftApp {
             discard: None,
             allow_close: false,
             stylus: Default::default(),
+            background_jobs: false,
+            jobs: Default::default(),
             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
             live_tokens: theme::live::LiveTokens::from_env(),
         };
@@ -484,7 +500,8 @@ impl PhotocraftApp {
                 return Ok(serde_json::json!({"pasted": false}));
             }
         }
-        let r = self.session.execute(id, params).map_err(|e| e.to_string());
+        // Long commands become background jobs when enabled (`jobs_ui`); the rest run inline.
+        let r = jobs_ui::run(self, id, params);
         if r.is_ok() && matches!(id, "edit.copy" | "edit.cut" | "edit.copyMerged") {
             self.clip_external = false;
             self.export_os_clipboard();
@@ -569,6 +586,12 @@ impl PhotocraftApp {
     pub fn open_bytes(&mut self, name: &str, bytes: &[u8]) -> Result<Vec<String>, String> {
         if let Some(r) = preset_files_ui::open(self, name, bytes) {
             return r.map(|()| Vec::new());
+        }
+        // Decoded on a worker: a tab with progress appears now, the document when it's ready
+        // (warnings are shown then).
+        if self.background_jobs {
+            jobs_ui::start_open(self, name, None, jobs_ui::bytes(bytes))?;
+            return Ok(Vec::new());
         }
         let import = self.services.import.as_ref().ok_or("no importer configured")?;
         let (doc, warnings) = import(name, bytes)?;
@@ -713,6 +736,7 @@ impl PhotocraftApp {
                     let _ = reply.send(v);
                 }
                 control::Outcome::AfterInput => self.input_waiters.push(reply),
+                control::Outcome::AfterJob(job) => self.jobs.waiters.push((job, reply)),
                 control::Outcome::Screenshot { token, path } => {
                     // Wait out egui's fade animations (~83 ms) and a few rendered frames first.
                     let settle = ctx.global_style().animation_time as f64 * 2000.0 + 60.0;
@@ -806,6 +830,9 @@ impl eframe::App for PhotocraftApp {
         // maximize it into the work area once (#315).
         work_area::fit_window(ctx);
         discard_ui::guard_window_close(self, ctx);
+        // Background jobs: apply finished ones, keep frames coming, Esc cancels (before the
+        // shortcuts see Esc).
+        jobs_ui::tick(self, ctx);
         shortcuts::handle(self, ctx);
         let arrived: Vec<(String, Vec<u8>)> =
             self.services.inbox.as_ref().map(|q| std::mem::take(&mut *q.lock().unwrap_or_else(|e| e.into_inner()))).unwrap_or_default();
@@ -873,6 +900,7 @@ impl eframe::App for PhotocraftApp {
         workspace_ui::windows(self, &ctx);
         palette::show(self, &ctx);
         dialogs::show(self, &ctx);
+        jobs_ui::dialog(self, &ctx);
         discard_ui::show(self, &ctx);
         distort_ui::show(self, &ctx);
         camera_raw_ui::show(self, &ctx);
@@ -1219,6 +1247,9 @@ mod move_auto_select_tests;
 
 #[cfg(test)]
 mod marquee_tests;
+
+#[cfg(test)]
+mod stamp_tests;
 
 #[cfg(test)]
 mod clipboard_tests {

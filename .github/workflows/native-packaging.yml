@@ -9,6 +9,10 @@ permissions:
 concurrency:
   group: native-packaging-${{ github.ref }}
   cancel-in-progress: true
+env:
+  CRAFT_FONTS_REF: abb83316d96aa59c1cf64784289e378fe9fa5695
+  CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+  CRAFT_FONTS_REQUIRED: "1"
 jobs:
   macos:
     name: Mac ${{ matrix.arch }} packages
@@ -22,6 +26,12 @@ jobs:
           - { arch: x86_64, target: x86_64-apple-darwin }
     steps:
       - uses: actions/checkout@v4
+      - name: Check out pinned release fonts
+        uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -47,6 +57,12 @@ jobs:
         arch: [x64, x86]
     steps:
       - uses: actions/checkout@v4
+      - name: Check out pinned release fonts
+        uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc, i686-pc-windows-msvc
@@ -97,6 +113,12 @@ jobs:
           - { arch: aarch64, runner: ubuntu-22.04-arm }
     steps:
       - uses: actions/checkout@v4
+      - name: Check out pinned release fonts
+        uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
       - uses: dtolnay/rust-toolchain@stable
       - name: Install dependencies
         run: |

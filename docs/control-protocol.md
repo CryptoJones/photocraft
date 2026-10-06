@@ -42,7 +42,7 @@ The transport is `apps/photocraft/src/control_server.rs`, and the handlers are i
   - Edit › Fill… (`ui.menu.invoke {id: "edit.fill"}`, Shift+F5, Shift+Backspace) opens the Fill dialog; its fields are `edit.fill`'s params (`contents`, `color`, `pattern`, `colorAdaptation`, `mode`, `opacity`, `preserveTransparency`), and OK remembers them in the preferences (`dialogs["edit.fill"]`).
   - A pixel tool pressed on a type, shape, Smart Object or fill layer (e.g. through `ui.pointer`) opens the "Rasterize?" prompt instead of painting: a dialog with `__rasterize` (`type|shape|smartObject|fill`), `message`, `layer`, `tool` and `at`. `ui.dialog.confirm` runs the `layer.rasterize.*` command and then paints at `at` (two history states, `{"rasterized", "painted"}`); `ui.dialog.cancel` does nothing.
 - `ui.window.open {document?}` / `ui.window.close {window}`: extra document windows
-- `ui.pointer {events: [{kind: down|move|up, x, y, pressure?, tiltX?, tiltY?, rotation?}], modifiers?}`: drive the active tool in document coordinates (pressure 0..1, tilt in degrees -90..90, barrel rotation 0..360: a simulated pen); `space: true` holds Space (the Crop frame, marquee, lasso or shape being drawn then moves instead of growing)
+- `ui.pointer {events: [{kind: down|move|up, x, y, pressure?, tiltX?, tiltY?, rotation?}], modifiers?}`: drive the active tool in document coordinates (pressure 0..1, tilt in degrees -90..90, barrel rotation 0..360: a simulated pen); `space: true` holds Space (the Crop frame, marquee, lasso or shape being drawn then moves instead of growing); `button: "right"` with the Move tool (or `command: true` with any tool) opens the canvas layer menu at that point instead (`layerMenu` in `ui.inspect` lists the layers there, topmost first; select one with `layer.select`)
 - `ui.key {key, command?, shift?, alt?, ctrl?}` (flags may also be grouped under `modifiers`): press and release a key, e.g. `{"key": "ArrowLeft", "shift": true}`
 - `ui.type {text}`: type text (goes to the focused widget, or to the canvas while the Type tool is editing)
 - `ui.resize {width, height}`: resize the main window
@@ -73,6 +73,10 @@ The transport is `apps/photocraft/src/control_server.rs`, and the handlers are i
 | `document.pixel` | `{"x":10,"y":10}`: composite RGBA |
 
 UI-level commands (`file.open`, `file.save`, `view.zoomIn`, `window.theme.pro`, `edit.search`, …) are also accepted by `engine.execute` and `ui.menu.invoke`.
+
+### Background jobs (#210)
+
+Long commands (every `filter.*`, `edit.contentAwareFill`, `edit.contentAwareScale`, `file.automate.photomerge`, `brush.presets.importAbr`) and file opens run as background jobs in the desktop app: the window keeps drawing, the status bar shows progress with a Cancel button, and jobs that lock the active document show a modal progress dialog (Esc cancels). `engine.execute` still waits for the result by default; pass `"wait": false` to get `{job, pending: true}` at once, then poll `jobs.list` (`state`: running, done, failed, cancelled; `progress` 0–1; the result or error) and stop it with `jobs.cancel {job}`. A cancelled or failed job leaves the document unchanged. While a job runs, commands that would edit its document fail with "… is still running on this document". `ui.inspect` reports `jobs` (running jobs, opening files). Set `PHOTOCRAFT_INLINE_JOBS=1` to run everything inline.
 
 ## Preferences
 
@@ -143,7 +147,8 @@ How each MCP tool maps onto control methods in bridge mode:
 
 | MCP tool | Control method |
 |---|---|
-| `command_run {id, params}` | `engine.execute {command: id, params}` |
+| `command_run {id, params, wait?}` | `engine.execute {command: id, params, wait}` |
+| `jobs_list` / `jobs_cancel {job?}` | `jobs.list` / `jobs.cancel {job?}` |
 | `command_list {filter?, enabled_only?}` | `engine.commands` (filtered by the MCP server) |
 | `doc_new {…}` | `engine.execute {command: "file.new", params}` |
 | `doc_inspect` | `engine.execute {command: "document.inspect"}` |
@@ -189,7 +194,8 @@ no MCP framing, no app start-up per command. Configure its file access with the 
 
 | Method | Params |
 |---|---|
-| `engine.execute` | `{command, params?}`: any engine command |
+| `engine.execute` | `{command, params?, wait?}`: any engine command (`wait: false` starts a long one as a background job: `{job, pending}`) |
+| `jobs.list` / `jobs.cancel` | `{}` / `{job?}`: background jobs (applying finished ones); cancel one or all |
 | `engine.commands` | `{filter?}`: registry with params docs and enablement |
 | `session.list` | open documents and the active index |
 | `doc.open` / `doc.new` | `{path}` / `file.new` params |

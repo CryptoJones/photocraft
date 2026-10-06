@@ -962,6 +962,7 @@ fn build() -> Vec<CommandSpec> {
     v.extend(crate::prefs::specs());
     v.extend(crate::edit_menu_cmds::specs());
     v.extend(crate::fill_key_cmds::specs());
+    v.extend(crate::stamp_cmds::specs());
     v.extend(crate::align_cmds::specs());
     v.extend(crate::photo_cmds::specs());
     v.extend(crate::lens_cmds::specs());
@@ -991,6 +992,7 @@ fn build() -> Vec<CommandSpec> {
     v.extend(crate::trap_cmds::specs());
     v.extend(crate::timeline_cmds::specs());
     v.extend(crate::video_cmds::specs());
+    v.extend(crate::jobs::specs());
     v.extend(crate::wia_cmds::specs());
     v.extend(crate::variables_cmds::specs());
     v.extend(crate::plugin_cmds::specs());
