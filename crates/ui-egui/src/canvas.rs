@@ -1516,6 +1516,8 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
                     };
                     match cur.painting {
                         PaintingCursor::Standard => egui::CursorIcon::Default,
+                        PaintingCursor::Precise if app.brush_cursor.native => egui::CursorIcon::Crosshair,
+                        _ if painting && cur.show_only_crosshair_while_painting && app.brush_cursor.native => egui::CursorIcon::Crosshair,
                         PaintingCursor::Precise => {
                             crosshair(6.0);
                             egui::CursorIcon::None
@@ -1536,6 +1538,14 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
                                 crosshair(4.0);
                             }
                             egui::CursorIcon::None
+                        }
+                        _ if app.brush_cursor.show(
+                            ui.ctx(),
+                            r,
+                            (cur.show_crosshair_in_brush_tip || r > 6.0 || tool == Tool::BackgroundEraser) && tool != Tool::QuickSelection,
+                        ) =>
+                        {
+                            egui::CursorIcon::Crosshair
                         }
                         _ => {
                             painter.circle_stroke(p, r + 0.5, Stroke::new(1.0, Color32::from_black_alpha(140)));
