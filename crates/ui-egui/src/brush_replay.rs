@@ -191,7 +191,12 @@ impl Recording {
     fn replay(&self, all_samples: bool) -> Result<PhotocraftApp, String> {
         self.validate()?;
         let mut app = PhotocraftApp::new(Session::new(), Services::default());
-        app.run("file.new", json!({"width": self.size[0], "height": self.size[1], "depth": self.depth, "background": if self.tool == Tool::Eraser { "white" } else { "transparent" }}))?;
+        app.run("file.new", json!({"width": self.size[0], "height": self.size[1], "depth": self.depth, "background": "transparent"}))?;
+        // A Photoshop Background layer erases to the background colour. Use an ordinary
+        // opaque layer here so eraser replays show their path as transparent holes.
+        if self.tool == Tool::Eraser {
+            app.run("edit.fill", json!({"contents": "white"}))?;
+        }
         app.sync_views();
         app.brush_input.all_samples = all_samples;
         let ctx = Context::default();
@@ -453,6 +458,22 @@ mod tests {
         let mut r = recording(8, 0.0);
         r.frames.pop();
         assert!(r.replay(true).is_err());
+    }
+
+    #[test]
+    fn pencil_and_eraser_replays_show_the_sampling_difference() {
+        for tool in [Tool::Pencil, Tool::Eraser] {
+            let mut r = recording(8, 0.0);
+            r.tool = tool;
+            let old = r.replay(false).unwrap();
+            let new = r.replay(true).unwrap();
+            let pixels = |app: &PhotocraftApp| photocraft_compose::flatten(&app.session.active().unwrap().doc).to_rgba8().pixels;
+            assert_ne!(pixels(&old), pixels(&new), "{tool:?}");
+            if tool == Tool::Eraser {
+                assert!(pixels(&new).chunks_exact(4).any(|p| p[3] == 0), "erasure is visible");
+                assert!(pixels(&new).chunks_exact(4).any(|p| p[3] == 255), "the rest remains opaque");
+            }
+        }
     }
 
     #[test]
