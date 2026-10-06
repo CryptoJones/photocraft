@@ -185,6 +185,8 @@ pub struct Services {
     pub export: Option<ExportFn>,
     /// Show an "open file" dialog; returns (name, bytes).
     pub pick_open: Option<PickOpenFn>,
+    /// Open a saved brush input recording (JSON), with its own file filter.
+    pub pick_brush_recording: Option<PickOpenFn>,
     /// Show a "save file" dialog; returns a path/name to write.
     pub pick_save: Option<PickSaveFn>,
     /// Write bytes to a path (native) or trigger a download (web).
@@ -881,6 +883,9 @@ impl eframe::App for PhotocraftApp {
         wide_angle_ui::show(self, &ctx);
         canvas::extra_windows(self, &ctx);
         notices::show(self, &ctx);
+        if self.brush_lab.open {
+            brush_replay::show(self, &ctx);
+        }
         // A device lost while drawing this frame: switch to the CPU canvas before the next one.
         gpu_status::check(self, &ctx);
         self.automation_input = false;

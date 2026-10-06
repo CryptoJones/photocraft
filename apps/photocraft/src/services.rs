@@ -99,6 +99,11 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
             let bytes = std::fs::read(&path).ok()?;
             Some((path.to_string_lossy().to_string(), bytes))
         })),
+        pick_brush_recording: Some(Box::new(|| {
+            let path = rfd::FileDialog::new().add_filter("Brush recording", &["json"]).pick_file()?;
+            let bytes = std::fs::read(&path).ok()?;
+            Some((path.to_string_lossy().to_string(), bytes))
+        })),
         pick_save: Some(Box::new(|suggested: &str| {
             let p = std::path::Path::new(suggested);
             let mut d = rfd::FileDialog::new();

@@ -19,9 +19,15 @@ pub struct Recording {
     brush: BrushSettings,
     foreground: [f32; 4],
     background: [f32; 4],
+    #[serde(default = "pressure_enabled")]
+    use_pressure: bool,
     right_erase: bool,
     auto_erase: bool,
     frames: Vec<Frame>,
+}
+
+fn pressure_enabled() -> bool {
+    true
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -68,6 +74,7 @@ impl Lab {
             brush: app.session.tools.brush.clone(),
             foreground: app.session.tools.foreground,
             background: app.session.tools.background,
+            use_pressure: app.stylus.use_pressure,
             right_erase: crate::paint_mouse::right_erases(app, app.ui.tool),
             auto_erase: app.ui.tool_options.pencil_auto_erase,
             frames: Vec::new(),
@@ -83,7 +90,13 @@ impl Lab {
             return;
         }
         if app.brush_lab.recording.as_ref().is_none_or(|r| {
-            r.tool != tool || r.brush != app.session.tools.brush || r.foreground != app.session.tools.foreground || r.background != app.session.tools.background
+            r.tool != tool
+                || r.brush != app.session.tools.brush
+                || r.foreground != app.session.tools.foreground
+                || r.background != app.session.tools.background
+                || r.use_pressure != app.stylus.use_pressure
+                || r.right_erase != crate::paint_mouse::right_erases(app, tool)
+                || r.auto_erase != app.ui.tool_options.pencil_auto_erase
         }) || app.session.active().map(|s| s.doc.id) != app.brush_lab.source
         {
             app.brush_lab.capturing = false;
@@ -182,6 +195,7 @@ impl Recording {
         app.sync_views();
         app.brush_input.all_samples = all_samples;
         let ctx = Context::default();
+        app.stylus.use_pressure = self.use_pressure;
         app.ui.tool = self.tool;
         app.ui.smoothing_tool = Some(self.tool);
         app.session.tools.brush = self.brush.clone();
@@ -295,6 +309,75 @@ pub fn compare(app: &mut PhotocraftApp) -> Result<(), String> {
     Ok(())
 }
 
+pub fn show(app: &mut PhotocraftApp, ctx: &Context) {
+    let mut open = app.brush_lab.open;
+    let mut action = None;
+    egui::Window::new("Brush Input Lab").open(&mut open).show(ctx, |ui| {
+        ui.add_enabled_ui(app.drag.is_none() && !app.brush_lab.capturing, |ui| {
+            ui.checkbox(&mut app.brush_input.all_samples, "Use all motion samples");
+            ui.checkbox(&mut app.brush_cursor.native, "Native brush cursor");
+        });
+        ui.label("Replay uses blank RGB canvases and the original frame batches.");
+        ui.horizontal(|ui| {
+            if ui.button(if app.brush_lab.capturing { "Stop recording" } else { "Record new scribble" }).clicked() {
+                action = Some("record");
+            }
+            if ui.button("Compare old / new · CPU / GPU").clicked() {
+                action = Some("compare");
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Save recording…").clicked() {
+                action = Some("save");
+            }
+            if ui.button("Load recording…").clicked() {
+                action = Some("load");
+            }
+        });
+        if let Some(r) = &app.brush_lab.recording {
+            ui.label(format!("{} input batches", r.frames.len()));
+        }
+    });
+    app.brush_lab.open = open;
+    let result = match action {
+        Some("record") if app.brush_lab.capturing => {
+            app.brush_lab.capturing = false;
+            Ok(())
+        }
+        Some("record") => Lab::start(app),
+        Some("compare") => compare(app),
+        Some("save") => save(app),
+        Some("load") => load(app),
+        _ => Ok(()),
+    };
+    if let Err(e) = result {
+        app.ui.status = e;
+        app.ui.status_error = true;
+    }
+}
+
+fn save(app: &mut PhotocraftApp) -> Result<(), String> {
+    if app.brush_lab.capturing || app.drag.is_some() {
+        return Err("Finish the stroke and stop recording first".into());
+    }
+    let record = app.brush_lab.recording.as_ref().ok_or("Record a scribble first")?;
+    let bytes = serde_json::to_vec(record).map_err(|e| e.to_string())?;
+    if let Some(path) = app.services.pick_save.as_mut().and_then(|p| p("scribble.brush-replay.json")) {
+        app.services.write.as_mut().ok_or("No file writer")?(&path, &bytes)?;
+    }
+    Ok(())
+}
+
+fn load(app: &mut PhotocraftApp) -> Result<(), String> {
+    if app.brush_lab.capturing || app.drag.is_some() {
+        return Err("Stop recording and finish the stroke first".into());
+    }
+    if let Some((_, bytes)) = app.services.pick_brush_recording.as_mut().ok_or("Recording file picker unavailable; use ui.brushReplay.load")?() {
+        app.brush_lab.recording = Some(Recording::load(&bytes)?);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,6 +404,7 @@ mod tests {
             brush,
             foreground: [0.0, 0.0, 0.0, 1.0],
             background: [1.0; 4],
+            use_pressure: true,
             right_erase: false,
             auto_erase: false,
             frames: events
@@ -389,5 +473,60 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn native_file_picker_round_trips_recording_and_bad_load_preserves_it() {
+        let bytes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let output = bytes.clone();
+        let mut app = PhotocraftApp::new(
+            Session::new(),
+            Services {
+                pick_save: Some(Box::new(|name| Some(name.into()))),
+                write: Some(Box::new(move |_, value| {
+                    *output.lock().unwrap() = value.to_vec();
+                    Ok(())
+                })),
+                ..Default::default()
+            },
+        );
+        app.brush_lab.recording = Some(recording(8, 0.0));
+        save(&mut app).unwrap();
+        let input = bytes.clone();
+        app.services.pick_brush_recording = Some(Box::new(move || Some(("scribble.brush-replay.json".into(), input.lock().unwrap().clone()))));
+        app.brush_lab.recording = None;
+        load(&mut app).unwrap();
+        assert_eq!(app.brush_lab.recording.as_ref().unwrap().frames.len(), 4);
+        *bytes.lock().unwrap() = b"not JSON".to_vec();
+        assert!(load(&mut app).is_err());
+        assert_eq!(app.brush_lab.recording.as_ref().unwrap().frames.len(), 4);
+    }
+
+    #[test]
+    fn actual_canvas_records_batches_and_replays_saved_scribble() {
+        use egui_kittest::Harness;
+        let mut app = PhotocraftApp::new(Session::new(), Services::default());
+        app.run("file.new", json!({"width": 256, "height": 256})).unwrap();
+        app.ui.tool = Tool::Brush;
+        let mut h = Harness::builder().with_size(vec2(1000.0, 800.0)).build_eframe(|_| app);
+        h.run_steps(3);
+        Lab::start(h.state_mut()).unwrap();
+        let c = h.state().last_canvas_rect.center();
+        let button = |pos, pressed| Event::PointerButton { pos, pressed, button: PointerButton::Primary, modifiers: Modifiers::NONE };
+        for events in [
+            vec![Event::PointerMoved(c)],
+            vec![button(c, true)],
+            vec![Event::PointerMoved(c + vec2(30.0, 40.0)), Event::PointerMoved(c + vec2(60.0, -40.0))],
+            vec![button(c + vec2(60.0, -40.0), false)],
+        ] {
+            h.input_mut().events.extend(events);
+            h.step();
+        }
+        h.state_mut().brush_lab.capturing = false;
+        let record = h.state().brush_lab.recording.as_ref().unwrap();
+        assert_eq!(record.frames.len(), 4);
+        let replay = record.replay(true).unwrap();
+        let points = |app: &PhotocraftApp| app.session.journal.iter().find(|(id, _)| id == "paint.stroke").unwrap().1["points"].clone();
+        assert_eq!(points(h.state()), points(&replay));
     }
 }
