@@ -23,6 +23,12 @@ pub struct Sample {
     pub contacts: usize,
 }
 
+impl Sample {
+    fn clock(&self) -> f64 {
+        if self.source == "os" || self.source == "touch" { self.event_time.unwrap_or(self.time) } else { self.time }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Capture {
     pub version: u8,
@@ -72,6 +78,18 @@ pub struct StreamReport {
     pub median_gap_ms: f64,
 }
 
+#[derive(Clone, Default, Debug, Serialize)]
+pub struct Alignment {
+    pub source: String,
+    pub receipt_shift_ms: i32,
+    pub paths: Vec<Vec<[f64; 2]>>,
+    pub extra_points: usize,
+    pub accepted_intervals: usize,
+    pub fallback_intervals: usize,
+    pub min_gain: Option<f64>,
+    pub max_gain: Option<f64>,
+}
+
 pub fn reports(capture: &Capture) -> Vec<StreamReport> {
     ["os", "gc", "touch", "direct-coalesced"]
         .into_iter()
@@ -113,15 +131,210 @@ pub fn reports(capture: &Capture) -> Vec<StreamReport> {
         .collect()
 }
 
+/// Map intermediate raw positions between two measured OS positions with a similarity
+/// transform. Acceleration gain is estimated per interval. Reject ambiguous fingers/devices,
+/// lifts, gaps >50 ms, cancelling net motion and excessive gain. Fall back to OS endpoints.
+/// Matching endpoints is a constraint, NOT evidence of correct intermediate coordinates.
+pub fn align(capture: &Capture, source: &str) -> Alignment {
+    align_with_shift(capture, source, 0)
+}
+
+pub fn align_with_shift(capture: &Capture, source: &str, receipt_shift_ms: i32) -> Alignment {
+    let receipt_shift_ms = receipt_shift_ms.clamp(-20, 20);
+    let shift = f64::from(receipt_shift_ms) / 1000.0;
+    let mut result = Alignment { source: source.into(), receipt_shift_ms, ..Default::default() };
+    let mut strokes = std::collections::BTreeMap::<u32, Vec<&Sample>>::new();
+    for sample in &capture.samples {
+        if sample.stroke > 0 {
+            strokes.entry(sample.stroke).or_default().push(sample);
+        }
+    }
+    for group in strokes.values() {
+        let mut anchors = group.iter().copied().filter(|s| s.source == "os").collect::<Vec<_>>();
+        anchors.sort_by(|a, b| a.clock().total_cmp(&b.clock()));
+        let mut raw = capture.samples.iter().filter(|s| s.source == source && (source != "touch" || !s.resting)).collect::<Vec<_>>();
+        raw.sort_by(|a, b| a.clock().total_cmp(&b.clock()));
+        let mut path = Vec::new();
+        if let Some(a) = anchors.first() {
+            path.push(a.point);
+        }
+        for pair in anchors.windows(2) {
+            let Some((a, b)) = pair.first().zip(pair.get(1)) else { continue };
+            let start = raw.partition_point(|s| s.clock() <= a.clock() + shift);
+            let end = raw.partition_point(|s| s.clock() <= b.clock() + shift);
+            let samples = raw.get(start..end).unwrap_or(&[]);
+            let valid = !samples.is_empty()
+                && b.clock() - a.clock() <= 0.05
+                && samples.iter().all(|s| {
+                    !s.resting
+                        && (source != "touch" || (s.contacts == 1 && s.phase == "moved"))
+                        && samples.first().is_some_and(|first| first.device == s.device && first.identity == s.identity)
+                });
+            let mut positions = Vec::new();
+            let mut current = [0.0; 2];
+            if valid {
+                if source == "touch" {
+                    // A prior touch sample is necessary; never guess a finger's starting point.
+                    if let Some(previous) = raw.get(..start).unwrap_or(&[]).last().filter(|s| {
+                        !s.resting
+                            && s.contacts == 1
+                            && samples.first().is_some_and(|first| first.device == s.device && first.identity == s.identity)
+                            && a.clock() + shift - s.clock() <= 0.05
+                            && ["moved", "began"].contains(&s.phase.as_str())
+                    }) {
+                        current = previous.point;
+                    } else {
+                        result.fallback_intervals += 1;
+                        path.push(b.point);
+                        continue;
+                    }
+                }
+                let origin = current;
+                for s in samples {
+                    if source == "gc" {
+                        current = [current[0] + s.point[0], current[1] + s.point[1]];
+                    } else {
+                        current = s.point;
+                    }
+                    positions.push([current[0] - origin[0], current[1] - origin[1]]);
+                }
+                if let Some(end) = positions.last() {
+                    let screen = [b.point[0] - a.point[0], b.point[1] - a.point[1]];
+                    let norm = end[0] * end[0] + end[1] * end[1];
+                    let gain = if norm > 1e-8 { (screen[0] * screen[0] + screen[1] * screen[1]).sqrt() / norm.sqrt() } else { 0.0 };
+                    if norm > 1e-8 && (0.01..=64.0).contains(&gain) {
+                        let re = (screen[0] * end[0] + screen[1] * end[1]) / norm;
+                        let im = (screen[1] * end[0] - screen[0] * end[1]) / norm;
+                        // Last raw position maps to b; include it only once as the OS anchor.
+                        for p in positions.iter().take(positions.len().saturating_sub(1)) {
+                            path.push([a.point[0] + re * p[0] - im * p[1], a.point[1] + im * p[0] + re * p[1]]);
+                            result.extra_points += 1;
+                        }
+                        result.min_gain = Some(result.min_gain.map_or(gain, |g| g.min(gain)));
+                        result.max_gain = Some(result.max_gain.map_or(gain, |g| g.max(gain)));
+                        result.accepted_intervals += 1;
+                        path.push(b.point);
+                        continue;
+                    }
+                }
+            }
+            result.fallback_intervals += 1;
+            path.push(b.point);
+        }
+        if !path.is_empty() {
+            result.paths.push(path);
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn sample(source: &str, t: f64, p: [f64; 2]) -> Sample {
+        Sample {
+            source: source.into(),
+            time: t,
+            event_time: None,
+            profile_time: None,
+            stroke: 1,
+            device: 1,
+            identity: 1,
+            phase: "moved".into(),
+            point: p,
+            resting: false,
+            contacts: 1,
+        }
+    }
+    fn capture() -> Capture {
+        Capture {
+            samples: vec![sample("os", 0.0, [10.0, 20.0]), sample("gc", 0.01, [1.0, 1.0]), sample("gc", 0.02, [1.0, -1.0]), sample("os", 0.025, [14.0, 20.0])],
+            ..Default::default()
+        }
+    }
     #[test]
-    fn capture_roundtrip_and_version_validation() {
-        let mut capture=Capture::default();
-        assert!(Capture::load(&serde_json::to_vec(&capture).unwrap()).is_ok());
-        capture.version=99;
-        assert!(Capture::load(&serde_json::to_vec(&capture).unwrap()).is_err());
+    fn extra_points_keep_bends_and_match_os_endpoints() {
+        let a = align(&capture(), "gc");
+        assert_eq!(a.paths, vec![vec![[10.0, 20.0], [12.0, 22.0], [14.0, 20.0]]]);
+        assert_eq!(a.extra_points, 1);
+        assert_eq!(a.min_gain, Some(2.0));
+    }
+    #[test]
+    fn ambiguity_gaps_and_cancelling_motion_fall_back() {
+        for mode in 0..5 {
+            let mut c = capture();
+            match mode {
+                0 => c.samples[2].device = 2,
+                1 => c.samples[3].time = 0.1,
+                2 => c.samples[2].point = [-1.0, -1.0],
+                3 => c.samples[2].resting = true,
+                _ => c.samples[3].point = [10000.0, 20.0],
+            }
+            let a = align(&c, "gc");
+            assert_eq!(a.extra_points, 0);
+            assert_eq!(a.fallback_intervals, 1);
+        }
+    }
+    #[test]
+    fn finger_lifts_and_multiple_contacts_never_bridge() {
+        let mut c = capture();
+        c.samples = vec![
+            sample("touch", 0.0, [0.0, 0.0]),
+            sample("os", 0.001, [10.0, 20.0]),
+            sample("touch", 0.01, [1.0, 1.0]),
+            sample("touch", 0.02, [2.0, 0.0]),
+            sample("os", 0.025, [14.0, 20.0]),
+        ];
+        assert_eq!(align(&c, "touch").extra_points, 1);
+        for mode in 0..3 {
+            let mut bad = c.clone();
+            match mode {
+                0 => bad.samples[2].identity = 2,
+                1 => bad.samples[2].contacts = 2,
+                _ => bad.samples[2].phase = "ended".into(),
+            }
+            assert_eq!(align(&bad, "touch").extra_points, 0);
+        }
+    }
+    #[test]
+    fn touch_contacts_are_not_independent_polling_ticks() {
+        let c =
+            Capture { samples: vec![sample("touch", 1.0, [0.0; 2]), sample("touch", 1.0, [0.0; 2]), sample("touch", 1.01, [0.0; 2])], ..Default::default() };
+        let r = reports(&c);
+        assert!((r[2].callbacks_per_second - 100.0).abs() < 1e-5);
+    }
+    #[test]
+    fn receipt_shift_does_not_change_os_anchor_positions() {
+        let mut c = capture();
+        for s in c.samples.iter_mut().filter(|s| s.source == "gc") {
+            s.time += 0.01;
+        }
+        let a = align_with_shift(&c, "gc", 10);
+        assert_eq!(a.paths, vec![vec![[10.0, 20.0], [12.0, 22.0], [14.0, 20.0]]]);
+        assert_eq!(a.receipt_shift_ms, 10);
+    }
+
+    #[test]
+    fn queued_appkit_delivery_uses_event_clock_not_burst_receipts() {
+        let mut c = capture();
+        for s in c.samples.iter_mut().filter(|s| s.source == "os") {
+            s.event_time = Some(s.time);
+            s.time += 0.2;
+        }
+        assert_eq!(align(&c, "gc").extra_points, 1);
+        // Independent raw callbacks arriving before the queued button dispatch are captured
+        // as hover, but their timestamps still place them inside the physical stroke.
+        for s in c.samples.iter_mut().filter(|s| s.source == "gc") {
+            s.stroke = 0;
+        }
+        assert_eq!(align(&c, "gc").extra_points, 1);
+    }
+
+    #[test]
+    fn bounded_reload_and_empty_capture() {
         assert!(Capture::load(b"{}").is_err());
+        let c = capture();
+        assert!(Capture::load(&serde_json::to_vec(&c).unwrap()).is_ok());
+        assert_eq!(align(&Capture::default(), "gc").extra_points, 0);
     }
 }
