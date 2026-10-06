@@ -21,17 +21,23 @@ fn main() {
     println!("cargo::rerun-if-env-changed=CRAFT_FONTS_DIR");
     println!("cargo::rerun-if-env-changed=CRAFT_FONTS_REQUIRED");
     let wasm = std::env::var("CARGO_CFG_TARGET_ARCH").is_ok_and(|a| a == "wasm32");
-    let mut src = String::from("pub static CRAFT_FONTS: &[CraftFont] = &[\n");
+    let mut entries = String::new();
+    let mut font_count = 0;
     if let Some(dir) = std::env::var_os("CRAFT_FONTS_DIR").filter(|d| !d.is_empty() && !wasm).map(PathBuf::from) {
         match craft_fonts(&dir) {
-            Ok(entries) => src.push_str(&entries),
+            Ok((data, count)) => {
+                entries = data;
+                font_count = count;
+            }
             Err(e) if std::env::var_os("CRAFT_FONTS_REQUIRED").is_some() => {
                 println!("cargo::error=CRAFT_FONTS_DIR={}: {e}", dir.display());
             }
             Err(e) => println!("cargo::warning=building without craft-fonts: CRAFT_FONTS_DIR={}: {e}", dir.display()),
         }
     }
-    src.push_str("];\n");
+    // OnceLock has interior mutability, so reference a named static rather than
+    // borrowing an array temporary (Rust correctly rejects that promotion).
+    let src = format!("static CRAFT_FONT_STORAGE: [CraftFont; {font_count}] = [\n{entries}];\npub static CRAFT_FONTS: &[CraftFont] = &CRAFT_FONT_STORAGE;\n");
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap_or_default()).join("craft_fonts.rs");
     if let Err(e) = std::fs::write(&out, src) {
         println!("cargo::error=writing {}: {e}", out.display());
@@ -39,12 +45,14 @@ fn main() {
 }
 
 /// One `CraftFont { .. }` initialiser per manifest line.
-fn craft_fonts(dir: &std::path::Path) -> Result<String, String> {
+fn craft_fonts(dir: &std::path::Path) -> Result<(String, usize), String> {
     let manifest = dir.join("fonts/manifest.txt");
     println!("cargo::rerun-if-changed={}", manifest.display());
     let text = std::fs::read_to_string(&manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
     let mut out = String::new();
+    let mut count = 0;
     for (index, line) in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).enumerate() {
+        count = index.saturating_add(1);
         let f: Vec<&str> = line.split(" | ").map(str::trim).collect();
         let [family, style, file, scripts, ..] = f.as_slice() else {
             return Err(format!("malformed manifest line: {line}"));
@@ -85,5 +93,5 @@ fn craft_fonts(dir: &std::path::Path) -> Result<String, String> {
             path.display().to_string(),
         );
     }
-    Ok(out)
+    Ok((out, count))
 }
