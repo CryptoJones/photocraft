@@ -9,7 +9,14 @@ description = "Pen tablet pressure, tilt, rotation and eraser end on macOS (AppK
 # monitor needs Objective-C interop. Only `src/macos.rs` allows `unsafe`; everything else is
 # denied, and every other crate keeps the workspace's `unsafe_code = "forbid"`.
 [features]
-input-probe = ["dep:serde", "dep:serde_json"]
+input-probe = [
+    "dep:serde", "dep:serde_json", "dep:objc2-game-controller", "dep:dispatch2",
+    "objc2-foundation/NSProcessInfo", "objc2-foundation/NSEnumerator", "objc2-app-kit/NSApplication", "objc2-app-kit/NSResponder",
+    "objc2-app-kit/NSView", "objc2-app-kit/NSWindow", "objc2-app-kit/NSTouch",
+    "objc2-app-kit/NSBezierPath", "objc2-app-kit/NSColor", "objc2-app-kit/NSTextField",
+    "objc2-app-kit/NSControl", "objc2-app-kit/NSButton", "objc2-app-kit/NSGraphicsContext",
+    "objc2-app-kit/NSGraphics", "objc2-app-kit/NSRunningApplication", "objc2-app-kit/objc2-core-foundation",
+]
 
 [dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
@@ -30,6 +37,9 @@ block2 = "=0.6.2"
 objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSGeometry"] }
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "NSEvent"] }
 
+objc2-game-controller = { version = "=0.3.2", optional = true, default-features = false, features = ["std", "block2", "dispatch2", "GCDevice", "GCMouse", "GCMouseInput", "GCPhysicalInputProfile"] }
+dispatch2 = { version = "=0.3.1", optional = true }
+
 # Pure-Rust X11 client (no unsafe in the RustConnection path we use).
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "=0.13.2", default-features = false, features = ["xinput"] }
@@ -42,3 +52,7 @@ objc2-core-graphics = { version = "=0.3.2", default-features = false, features =
 [[test]]
 name = "monitor_macos"
 harness = false
+
+[[example]]
+name = "input_probe"
+required-features = ["input-probe"]
