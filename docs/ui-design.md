@@ -54,6 +54,13 @@ missing-glyph boxes. Check every new panel with the offscreen snapshot tool (`do
 
 Use `ui.click {x,y}`, `ui.move`, `ui.key` and `ui.type` (synthetic input in screen points) to open menus, popups and context menus, then `ui.screenshot`.
 
+## Preferences
+
+Preferences has **Apply**, **OK** and **Cancel**. Apply saves the edited sections and keeps the
+dialog open; it is disabled when the values match the saved preferences. OK saves and closes.
+Cancel discards only changes made since the last successful Apply. A failed Apply leaves the
+draft open for correction. Settings marked for the next launch still require a restart.
+
 ## High DPI and 4K displays
 
 Edit → Preferences → Interface → UI Scale applies immediately. Auto follows the operating
@@ -71,6 +78,18 @@ to display text at render time from one catalog per language (`i18n/<code>.tsv`;
 documented in the header of `ja.tsv`). Command ids, menu paths used for logic, the control channel,
 the CLI and MCP always use the English ids and labels.
 
+Languages shipped (`complete_menus` marks a catalog that covers every menu string and `tl!` literal;
+the tests enforce it):
+
+- English (`en`), the source language.
+- Japanese (`ja`), complete.
+- Simplified Chinese (`zh-hans`; see [`localization-zh-hans.md`](localization-zh-hans.md)), partial.
+- Traditional Chinese (`zh-hant`), complete, in the vocabulary used in Taiwan; `zh-TW`, `zh-HK`,
+  `zh-MO` and `zh-Hant-*` locales all resolve to it. The resolver distinguishes the two Chinese
+  scripts, so neither catalog is shown to the other script's locales.
+- Spanish (`es`), complete.
+- Russian (`ru`), complete, with three plural forms (`one|few|many`, see `plural_russian`).
+
 - `tr(lang, s)` plain strings; `tr_ctx` when one English word needs different translations;
   `tr_id(lang, command_id, label)` for menu items (keyed by command id, English label as the
   fallback); `trn(lang, n, one, other)` for plurals; `fmt` fills `{name}` placeholders, which
@@ -80,7 +99,8 @@ the CLI and MCP always use the English ids and labels.
 - To add a language: add `<code>.tsv` and one row in `i18n::LANGUAGES` (code, native name, catalog,
   plural rule). The dropdown, locale matching and the catalog tests (well-formed, no duplicates,
   placeholders and ellipses agree, command ids exist) pick it up. Set `complete_menus` once every
-  menu string is translated; a test then enforces it.
+  menu string is translated; a test then enforces it. A language with more plural forms lists them
+  all in `@plural` entries (Russian: `one|few|many`); the row's plural rule picks the form.
 - Translations are clean-room: written from the meaning of the English text in ordinary vocabulary,
   never from another product's localisation resources.
 
@@ -91,4 +111,5 @@ preference label has no entry in a language marked `complete_menus`. Not transla
 messages and errors (they stay English, also for agents), names that are user data (layers, styles,
 documents), strings assembled with `format!` that were not converted to `fmt`/`trn`. Not done yet:
 per-language font fallback (the CJK fallback prefers Japanese forms), right-to-left layout,
-locale-aware number and date formats, automatic language detection on Windows and the web build.
+locale-aware number and date formats, automatic language detection on the web build (native
+builds read `LANG`/`LC_*`, the macOS preferred languages and the Windows user locale).

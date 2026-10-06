@@ -5,7 +5,7 @@
 //!
 //! The values live in the engine ([`photocraft_engine::prefs::Preferences`], so agents read and
 //! change them with `prefs.get` / `prefs.set`); this module only edits a working copy in a dialog
-//! and commits it with those commands on OK.
+//! and commits it with those commands on Apply or OK.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -485,6 +485,37 @@ pub fn owns(fields: &Map<String, Value>) -> bool {
     fields.contains_key("__prefsui")
 }
 
+/// Only Preferences supports applying changes without closing the dialog.
+pub fn is_preferences(fields: &Map<String, Value>) -> bool {
+    fields.get("__prefsui").and_then(Value::as_str) == Some("prefs")
+}
+
+fn preference_values(p: &prefs::Preferences) -> Map<String, Value> {
+    let values = p.to_json();
+    SECTIONS.iter().filter_map(|(id, _)| Some((id.to_string(), values.get(id)?.clone()))).collect()
+}
+
+/// Compare the editable sections, excluding settings managed outside Preferences.
+pub fn preferences_changed(app: &PhotocraftApp, fields: &Map<String, Value>) -> bool {
+    is_preferences(fields) && fields.get("values").and_then(Value::as_object).is_some_and(|values| *values != preference_values(app.session.prefs()))
+}
+
+/// Commit the working copy and keep the current section open. Failure leaves the draft intact.
+pub fn apply(app: &mut PhotocraftApp, id: u64) -> Result<Value, String> {
+    let d = app.ui.dialogs.iter().find(|d| d.id == id).ok_or_else(|| format!("no dialog {id}"))?;
+    if d.kind != DialogKind::Command || !is_preferences(&d.fields) {
+        return Err("Apply is only available for Preferences".into());
+    }
+    let fields = d.fields.clone();
+    let result = confirm(app, &fields)?;
+    let values = Value::Object(preference_values(app.session.prefs()));
+    if let Some(d) = app.ui.dialog_mut(id) {
+        // Use the validated values as the next draft, including any normalisation by prefs.set.
+        d.fields.insert("values".into(), values);
+    }
+    Ok(result)
+}
+
 /// Max dialog width for our dialogs.
 pub fn width(fields: &Map<String, Value>) -> Option<f32> {
     match fields.get("__prefsui").and_then(Value::as_str)? {
@@ -497,8 +528,7 @@ pub fn width(fields: &Map<String, Value>) -> Option<f32> {
 /// Open Edit › Preferences on `section`.
 pub fn open_preferences(app: &mut PhotocraftApp, section: &str) -> u64 {
     let section = if SECTIONS.iter().any(|(id, _)| *id == section) { section } else { "general" };
-    let values = app.session.prefs().to_json();
-    let working: Map<String, Value> = SECTIONS.iter().filter_map(|(id, _)| Some((id.to_string(), values.get(id)?.clone()))).collect();
+    let working = preference_values(app.session.prefs());
     let order = field_order(app.session.prefs(), &working);
     let gpu = app.perf.gpu_info.lines();
     open_kind(app, "prefs", "Preferences", json!({"section": section, "values": working, "__order": order, "__gpuInfo": gpu}))
@@ -635,19 +665,21 @@ fn prefs_body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                 } else if resp.hovered() {
                     ui.painter().rect_filled(rect, t.radius_sm, t.hover);
                 }
-                ui.painter().text(
-                    rect.left_center() + vec2(8.0, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    tl!(title),
-                    crate::theme::medium(12.5),
-                    if sel {
-                        t.text
-                    } else if empty {
-                        t.text_faint
-                    } else {
-                        t.text_dim
-                    },
-                );
+                let color = if sel {
+                    t.text
+                } else if empty {
+                    t.text_faint
+                } else {
+                    t.text_dim
+                };
+                // Translated section names can be longer than the column: elide them (the full
+                // name is the tooltip) instead of drawing over the settings.
+                let mut job = egui::text::LayoutJob::simple_singleline(tl!(title).to_string(), crate::theme::medium(12.5), color);
+                job.wrap = egui::text::TextWrapping::truncate_at_width(rect.width() - 12.0);
+                let galley = ui.painter().layout_job(job);
+                let elided = galley.elided;
+                ui.painter().galley(rect.left_center() + vec2(8.0, -galley.size().y / 2.0), galley, color);
+                let resp = if elided { resp.on_hover_text(tl!(title)) } else { resp };
                 if resp.clicked() {
                     section = id.to_string();
                 }
@@ -985,7 +1017,7 @@ fn toolbar_tab(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
             for tool in crate::state::Tool::ALL {
                 let name = format!("{tool:?}");
                 let mut on = !hidden.contains(&name);
-                crate::widgets::checkbox(ui, &mut on, tool.label());
+                crate::widgets::checkbox(ui, &mut on, tl!(tool.label()));
                 if on {
                     hidden.retain(|h| *h != name);
                 } else if !hidden.contains(&name) {
@@ -1161,27 +1193,29 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    /// Every generated preference label, section title and choice label has a Japanese entry.
+    /// Every generated preference label, section title and choice label has an entry in each
+    /// language that claims complete menus (Japanese, Traditional Chinese, ...).
     #[test]
     fn preference_labels_are_translated() {
-        let ja = crate::i18n::Lang::from_code("ja").expect("ja");
         let session = photocraft_engine::Session::new();
         let v: Value = serde_json::from_str(&session.prefs_to_json()).expect("prefs json");
-        let mut missing = Vec::new();
-        for (sec, title) in SECTIONS {
-            if !crate::i18n::has(ja, title) {
-                missing.push(title.to_string());
+        for lang in crate::i18n::Lang::all().filter(|l| l.complete_menus()) {
+            let mut missing = Vec::new();
+            for (sec, title) in SECTIONS {
+                if !crate::i18n::has(lang, title) {
+                    missing.push(title.to_string());
+                }
+                let Some(obj) = v.get(sec).and_then(Value::as_object) else { continue };
+                for k in obj.keys() {
+                    let mut labels = vec![humanize(k)];
+                    labels.extend(prefs::choices(&format!("{sec}.{k}")).into_iter().flatten().map(|c| choice_label(c)));
+                    missing.extend(labels.into_iter().filter(|l| !crate::i18n::has(lang, l)));
+                }
             }
-            let Some(obj) = v.get(sec).and_then(Value::as_object) else { continue };
-            for k in obj.keys() {
-                let mut labels = vec![humanize(k)];
-                labels.extend(prefs::choices(&format!("{sec}.{k}")).into_iter().flatten().map(|c| choice_label(c)));
-                missing.extend(labels.into_iter().filter(|l| !crate::i18n::has(ja, l)));
-            }
+            missing.sort();
+            missing.dedup();
+            assert!(missing.is_empty(), "{}: untranslated preference labels: {missing:#?}", lang.code());
         }
-        missing.sort();
-        missing.dedup();
-        assert!(missing.is_empty(), "untranslated preference labels: {missing:#?}");
     }
 
     fn app_with_store() -> (PhotocraftApp, Arc<Mutex<Option<String>>>) {
@@ -1390,6 +1424,109 @@ mod tests {
         app.ui.dialog_mut(id).unwrap().fields.insert("values".into(), values);
         assert!(crate::dialogs::confirm(&mut app, id).is_err());
         assert_eq!(app.session.prefs().performance.history_states, 50);
+    }
+
+    #[test]
+    fn preferences_apply_button_saves_without_closing_and_cancel_keeps_applied_values() {
+        use egui_kittest::{
+            Harness,
+            kittest::{NodeT, Queryable},
+        };
+
+        let (mut app, store) = app_with_store();
+        app.run("prefs.set", json!({"values": {"interface.language": "en", "type.smartQuotes": false}})).unwrap();
+        let id = open_preferences(&mut app, "interface");
+        let mut h = Harness::builder().with_size(vec2(1280.0, 800.0)).build_eframe(move |cc| {
+            PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
+            app
+        });
+        h.run_steps(4);
+        assert!(h.get_by_label("Apply").accesskit_node().is_disabled());
+
+        let values = h.state_mut().ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap();
+        values["interface"]["theme"] = json!("studioLight");
+        values["performance"]["historyStates"] = json!(12);
+        h.run_steps(2);
+        assert!(!h.get_by_label("Apply").accesskit_node().is_disabled());
+        h.get_by_label("Apply").click();
+        h.run_steps(4);
+
+        assert_eq!(h.state().session.prefs().performance.history_states, 12);
+        assert_eq!(h.state().ui.theme, ThemeKind::StudioLight);
+        assert!(!h.state().session.prefs().type_.smart_quotes, "hidden settings round-trip unchanged");
+        let d = h.state().ui.dialogs.iter().find(|d| d.id == id).unwrap();
+        assert_eq!(d.fields["section"], "interface");
+        assert_eq!(d.fields["values"]["performance"]["historyStates"], 12);
+        assert!(h.get_by_label("Apply").accesskit_node().is_disabled());
+        let saved: Value = serde_json::from_str(store.lock().unwrap().as_ref().unwrap()).unwrap();
+        assert_eq!(saved["performance"]["historyStates"], 12);
+        assert_eq!(saved["interface"]["theme"], "studioLight");
+
+        // Repeated Apply starts from the validated values, not the dialog's original snapshot.
+        h.state_mut().ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap()["performance"]["historyStates"] = json!(22);
+        h.run_steps(2);
+        h.get_by_label("Apply").click();
+        h.run_steps(4);
+        assert_eq!(h.state().session.prefs().performance.history_states, 22);
+        h.state_mut().ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap()["performance"]["historyStates"] = json!(33);
+        h.run_steps(2);
+        h.get_by_label("Cancel").click();
+        h.run_steps(4);
+        assert!(h.state().ui.dialogs.iter().all(|d| d.id != id));
+        assert_eq!(h.state().session.prefs().performance.history_states, 22);
+        let saved = store.lock().unwrap().clone().unwrap();
+        let (mut restarted, _) = app_with_saved(Some(saved));
+        tick(&mut restarted, &egui::Context::default());
+        assert_eq!(restarted.session.prefs().performance.history_states, 22);
+        assert_eq!(restarted.ui.theme, ThemeKind::StudioLight);
+    }
+
+    #[test]
+    fn preferences_confirm_after_apply_commits_later_edits() {
+        let (mut app, _) = app_with_store();
+        let id = open_preferences(&mut app, "cursors");
+        app.ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap()["cursors"]["painting"] = json!("fullSizeTip");
+        apply(&mut app, id).unwrap();
+        app.ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap()["unitsAndRulers"]["rulers"] = json!("inches");
+        crate::dialogs::confirm(&mut app, id).unwrap();
+        assert!(app.ui.dialogs.iter().all(|d| d.id != id));
+        assert_eq!(app.session.prefs().cursors.painting, prefs::PaintingCursor::FullSizeTip);
+        assert_eq!(app.session.prefs().units_and_rulers.rulers, prefs::Unit::Inches);
+    }
+
+    #[test]
+    fn preferences_apply_rejects_invalid_drafts_and_keeps_them_open() {
+        let (mut app, _) = app_with_store();
+        let before = app.session.prefs().to_json();
+        for invalid in [json!(0), json!("invalid"), Value::Null] {
+            let id = open_preferences(&mut app, "performance");
+            app.ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap()["performance"]["historyStates"] = invalid;
+            let draft = app.ui.dialog_mut(id).unwrap().fields.clone();
+            assert!(apply(&mut app, id).is_err());
+            assert_eq!(app.session.prefs().to_json(), before);
+            assert_eq!(app.ui.dialog_mut(id).unwrap().fields, draft);
+            app.ui.close_dialog(id);
+        }
+        let id = open_preferences(&mut app, "interface");
+        app.ui.dialog_mut(id).unwrap().fields.remove("values");
+        assert!(apply(&mut app, id).is_err());
+        assert!(app.ui.dialog_mut(id).is_some());
+        assert_eq!(app.session.prefs().to_json(), before);
+    }
+
+    #[test]
+    fn apply_rejects_missing_and_non_preferences_dialogs() {
+        let (mut app, _) = app_with_store();
+        let before = app.session.prefs().to_json();
+        assert!(apply(&mut app, u64::MAX).is_err());
+        let id = open_shortcuts(&mut app, 0);
+        assert!(apply(&mut app, id).is_err());
+        assert!(app.ui.dialog_mut(id).is_some());
+        let fields = json!({"__prefsui": "prefs", "values": preference_values(app.session.prefs())}).as_object().unwrap().clone();
+        let id = app.ui.open_dialog(DialogKind::About, fields);
+        assert!(apply(&mut app, id).is_err());
+        assert!(app.ui.dialog_mut(id).is_some());
+        assert_eq!(app.session.prefs().to_json(), before);
     }
 
     #[test]

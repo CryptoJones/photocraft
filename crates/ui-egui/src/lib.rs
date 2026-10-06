@@ -116,6 +116,7 @@ pub mod vector_ui;
 pub mod view_cmds;
 pub mod wide_angle_ui;
 pub mod widgets;
+pub mod work_area;
 pub mod workspace_ui;
 pub mod zoom_tool;
 
@@ -238,6 +239,9 @@ pub struct PhotocraftApp {
     pub(crate) move_preview: Option<move_ui::MovePreview>,
     /// The next tool `Down` is a right-button drag that erases (see `paint_mouse`).
     secondary_erase: bool,
+    /// While a batch of recovered pointer samples is replayed, defer the live-stroke update to one
+    /// call for the whole frame (see `canvas::canvas_view`).
+    defer_live_stroke: bool,
     /// End of the last painting stroke: ⇧-click draws a straight line from it (#178).
     last_stroke_end: Option<(DocId, [f64; 2])>,
     /// Control+Alt-drag brush resize in progress (`brush_resize`, #231).
@@ -359,6 +363,7 @@ impl PhotocraftApp {
             trail: None,
             move_preview: None,
             secondary_erase: false,
+            defer_live_stroke: false,
             last_stroke_end: None,
             brush_resize: None,
             control_rx: None,
@@ -806,6 +811,9 @@ impl eframe::App for PhotocraftApp {
         self.collect_screenshots(ctx);
         self.issue_screenshots(ctx);
         prefs_ui::tick(self, ctx);
+        // A window bigger than its display (1440 × 900 on 1366 × 768) runs under the taskbar:
+        // maximize it into the work area once (#315).
+        work_area::fit_window(ctx);
         discard_ui::guard_window_close(self, ctx);
         shortcuts::handle(self, ctx);
         let arrived: Vec<(String, Vec<u8>)> =
