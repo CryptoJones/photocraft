@@ -88,9 +88,12 @@ foreach ($check in @(@('photocraft.exe', 2), @('photocraft-cli.exe', 3))) {
 $Diagnostics = Join-Path $TargetDir "windows-diagnostics\$Version\$Arch"
 Remove-Item -Recurse -Force $Diagnostics -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Diagnostics | Out-Null
-foreach ($pdb in 'photocraft.pdb', 'photocraft_cli.pdb') {
-  $p = Join-Path $Bin $pdb
-  if (Test-Path $p) { Copy-Item $p $Diagnostics }
+foreach ($binary in 'photocraft', 'photocraft-cli') {
+  # Cargo/toolchain versions may expose the CLI PDB with a hyphen or crate-name underscore.
+  $Candidates = @("$binary.pdb", (($binary -replace '-', '_') + '.pdb')) | Select-Object -Unique
+  $Pdb = $Candidates | ForEach-Object { Join-Path $Bin $_ } | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+  if (-not $Pdb) { throw "missing native-release PDB for $binary in $Bin" }
+  Copy-Item $Pdb $Diagnostics
 }
 
 $Stage = Join-Path $TargetDir "windows-package\$Arch"
@@ -100,13 +103,42 @@ Copy-Item (Join-Path $Bin 'photocraft.exe'), (Join-Path $Bin 'photocraft-cli.exe
 
 & (Join-Path $PSScriptRoot 'sign.ps1') (Join-Path $Stage 'photocraft.exe') (Join-Path $Stage 'photocraft-cli.exe')
 
+# Stage one authoritative set of OFL notices for the MSI and both archives.
+$FontLicenses = Join-Path $Stage 'font-licenses'
+New-Item -ItemType Directory -Force -Path $FontLicenses | Out-Null
+if ($env:CRAFT_FONTS_DIR) {
+  $FontRoot = Join-Path $env:CRAFT_FONTS_DIR 'fonts'
+  if (-not (Test-Path $FontRoot -PathType Container)) { throw "missing craft-fonts directory: $FontRoot" }
+  foreach ($fontDir in Get-ChildItem $FontRoot -Directory | Sort-Object Name) {
+    $lic = Join-Path $fontDir.FullName 'OFL.txt'
+    if (Test-Path $lic -PathType Leaf) { Copy-Item $lic (Join-Path $FontLicenses "OFL-$($fontDir.Name).txt") }
+  }
+}
+$LicenseFiles = @(Get-ChildItem $FontLicenses -File | Sort-Object Name)
+if ($env:CRAFT_FONTS_DIR -and $LicenseFiles.Count -eq 0) { throw 'craft-fonts was configured but no OFL notices were found' }
+$FontLicenseArgs = @()
+if ($LicenseFiles.Count -gt 0) {
+  # Explicit WiX File elements avoid wildcard harvesting extensions. The conditional include
+  # contributes components directly to PhotocraftFiles; no-font development builds omit it.
+  $IncludePath = Join-Path $Stage 'font-licenses.wxi'
+  $Xml = [System.Text.StringBuilder]::new()
+  [void]$Xml.AppendLine('<Include xmlns="http://wixtoolset.org/schemas/v4/wxs">')
+  for ($i = 0; $i -lt $LicenseFiles.Count; $i++) {
+    $Source = [System.Security.SecurityElement]::Escape($LicenseFiles[$i].FullName)
+    [void]$Xml.AppendLine("<Component Id=`"CraftFontLicense$i`" Guid=`"*`"><File Id=`"CraftFontNotice$i`" Source=`"$Source`" KeyPath=`"yes`" /></Component>")
+  }
+  [void]$Xml.AppendLine('</Include>')
+  [IO.File]::WriteAllText($IncludePath, $Xml.ToString(), [System.Text.UTF8Encoding]::new($false))
+  $FontLicenseArgs = @('-d', "CraftFontLicenses=$IncludePath")
+}
+
 # ---- MSI ---------------------------------------------------------------------------------------
 $Msi = Join-Path $Dist "photocraft-$Version-windows-$Arch.msi"
 & (Join-Path $PSScriptRoot 'check-icons.ps1')
 Invoke-Native 'wix build' {
   wix build (Join-Path $PSScriptRoot 'photocraft.wxs') -arch $Arch `
     -d "Version=$MsiVersion" -d "BinDir=$Stage" -d "IconPath=$(Join-Path $Root 'assets\app-icon\photocraft.ico')" `
-    -o $Msi
+    @FontLicenseArgs -o $Msi
 }
 Invoke-Native 'MSI shortcut icon validation (ICE50)' {
   wix msi validate $Msi -ice ICE50 -intermediateFolder (Join-Path $Stage 'msi-validation')
@@ -124,14 +156,7 @@ foreach ($f in 'README.md', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE') {
   $p = Join-Path $Root $f
   if (Test-Path $p) { Copy-Item $p $Portable }
 }
-# Builds made with craft-fonts (CRAFT_FONTS_DIR, all official releases) embed its OFL-1.1 fonts:
-# ship each font's licence as OFL-<family-dir>.txt.
-if ($env:CRAFT_FONTS_DIR) {
-  Get-ChildItem -Path (Join-Path $env:CRAFT_FONTS_DIR 'fonts') -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-    $lic = Join-Path $_.FullName 'OFL.txt'
-    if (Test-Path $lic) { Copy-Item $lic (Join-Path $Portable "OFL-$($_.Name).txt") }
-  }
-}
+foreach ($lic in $LicenseFiles) { Copy-Item $lic.FullName $Portable }
 # portable.txt beside photocraft.exe switches on portable mode: settings, presets and recovery
 # files go to PhotoCraftData\ next to the exe instead of %APPDATA% (#228; see app_dirs.rs).
 Copy-Item (Join-Path $PSScriptRoot 'portable.txt') $Portable
@@ -148,12 +173,7 @@ foreach ($f in 'README.md', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE') {
   $p = Join-Path $Root $f
   if (Test-Path $p) { Copy-Item $p $CliPortable }
 }
-# The CLI also embeds craft-fonts; include its OFL notices in its own archive.
-if ($env:CRAFT_FONTS_DIR) {
-  foreach ($lic in Get-ChildItem (Join-Path $env:CRAFT_FONTS_DIR 'fonts\*\OFL.txt')) {
-    Copy-Item $lic.FullName (Join-Path $CliPortable ("OFL-" + $lic.Directory.Name + ".txt"))
-  }
-}
+foreach ($lic in $LicenseFiles) { Copy-Item $lic.FullName $CliPortable }
 $CliZip = Join-Path $Dist "photocraft-cli-$Version-windows-$Arch.zip"
 Remove-Item -Force $CliZip -ErrorAction SilentlyContinue
 Compress-Archive -Path $CliPortable -DestinationPath $CliZip -CompressionLevel Optimal

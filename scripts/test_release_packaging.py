@@ -115,6 +115,26 @@ class ReleasePackagingTests(unittest.TestCase):
                     self.assertEqual((symbols / (name + ".debug")).read_text(), "private debug data\n")
                 self.assertFalse(symbols.is_relative_to(self.dist))
 
+    def test_font_licenses_survive_all_linux_payloads(self):
+        self.fixture_binaries("x86_64")
+        font_root = self.root / "craft-fonts"
+        notice = font_root / "fonts/fixture/OFL.txt"
+        notice.parent.mkdir(parents=True)
+        notice.write_text("fixture OFL notice")
+        self.env["CRAFT_FONTS_DIR"] = str(font_root)
+        tool = self.tools / "appimagetool"
+        self.mock("appimagetool", 'test -f "$2/usr/share/doc/photocraft/OFL-fixture.txt" || exit 24\n'
+                  'test ! -f "$2/usr/bin/photocraft-cli" || exit 25\n'
+                  'printf "fixture appimage\\n" > "$3"')
+        self.env["APPIMAGETOOL"] = str(tool)
+        result = self.run_script("linux", "--skip-build", "--formats", "tar appimage")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.dist / "photocraft-9.8.7-linux-x86_64.AppImage").is_file())
+        for prefix, doc in (("photocraft", "photocraft"), ("photocraft-cli", "photocraft-cli")):
+            with tarfile.open(self.dist / (prefix + "-9.8.7-linux-x86_64.tar.gz")) as archive:
+                expected = prefix + "-9.8.7-linux-x86_64/share/doc/" + doc + "/OFL-fixture.txt"
+                self.assertIn(expected, archive.getnames())
+
     def test_diagnostic_or_strip_failure_stops_archives(self):
         self.fixture_binaries("x86_64")
         for tool in ("objcopy", "strip"):

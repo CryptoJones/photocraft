@@ -82,6 +82,8 @@ Mac symbol stripping happens before signing; Windows PDBs are never archive inpu
 `objcopy` and stripping failures stop packaging. ZIPs use optimal compression, gzip tarballs
 use level 9, and DMGs retain zlib level 9. Existing default/fallback fonts, accessibility, codecs
 and GPU backends remain available; the shared bundled-font bytes avoid duplicate embeddings.
+Japanese craft-font payloads use lossless build-time gzip and one-time bounded cached decoding,
+shared between UI and document text. All font bytes/glyphs are preserved; no subsetting.
 
 Every desktop build job (macOS, Windows, Linux, FreeBSD) also checks out [craft-fonts](https://github.com/storytold/craft-fonts)
 at the commit in `CRAFT_FONTS_REF` (top of `release.yml`) and builds with `CRAFT_FONTS_DIR` and

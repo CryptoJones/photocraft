@@ -39,7 +39,11 @@ long-term crash support. They are not secret storage.
 ZIP compression is Optimal, gzip tarballs use level 9 and DMGs retain zlib level 9. Installer
 compression/runtime requirements remain compatible. Native bundled font bytes already share
 one static source between UI and text; verify their copy count when measuring new binaries.
-Default fallback fonts remain: blindly removing them loses symbols/emoji/script coverage.
+The pinned Japanese craft fonts are gzip-compressed at build time, verified byte-for-byte,
+and decoded once into shared cached immutable bytes. Decoding rejects malformed/truncated
+streams, mismatched lengths and fonts over 32 MiB. This adds one-time decompression and decoded
+memory stays resident; no glyphs are subsetted. Original font bytes are compiled into tests
+only, where exact equality and pointer sharing are checked. Default fallback fonts remain: blindly removing them loses symbols/emoji/script coverage.
 GPU, SVG, plugin and codec dependencies provide supported functionality and are retained.
 `opt-level="z"`, native panic abort and executable packing are not used.
 

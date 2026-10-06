@@ -14,6 +14,7 @@
 //! the 25,165,824-byte gate. The web build keeps no Japanese font until craft-fonts can be
 //! served next to the wasm instead of inside it.
 use std::fmt::Write as _;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 fn main() {
@@ -43,18 +44,44 @@ fn craft_fonts(dir: &std::path::Path) -> Result<String, String> {
     println!("cargo::rerun-if-changed={}", manifest.display());
     let text = std::fs::read_to_string(&manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
     let mut out = String::new();
-    for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+    for (index, line) in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).enumerate() {
         let f: Vec<&str> = line.split(" | ").map(str::trim).collect();
         let [family, style, file, scripts, ..] = f.as_slice() else {
             return Err(format!("malformed manifest line: {line}"));
         };
         let path = dir.join(file).canonicalize().map_err(|e| format!("{file}: {e}"))?;
         println!("cargo::rerun-if-changed={}", path.display());
+        // Cap the input and output, then verify the lossless compressed payload before embedding.
+        const MAX_FONT_BYTES: u64 = 32 << 20;
+        let mut original = Vec::new();
+        std::fs::File::open(&path)
+            .map_err(|e| format!("{file}: {e}"))?
+            .take(MAX_FONT_BYTES + 1)
+            .read_to_end(&mut original)
+            .map_err(|e| format!("{file}: {e}"))?;
+        if original.is_empty() || original.len() as u64 > MAX_FONT_BYTES {
+            return Err(format!("{file}: font must be nonempty and at most 32 MiB"));
+        }
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        encoder.write_all(&original).map_err(|e| format!("{file}: compression: {e}"))?;
+        let compressed = encoder.finish().map_err(|e| format!("{file}: compression: {e}"))?;
+        let mut verified = Vec::new();
+        flate2::read::MultiGzDecoder::new(compressed.as_slice())
+            .take(MAX_FONT_BYTES + 1)
+            .read_to_end(&mut verified)
+            .map_err(|e| format!("{file}: compression verification: {e}"))?;
+        if verified != original {
+            return Err(format!("{file}: compression changed font bytes"));
+        }
+        let compressed_path = PathBuf::from(std::env::var_os("OUT_DIR").ok_or("missing OUT_DIR")?).join(format!("craft-font-{index}.gz"));
+        std::fs::write(&compressed_path, &compressed).map_err(|e| format!("writing {}: {e}", compressed_path.display()))?;
         let scripts: Vec<String> = scripts.split(',').map(|s| format!("{:?}", s.trim())).collect();
         let _ = writeln!(
             out,
-            "    CraftFont {{ family: {family:?}, style: {style:?}, scripts: &[{}], bytes: include_bytes!({:?}) }},",
+            "    CraftFont {{ family: {family:?}, style: {style:?}, scripts: &[{}], compressed: include_bytes!({:?}), original_len: {}, decoded: OnceLock::new(), #[cfg(test)] original: include_bytes!({:?}) }},",
             scripts.join(", "),
+            compressed_path.display().to_string(),
+            original.len(),
             path.display().to_string(),
         );
     }

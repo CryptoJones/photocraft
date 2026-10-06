@@ -97,6 +97,11 @@ jobs:
           $dir = if ('${{ matrix.arch }}' -eq 'x86') { Join-Path ${env:ProgramFiles(x86)} 'PhotoCraft' } else { Join-Path $env:ProgramFiles 'PhotoCraft' }
           if (-not (Test-Path (Join-Path $dir 'photocraft.exe'))) { throw 'GUI not installed' }
           if (Test-Path (Join-Path $dir 'photocraft-cli.exe')) { throw 'CLI in GUI MSI' }
+          if (@(Get-ChildItem $dir -Filter OFL-*.txt).Count -ne 3) { throw 'Missing font notices in MSI' }
+          foreach ($payload in 'gui', 'cli') {
+            if (@(Get-ChildItem $payload -Recurse -Filter OFL-*.txt).Count -ne 3) { throw "Missing font notices in $payload" }
+            if (Get-ChildItem $payload -Recurse -Filter *.pdb) { throw "PDB in $payload download" }
+          }
           $p = Start-Process msiexec.exe -ArgumentList '/x', "`"$msi`"", '/qn' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw 'MSI uninstall failed' }
       - uses: actions/upload-artifact@v4
@@ -137,8 +142,9 @@ jobs:
       - name: Verify shipped payloads
         run: |
           mkdir gui cli
-          tar -xzf dist/release/photocraft-*-linux-*.tar.gz -C gui
-          tar -xzf dist/release/photocraft-cli-*-linux-*.tar.gz -C cli
+          version="$(awk '/^\[workspace.package\]/{p=1;next} /^\[/{p=0} p && /^version = /{gsub(/"/, "", $3); print $3; exit}' Cargo.toml)"
+          tar -xzf "dist/release/photocraft-$version-linux-${{ matrix.arch }}.tar.gz" -C gui
+          tar -xzf "dist/release/photocraft-cli-$version-linux-${{ matrix.arch }}.tar.gz" -C cli
           test -z "$(find gui -name photocraft-cli)"
           test -z "$(find cli -name photocraft)"
           "$(find gui -type f -name photocraft)" --version

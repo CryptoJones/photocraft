@@ -44,6 +44,9 @@
 
   <Fragment>
     <ComponentGroup Id="PhotocraftFiles" Directory="INSTALLFOLDER">
+      <?ifdef CraftFontLicenses ?>
+      <?include $(var.CraftFontLicenses) ?>
+      <?endif ?>
       <Component Id="PhotocraftApp" Guid="A6DE41B7-A80F-4C59-A17E-BB68065BF67E">
         <File Id="PhotocraftExe" Source="$(var.BinDir)\photocraft.exe" KeyPath="yes">
           <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="PhotoCraft"
