@@ -220,7 +220,7 @@ fn begin_live_stroke(app: &PhotocraftApp) -> Option<LiveStroke> {
 
 /// Render the drag points the live stroke hasn't seen yet, with the pen pressure, tilt and
 /// rotation the commit's `paint.stroke` gets for them.
-fn feed_live_stroke(app: &mut PhotocraftApp) {
+pub(crate) fn feed_live_stroke(app: &mut PhotocraftApp) {
     let (Some(l), Some(d)) = (app.live_stroke.as_mut(), app.drag.as_ref()) else { return };
     let pose = &app.stylus.stroke;
     let pts: Vec<_> = (l.fed..d.points.len())
@@ -1404,8 +1404,8 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
         crate::paint_mouse::sync_tool_smoothing(app);
         let mut buttons = crate::paint_mouse::canvas_buttons(app, &response, tool);
         // The (temporary) Hand pans above; its gestures never reach the tool underneath.
-        if tool == Tool::Hand {
-            (buttons.started, buttons.dragged, buttons.stopped) = (false, false, false);
+        if crate::brush_input::route(app, &response, &xf, tool) || tool == Tool::Hand {
+            buttons = crate::paint_mouse::Buttons::default();
         }
         // Zoom tool drags: scrubby zoom or a zoom rectangle (zoom_tool.rs); clicks step below.
         if tool == Tool::Zoom && crate::zoom_tool::drag(app, &ctx, &mut view, &xf, &buttons, response.interact_pointer_pos()) {
@@ -2005,12 +2005,20 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
                 // ⇧: straight 0/45/90° strokes, 45° gradient angles (stroke_constraint.rs).
                 let last = d.points.last().map_or(d.start, |p| [p[0], p[1]]);
                 let [x, y] = crate::stroke_constraint::constrain(d.tool, &mut d.constrain, d.start, last, [x, y], mods.shift, zoom);
-                if d.points.last().is_none_or(|p| (p[0] - x).abs() + (p[1] - y).abs() > 0.25) {
+                if d.points.last().is_none_or(|p| {
+                    if app.brush_input.all_samples && (d.tool.is_brushlike() || d.tool == Tool::QuickSelection) {
+                        *p != [x, y, pressure as f64]
+                    } else {
+                        (p[0] - x).abs() + (p[1] - y).abs() > 0.25
+                    }
+                }) {
                     d.points.push([x, y, pressure as f64]);
                     app.stylus.record_point();
                 }
             }
-            feed_live_stroke(app);
+            if !app.brush_input.defer_preview {
+                feed_live_stroke(app);
+            }
         }
         ToolEvent::Up { x, y } => {
             if tool == Tool::Type

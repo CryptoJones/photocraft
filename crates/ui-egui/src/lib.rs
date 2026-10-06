@@ -22,6 +22,7 @@ pub mod adjust_ui;
 pub mod analysis_ui;
 pub mod artboard_ui;
 mod brush_cursor;
+mod brush_input;
 pub mod brush_panel;
 pub mod brush_picker;
 pub mod brush_preview;
@@ -337,6 +338,7 @@ pub struct PhotocraftApp {
     /// Pen pressure/tilt from the platform (see `stylus`).
     pub stylus: stylus::Stylus,
     pub(crate) brush_cursor: brush_cursor::BrushCursor,
+    pub(crate) brush_input: brush_input::BrushInput,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
     live_tokens: theme::live::LiveTokens,
 }
@@ -406,6 +408,7 @@ impl PhotocraftApp {
             allow_close: false,
             stylus: Default::default(),
             brush_cursor: Default::default(),
+            brush_input: Default::default(),
             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
             live_tokens: theme::live::LiveTokens::from_env(),
         };
