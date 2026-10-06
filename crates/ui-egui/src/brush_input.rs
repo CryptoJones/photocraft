@@ -31,7 +31,9 @@ pub fn route_with_eligibility(app: &mut PhotocraftApp, response: &Response, xf: 
     if !app.brush_input.all_samples || !tool.is_brushlike() && tool != Tool::QuickSelection {
         return false;
     }
-    let (events, mods) = response.ctx.input(|i| (i.raw.events.clone(), i.modifiers));
+    let (events, mods) = response
+        .ctx
+        .input(|i| (i.raw.events.iter().filter(|e| app.stylus.use_pressure || !matches!(e, Event::Touch { .. })).cloned().collect::<Vec<_>>(), i.modifiers));
     let secondary = crate::paint_mouse::right_erases(app, tool);
     let pressure = app.stylus.pressure();
     let samples = app.brush_input.events(&events, xf, eligible, secondary, pressure, mods);
@@ -165,6 +167,29 @@ mod tests {
         let out = BrushInput::default().events(&events, &xf(), true, false, 1.0, Modifiers::NONE);
         assert!(matches!(out[1].0, ToolEvent::Move { pressure: 0.2, .. }));
         assert!(matches!(out[2].0, ToolEvent::Move { pressure: 0.8, .. }));
+    }
+
+    #[test]
+    fn disabled_tablet_pressure_stays_disabled_with_batched_input() {
+        use egui_kittest::Harness;
+        use serde_json::json;
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        app.run("file.new", json!({"width": 128, "height": 128})).unwrap();
+        app.run("prefs.set", json!({"path":"tools.useTabletPressure", "value":false})).unwrap();
+        app.ui.tool = Tool::Brush;
+        let mut h = Harness::builder().with_size(egui::vec2(1000.0, 800.0)).build_eframe(|_| app);
+        h.run_steps(3);
+        let p = h.state().last_canvas_rect.center();
+        h.input_mut().events.extend([
+            Event::PointerMoved(p),
+            button(p, true, PointerButton::Primary),
+            Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase: egui::TouchPhase::Move, pos: p, force: Some(0.2) },
+            Event::PointerMoved(p + egui::vec2(20.0, 0.0)),
+            button(p + egui::vec2(20.0, 0.0), false, PointerButton::Primary),
+        ]);
+        h.step();
+        let points = &h.state().session.journal.iter().find(|(id, _)| id == "paint.stroke").unwrap().1["points"];
+        assert!(points.as_array().unwrap().iter().all(|p| p[2] == 1.0));
     }
 
     #[test]
