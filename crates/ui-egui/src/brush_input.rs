@@ -196,11 +196,14 @@ mod tests {
         h.run_steps(3);
         let p = h.state().last_canvas_rect.center();
         let mods = Modifiers { ctrl: true, alt: true, ..Modifiers::NONE };
-        h.event(Event::PointerButton { pos: p, pressed: true, button: PointerButton::Primary, modifiers: mods });
+        h.input_mut().events.extend([Event::PointerMoved(p), Event::PointerButton { pos: p, pressed: true, button: PointerButton::Primary, modifiers: mods }]);
+        h.step();
         assert!(h.state().brush_resize.is_some());
         assert!(h.state().drag.is_none());
-        h.event(Event::PointerMoved(p + egui::vec2(20.0, 0.0)));
-        h.event(Event::PointerButton { pos: p + egui::vec2(20.0, 0.0), pressed: false, button: PointerButton::Primary, modifiers: mods });
+        h.input_mut().events.push(Event::PointerMoved(p + egui::vec2(20.0, 0.0)));
+        h.step();
+        h.input_mut().events.push(Event::PointerButton { pos: p + egui::vec2(20.0, 0.0), pressed: false, button: PointerButton::Primary, modifiers: mods });
+        h.step();
         assert!(h.state().brush_resize.is_none());
         assert!(h.state().brush_input.button.is_none());
         assert!(!h.state().session.journal.iter().any(|(id, _)| id == "paint.stroke"));
