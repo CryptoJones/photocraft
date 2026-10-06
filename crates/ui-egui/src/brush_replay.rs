@@ -362,6 +362,9 @@ fn save(app: &mut PhotocraftApp) -> Result<(), String> {
     }
     let record = app.brush_lab.recording.as_ref().ok_or("Record a scribble first")?;
     let bytes = serde_json::to_vec(record).map_err(|e| e.to_string())?;
+    if bytes.len() > 16 * 1024 * 1024 {
+        return Err("Brush recording exceeds 16 MiB; record a shorter scribble".into());
+    }
     if let Some(path) = app.services.pick_save.as_mut().and_then(|p| p("scribble.brush-replay.json")) {
         app.services.write.as_mut().ok_or("No file writer")?(&path, &bytes)?;
     }
