@@ -5,7 +5,8 @@
 .DESCRIPTION
   Produces, in $env:DIST (default: dist/release):
     photocraft-<version>-windows-<arch>.msi            per-machine installer (WiX v5)
-    photocraft-<version>-windows-<arch>-portable.zip   photocraft.exe + photocraft-cli.exe + portable.txt
+    photocraft-<version>-windows-<arch>-portable.zip   photocraft.exe + portable.txt
+    photocraft-cli-<version>-windows-<arch>.zip        separate signed command-line executable
 
   The binaries link the C runtime statically (+crt-static), so neither the MSI nor the portable
   zip needs the Visual C++ redistributable. Signing is delegated to sign.ps1 (skipped with a
@@ -62,10 +63,10 @@ if (-not $SkipBuild) {
   [Environment]::SetEnvironmentVariable($flagVar, '-C target-feature=+crt-static')
   # Fail the build (rather than warn) if the icon/VERSIONINFO can't be embedded.
   $env:PHOTOCRAFT_REQUIRE_WINRES = '1'
-  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p photocraft -p photocraft-cli --target $Target }
+  Invoke-Native "cargo build ($Target)" { cargo build --profile native-release --locked -p photocraft -p photocraft-cli --target $Target }
 }
 
-$Bin = Join-Path $TargetDir "$Target\release"
+$Bin = Join-Path $TargetDir "$Target\native-release"
 
 # Check both binaries' PE headers before packaging. Machine (COFF header) must match -Arch, so an
 # x64 build can never ship labelled arm64. Subsystem (optional header): 2 = Windows GUI, 3 = console.
@@ -83,6 +84,15 @@ foreach ($check in @(@('photocraft.exe', 2), @('photocraft-cli.exe', 3))) {
   if ($h.Subsystem -ne $check[1]) { throw "$($check[0]) has PE subsystem $($h.Subsystem), expected $($check[1])" }
   Write-Output "ok $($check[0]): $Arch, PE subsystem $($h.Subsystem)"
 }
+# Keep matching compiler PDBs privately under target, never in a public package.
+$Diagnostics = Join-Path $TargetDir "windows-diagnostics\$Version\$Arch"
+Remove-Item -Recurse -Force $Diagnostics -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $Diagnostics | Out-Null
+foreach ($pdb in 'photocraft.pdb', 'photocraft_cli.pdb') {
+  $p = Join-Path $Bin $pdb
+  if (Test-Path $p) { Copy-Item $p $Diagnostics }
+}
+
 $Stage = Join-Path $TargetDir "windows-package\$Arch"
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
@@ -109,7 +119,7 @@ Remove-Item -Force -ErrorAction SilentlyContinue ([IO.Path]::ChangeExtension($Ms
 $Portable = Join-Path $TargetDir "windows-package\photocraft-$Version-windows-$Arch-portable"
 Remove-Item -Recurse -Force $Portable -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Portable | Out-Null
-Copy-Item (Join-Path $Stage '*.exe') $Portable
+Copy-Item (Join-Path $Stage 'photocraft.exe') $Portable
 foreach ($f in 'README.md', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE') {
   $p = Join-Path $Root $f
   if (Test-Path $p) { Copy-Item $p $Portable }
@@ -119,7 +129,20 @@ foreach ($f in 'README.md', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE') {
 Copy-Item (Join-Path $PSScriptRoot 'portable.txt') $Portable
 $Zip = Join-Path $Dist "photocraft-$Version-windows-$Arch-portable.zip"
 Remove-Item -Force $Zip -ErrorAction SilentlyContinue
-Compress-Archive -Path $Portable -DestinationPath $Zip
+Compress-Archive -Path $Portable -DestinationPath $Zip -CompressionLevel Optimal
+
+# ---- separate CLI zip --------------------------------------------------------------------------
+$CliPortable = Join-Path $TargetDir "windows-package\photocraft-cli-$Version-windows-$Arch"
+Remove-Item -Recurse -Force $CliPortable -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $CliPortable | Out-Null
+Copy-Item (Join-Path $Stage 'photocraft-cli.exe') $CliPortable
+foreach ($f in 'README.md', 'LICENSE', 'LICENSE-MIT', 'LICENSE-APACHE') {
+  $p = Join-Path $Root $f
+  if (Test-Path $p) { Copy-Item $p $CliPortable }
+}
+$CliZip = Join-Path $Dist "photocraft-cli-$Version-windows-$Arch.zip"
+Remove-Item -Force $CliZip -ErrorAction SilentlyContinue
+Compress-Archive -Path $CliPortable -DestinationPath $CliZip -CompressionLevel Optimal
 
 # Smoke-test the CLI when this machine can run it. An ARM64 build made on an x64 runner can't run
 # here; .github/workflows/windows-arm64.yml installs and runs it on ARM64 instead.
@@ -129,4 +152,4 @@ if ($Arch -ne 'arm64' -or $HostArch -eq 'arm64') {
 } else {
   Write-Output "skipping photocraft-cli --version: an $Arch build doesn't run on this $HostArch machine"
 }
-Get-Item $Msi, $Zip | Format-Table Name, Length
+Get-Item $Msi, $Zip, $CliZip | Format-Table Name, Length

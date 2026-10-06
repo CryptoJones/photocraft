@@ -101,10 +101,6 @@
         <RegistryValue Root="HKLM" Key="Software\Classes\Applications\photocraft.exe\SupportedTypes" Name=".ico" Value="" Type="string" />
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\photocraft.exe" Value="[#PhotocraftExe]" Type="string" />
       </Component>
-
-      <Component Id="PhotocraftCli">
-        <File Id="PhotocraftCliExe" Source="$(var.BinDir)\photocraft-cli.exe" KeyPath="yes" />
-      </Component>
     </ComponentGroup>
   </Fragment>
 </Wix>
