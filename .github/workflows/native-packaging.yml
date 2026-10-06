@@ -1,8 +1,11 @@
 # Unsigned architecture/package verification on PRs; no release environment or secrets.
 name: Native packaging
 on:
+  push:
+    branches: ["codex/**"]
+    paths: ["Cargo.toml", "Cargo.lock", "packaging/**", "crates/text/**", "crates/ui-egui/src/cjk_fonts.rs", ".github/workflows/native-packaging.yml", "scripts/test_release_packaging.py"]
   pull_request:
-    paths: ["Cargo.toml", "Cargo.lock", "packaging/**", ".github/workflows/native-packaging.yml", "scripts/test_release_packaging.py"]
+    paths: ["Cargo.toml", "Cargo.lock", "packaging/**", "crates/text/**", "crates/ui-egui/src/cjk_fonts.rs", ".github/workflows/native-packaging.yml", "scripts/test_release_packaging.py"]
   workflow_dispatch:
 permissions:
   contents: read
