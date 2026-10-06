@@ -223,7 +223,9 @@ mod tests {
         app.brush_input.owner = Some((app.session.active().unwrap().doc.id, Tool::Brush));
         app.brush_input.button = Some(PointerButton::Primary);
         let ctx = egui::Context::default();
+        ctx.begin_pass(egui::RawInput { focused: true, ..Default::default() });
         sync_capture(&mut app, &ctx);
+        let _ = ctx.end_pass();
         assert!(app.brush_input.button.is_some());
         sync_effective_tool(&mut app, Tool::Hand);
         assert!(app.brush_input.button.is_none());

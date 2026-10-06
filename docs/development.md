@@ -35,7 +35,6 @@ If the device is lost while running (#243), every GPU entry point checks the dev
 | `PHOTOCRAFT_AUTOMATION_READ_ROOT` | Directory capability for automation reads; requests use relative paths |
 | `PHOTOCRAFT_AUTOMATION_WRITE_ROOT` | Separate directory capability for automation writes; requests use relative paths |
 | `PHOTOCRAFT_CPU_CANVAS=1` | Force the CPU canvas path instead of the wgpu shader canvas |
-| `PHOTOCRAFT_UNCOALESCED_INPUT=1` | macOS experiment: disable AppKit mouse-event coalescing for this process; restored at shutdown. Preserves OS acceleration, does not promise a device sampling rate. |
 | `WGPU_BACKEND=dx12` | Pick the wgpu backend(s) (`vulkan`, `dx12`, `metal`, `gl`); overrides `performance.gpuBackend` and the startup fallback |
 | `PHOTOCRAFT_GPU_TILE=2048` | Force GPU canvas tiling (tests tile seams) |
 | `PHOTOCRAFT_FX_NOCACHE=1` | Bypass the CPU layer-effect map cache (`compose::effect_maps`) |
@@ -51,35 +50,16 @@ If the device is lost while running (#243), every GPU entry point checks the dev
 
 Keys are the field names of `theme::Tokens` (`crates/ui-egui/src/theme.rs`). Edit and save the file while the app runs to see changes immediately, with no recompile. This is compiled out of release builds.
 
-## Brush Input Lab
+## Brush input
 
-Help › Brush Input Lab switches between the original frame-position painting path and all
-available window motion events, and between canvas-drawn and native brush cursors. Large brush
-outlines, pixel-snapped Pencil footprints and the web keep their canvas rendering.
-
-Select Brush, Pencil or Eraser on a canvas up to 4096 × 4096, choose **Record new scribble**,
-draw, release, and stop recording. Keep the brush, colours and document fixed while recording.
-**Compare old / new · CPU / GPU** replays the original event batches on blank RGB canvases,
-with the recorded bit depth and brush settings, then opens four views. GPU views explicitly
-report CPU fallback when no GPU is available. Save/load keeps the recording as JSON.
-Frame receipt times and frame-level pen readings are recorded; these are not hardware timestamps
-or raw trackpad touch contacts. The OS may limit window-event delivery to display cadence.
-The lab reports incoming motion events and the old/new committed stroke-point counts.
-If painting batches have only one motion event, both paths can produce identical lines.
-**Replay with smoothing off** overrides smoothing for comparison without changing the saved
-recording or the live brush. Smoothing processes each retained input point in order.
-
-To audit a saved recording's points and pixel differences at 0% and 10% smoothing:
-
-```sh
-PHOTOCRAFT_BRUSH_RECORDING=/absolute/path/scribble.brush-replay.json cargo test \
-  -p photocraft-ui-egui saved_recording_sample_and_pixel_audit --lib -- --ignored --nocapture
-```
-
-Automation: `ui.brushReplay.record {enabled:true|false}`, `ui.brushReplay.read`,
-`ui.brushReplay.load` (recording JSON as params), and `ui.brushReplay.compare`.
-
-For simultaneous OS/GC/trackpad capture and alignment experiments, see [the native input probe](input-probe.md).
+Painting consumes ordered motion events and uses a cached native brush outline. Large outlines,
+pixel-snapped Pencil footprints and the web retain their canvas-drawn cursor fallback.
+On macOS, GC motion adds bounded intermediate points aligned to consecutive OS endpoints.
+The OS cursor and acceleration remain authoritative; absent or ambiguous samples automatically
+use the original endpoint. GC callback order estimates the interior path: GC does not expose a
+reliable timestamp per delta, so delayed callbacks cannot be perfectly synchronized. No waiting
+or retroactive stroke edits are introduced. Supported on macOS 14 and later; other platforms
+retain ordered OS input. No input-engine switches or comparison windows are exposed.
 
 ## Driving the app programmatically
 
