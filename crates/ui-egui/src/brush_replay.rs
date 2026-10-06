@@ -464,6 +464,60 @@ mod tests {
     }
 
     #[test]
+    fn one_move_per_frame_has_no_extra_samples_to_recover() {
+        for smoothing in [0.0, 0.1, 0.6] {
+            let mut r = recording(8, smoothing);
+            let moves = r.frames.remove(2);
+            for (i, event) in moves.events.iter().cloned().enumerate() {
+                let mut frame = moves.clone();
+                frame.events = vec![event];
+                frame.time += i as f64 / 240.0;
+                r.frames.insert(2 + i, frame);
+            }
+            let old = r.replay(false).unwrap();
+            let new = r.replay(true).unwrap();
+            let strokes = |app: &PhotocraftApp| app.session.journal.iter().filter(|(id, _)| id == "paint.stroke")
+                .map(|(_, args)| args["points"].clone()).collect::<Vec<_>>();
+            assert_eq!(strokes(&old), strokes(&new));
+            assert_eq!(photocraft_compose::flatten(&old.session.active().unwrap().doc).to_rgba8().pixels,
+                photocraft_compose::flatten(&new.session.active().unwrap().doc).to_rgba8().pixels);
+        }
+    }
+
+    #[test]
+    fn replay_smoothing_override_preserves_recorded_settings() {
+        let mut app = PhotocraftApp::new(Session::new(), Services::default());
+        app.brush_lab.recording = Some(recording(8, 0.6));
+        app.brush_lab.replay_without_smoothing = true;
+        compare(&mut app).unwrap();
+        assert_eq!(app.brush_lab.recording.as_ref().unwrap().brush.smoothing.amount, 0.6);
+        assert_eq!(app.brush_lab.comparison.as_deref(), Some("Stroke points: old 2, new 4 · replay smoothing 0%"));
+    }
+
+    #[test]
+    #[ignore = "set PHOTOCRAFT_BRUSH_RECORDING to a saved trackpad recording"]
+    fn saved_recording_sample_and_pixel_audit() {
+        let path = std::env::var("PHOTOCRAFT_BRUSH_RECORDING").unwrap();
+        let mut r = Recording::load(&std::fs::read(path).unwrap()).unwrap();
+        for smoothing in [0.0, 0.1] {
+            r.brush.smoothing.amount = smoothing;
+            r.brush.smoothing.pulled_string = false;
+            let old = r.replay(false).unwrap();
+            let new = r.replay(true).unwrap();
+            let strokes = |app: &PhotocraftApp| app.session.journal.iter().filter(|(id, _)| id == "paint.stroke")
+                .map(|(_, args)| args["points"].clone()).collect::<Vec<_>>();
+            let a = strokes(&old);
+            let b = strokes(&new);
+            let pixels = |app: &PhotocraftApp| photocraft_compose::flatten(&app.session.active().unwrap().doc).to_rgba8().pixels;
+            let differences = pixels(&old).chunks_exact(4).zip(pixels(&new).chunks_exact(4)).filter(|(a, b)| a != b).count();
+            println!("smoothing {smoothing}: old {} points, new {} points, identical points {}, differing pixels {differences}",
+                a.iter().map(|p| p.as_array().unwrap().len()).sum::<usize>(),
+                b.iter().map(|p| p.as_array().unwrap().len()).sum::<usize>(), a == b);
+            assert_eq!(pixels(&new), pixels(&r.replay(true).unwrap()), "replay must be deterministic");
+        }
+    }
+
+    #[test]
     fn rejects_invalid_and_incomplete_recordings() {
         let mut r = recording(8, 0.0);
         r.version = 99;
