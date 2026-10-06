@@ -223,21 +223,27 @@ fn main() -> eframe::Result {
                     && let RawWindowHandle::AppKit(handle) = handle.as_raw()
                 {
                     mouse_motion.bind_view(handle.ns_view.as_ptr() as usize);
-                    app.services.motion_samples = Some(Box::new(move |from, to, zoom| {
+                    app.services.motion_samples = Some(Box::new(move |event, zoom| {
+                        use photocraft_ui_egui::MouseMotion;
                         if !zoom.is_finite() || zoom <= 0.0 {
                             mouse_motion.clear();
                             return Vec::new();
                         }
                         let native = |p: egui::Pos2| [f64::from(p.x) * f64::from(zoom), f64::from(p.y) * f64::from(zoom)];
-                        if let Some(from) = from {
-                            mouse_motion
+                        match event {
+                            MouseMotion::Move { from, to } => mouse_motion
                                 .take(native(from), native(to))
                                 .into_iter()
                                 .map(|p| egui::pos2((p[0] / f64::from(zoom)) as f32, (p[1] / f64::from(zoom)) as f32))
-                                .collect()
-                        } else {
-                            mouse_motion.begin(native(to));
-                            Vec::new()
+                                .collect(),
+                            MouseMotion::Press { position, button } => {
+                                mouse_motion.begin(native(position), button as u8);
+                                Vec::new()
+                            }
+                            MouseMotion::EndFrame => {
+                                mouse_motion.clear();
+                                Vec::new()
+                            }
                         }
                     }));
                 }

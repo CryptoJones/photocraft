@@ -5,6 +5,20 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+// Conservative fallback heuristics, not guarantees about a device's sampling rate.
+const MAX_SAMPLES: usize = 64;
+const MAX_PENDING_SEGMENTS: usize = 128;
+const MAX_OS_AGE_SECONDS: f64 = 0.025;
+const MAX_INTERVAL_SECONDS: f64 = 0.05;
+const ENDPOINT_EPSILON_POINTS: f64 = 0.02;
+const OS_CHORD_POINTS: std::ops::RangeInclusive<f64> = 0.25..=512.0;
+const RAW_DELTA_MAX: f64 = 4096.0; // device units, before OS acceleration
+const RAW_NET_MIN: f64 = 0.01;
+const GAIN: std::ops::RangeInclusive<f64> = 0.05..=8.0;
+const MIN_NET_ARC_RATIO: f64 = 0.25; // reject cancelling loops
+const MIN_ALIGNMENT_COS: f64 = std::f64::consts::FRAC_1_SQRT_2; // at most 45 degrees
+const MAX_PATH_CHORD_RATIO: f64 = 3.0;
+
 #[derive(Clone, Copy)]
 struct Anchor {
     point: [f64; 2],
@@ -20,13 +34,16 @@ pub struct Aligner {
 }
 impl Aligner {
     pub fn reset(&mut self) {
-        *self = Self::default();
+        self.anchor = None;
+        self.deltas.clear();
+        self.device = None;
+        self.invalid = false;
     }
     pub fn push(&mut self, device: u64, delta: [f64; 2]) {
         if self.anchor.is_none() {
             return;
         }
-        if self.deltas.len() >= 64 || !finite(delta) || length(delta) > 4096.0 || self.device.is_some_and(|d| d != device) {
+        if self.deltas.len() >= MAX_SAMPLES || !finite(delta) || length(delta) > RAW_DELTA_MAX || self.device.is_some_and(|d| d != device) {
             self.invalid = true;
             self.deltas.clear();
             return;
@@ -43,7 +60,7 @@ impl Aligner {
         self.deltas.clear();
         self.device = None;
         self.invalid = false;
-        if !finite(to) || !event_time.is_finite() || !receipt.is_finite() || receipt < event_time || receipt - event_time > 0.025 {
+        if !finite(to) || !event_time.is_finite() || !receipt.is_finite() || receipt < event_time || receipt - event_time > MAX_OS_AGE_SECONDS {
             self.anchor = None;
         }
         points
@@ -56,38 +73,39 @@ impl Aligner {
             || !event_time.is_finite()
             || !receipt.is_finite()
             || event_time <= a.event_time
-            || event_time - a.event_time > 0.05
+            || event_time - a.event_time > MAX_INTERVAL_SECONDS
             || receipt < a.receipt
             || receipt < event_time
-            || receipt - event_time > 0.025
+            || receipt - event_time > MAX_OS_AGE_SECONDS
         {
             return Vec::new();
         }
         let chord = [to[0] - a.point[0], to[1] - a.point[1]];
         let distance = length(chord);
-        if !(0.25..=512.0).contains(&distance) {
+        if !OS_CHORD_POINTS.contains(&distance) {
             return Vec::new();
         }
         let net = self.deltas.iter().fold([0.0; 2], |p, d| [p[0] + d[0], p[1] + d[1]]);
         let raw_len = length(net);
         let arc = self.deltas.iter().map(|d| length(*d)).sum::<f64>();
         let gain = distance / raw_len;
-        if raw_len < 0.01
-            || raw_len < arc * 0.25
-            || !(0.05..=8.0).contains(&gain)
-            || (net[0] * chord[0] + net[1] * chord[1]) / (raw_len * distance) < std::f64::consts::FRAC_1_SQRT_2
+        if raw_len < RAW_NET_MIN
+            || raw_len < arc * MIN_NET_ARC_RATIO
+            || !GAIN.contains(&gain)
+            || (net[0] * chord[0] + net[1] * chord[1]) / (raw_len * distance) < MIN_ALIGNMENT_COS
         {
             return Vec::new();
         }
+        // Complex multiplication rotates and scales cumulative raw deltas onto the OS chord.
         let norm = raw_len * raw_len;
         let re = (net[0] * chord[0] + net[1] * chord[1]) / norm;
         let im = (net[0] * chord[1] - net[1] * chord[0]) / norm;
         let mut raw = [0.0; 2];
-        let mut out = Vec::new();
+        let mut out = Vec::with_capacity(self.deltas.len().saturating_sub(1));
         for d in self.deltas.iter().take(self.deltas.len().saturating_sub(1)) {
             raw = [raw[0] + d[0], raw[1] + d[1]];
             let p = [a.point[0] + re * raw[0] - im * raw[1], a.point[1] + im * raw[0] + re * raw[1]];
-            if !finite(p) || length([p[0] - a.point[0], p[1] - a.point[1]]) + length([p[0] - to[0], p[1] - to[1]]) > distance * 3.0 {
+            if !finite(p) || length([p[0] - a.point[0], p[1] - a.point[1]]) + length([p[0] - to[0], p[1] - to[1]]) > distance * MAX_PATH_CHORD_RATIO {
                 return Vec::new();
             }
             out.push(p);
@@ -103,7 +121,7 @@ fn length(p: [f64; 2]) -> f64 {
 }
 
 struct Segment {
-    start: bool,
+    button: Option<u8>,
     from: [f64; 2],
     to: [f64; 2],
     points: Vec<[f64; 2]>,
@@ -132,32 +150,35 @@ impl Feed {
         if points.is_empty() {
             return;
         }
-        if !finite(from) || !finite(to) || points.len() > 64 || points.iter().any(|p| !finite(*p)) {
+        if !finite(from) || !finite(to) || points.len() > MAX_SAMPLES || points.iter().any(|p| !finite(*p)) {
             self.clear();
             return;
         }
         let mut p = self.lock();
-        if p.segments.len() >= 128 {
+        if p.segments.len() >= MAX_PENDING_SEGMENTS {
             p.segments.clear();
             return;
         }
-        p.segments.push_back(Segment { start: false, from, to, points });
+        p.segments.push_back(Segment { button: None, from, to, points });
     }
-    /// Native press marker: retain later moves even when down/up share a UI frame.
-    pub fn press(&self, point: [f64; 2]) {
+    /// Native press marker: button 0 is primary, 1 is secondary (egui-compatible).
+    /// Retain later moves even when down/up share a UI frame.
+    pub fn press(&self, point: [f64; 2], button: u8) {
         if !finite(point) {
             self.clear();
             return;
         }
         let mut p = self.lock();
-        if p.segments.len() >= 128 {
+        if p.segments.len() >= MAX_PENDING_SEGMENTS {
             p.segments.clear();
         }
-        p.segments.push_back(Segment { start: true, from: point, to: point, points: Vec::new() });
+        p.segments.push_back(Segment { button: Some(button), from: point, to: point, points: Vec::new() });
     }
-    pub fn begin(&self, point: [f64; 2]) {
+    pub fn begin(&self, point: [f64; 2], button: u8) {
         let mut p = self.lock();
-        if let Some(i) = p.segments.iter().position(|s| s.start && (s.to[0] - point[0]).abs() < 0.02 && (s.to[1] - point[1]).abs() < 0.02) {
+        if let Some(i) = p.segments.iter().position(|s| {
+            s.button == Some(button) && (s.to[0] - point[0]).abs() < ENDPOINT_EPSILON_POINTS && (s.to[1] - point[1]).abs() < ENDPOINT_EPSILON_POINTS
+        }) {
             p.segments.drain(..=i);
         } else {
             p.segments.clear();
@@ -165,9 +186,9 @@ impl Feed {
     }
     pub fn take(&self, from: [f64; 2], to: [f64; 2]) -> Vec<[f64; 2]> {
         let mut p = self.lock();
-        let close = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 0.02 && (a[1] - b[1]).abs() < 0.02;
+        let close = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < ENDPOINT_EPSILON_POINTS && (a[1] - b[1]).abs() < ENDPOINT_EPSILON_POINTS;
         // A later press belongs to a separate gesture, even if its coordinates repeat.
-        let Some(i) = p.segments.iter().take_while(|s| !s.start).position(|s| close(s.from, from) && close(s.to, to)) else { return Vec::new() };
+        let Some(i) = p.segments.iter().take_while(|s| s.button.is_none()).position(|s| close(s.from, from) && close(s.to, to)) else { return Vec::new() };
         let segment = p.segments.drain(..=i).next_back();
         segment.map_or_else(Vec::new, |s| s.points)
     }
@@ -193,7 +214,19 @@ mod tests {
     }
     #[test]
     fn ambiguous_intervals_keep_only_the_os_endpoint() {
-        for case in 0..10 {
+        let cases = [
+            "mixed devices",
+            "cancelling deltas",
+            "nonfinite delta",
+            "reset",
+            "single sample",
+            "overflow",
+            "long interval",
+            "old OS event",
+            "opposite direction",
+            "excessive curvature",
+        ];
+        for (case, name) in cases.into_iter().enumerate() {
             let mut a = start();
             a.push(1, [1.0, 1.0]);
             match case {
@@ -226,9 +259,29 @@ mod tests {
             } else {
                 (1.01, 1.01)
             };
-            assert!(a.endpoint([14.0, 20.0], event, receipt).is_empty(), "case {case}");
+            assert!(a.endpoint([14.0, 20.0], event, receipt).is_empty(), "{name}");
         }
     }
+    #[test]
+    fn ignored_secondary_press_cannot_supply_primary_curve() {
+        let f = Feed::default();
+        let (a, b) = ([0.0; 2], [4.0, 0.0]);
+        f.press(a, 1);
+        f.publish(a, b, vec![[2.0, 1.0]]);
+        f.press(a, 0);
+        f.publish(a, b, vec![[2.0, -1.0]]);
+        f.begin(a, 0);
+        assert_eq!(f.take(a, b), vec![[2.0, -1.0]]);
+        // Frame-end cleanup also discards unused primary markers from non-painting tools.
+        f.press(a, 0);
+        f.publish(a, b, vec![[2.0, 1.0]]);
+        f.clear();
+        f.press(a, 0);
+        f.publish(a, b, vec![[2.0, -1.0]]);
+        f.begin(a, 0);
+        assert_eq!(f.take(a, b), vec![[2.0, -1.0]]);
+    }
+
     #[test]
     fn invalid_anchor_and_warp_cannot_seed_a_later_curve() {
         let mut a = start();
@@ -257,15 +310,15 @@ mod tests {
         let f = Feed::default();
         let a = [0.0; 2];
         let b = [4.0, 0.0];
-        f.press(a);
+        f.press(a, 0);
         f.publish(a, b, vec![[2.0, 1.0]]);
-        f.press(a);
+        f.press(a, 0);
         f.publish(a, b, vec![[2.0, -1.0]]);
         assert!(f.take(a, b).is_empty(), "a native press must first match the UI press");
-        f.begin(a);
+        f.begin(a, 0);
         assert_eq!(f.take(a, b), vec![[2.0, 1.0]]);
         assert!(f.take(a, b).is_empty(), "never borrow the next stroke's identical interval");
-        f.begin(a);
+        f.begin(a, 0);
         assert_eq!(f.take(a, b), vec![[2.0, -1.0]]);
     }
     #[test]

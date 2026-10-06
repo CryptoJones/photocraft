@@ -208,7 +208,7 @@ impl GcMotion {
         if down {
             self.boundary();
             self.pressed = true;
-            self.feed.press(point);
+            self.feed.press(point, u8::from(raw.kind == crate::appkit::event_type::RIGHT_MOUSE_DOWN));
         } else if up {
             self.boundary();
             self.pressed = false;

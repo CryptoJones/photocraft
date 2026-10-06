@@ -3751,6 +3751,7 @@ dependencies = [
  "photocraft-io",
  "photocraft-plugins",
  "photocraft-raster",
+ "photocraft-tablet",
  "photocraft-testkit",
  "photocraft-text",
  "photocraft-vector",

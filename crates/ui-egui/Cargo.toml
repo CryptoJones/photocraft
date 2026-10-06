@@ -31,6 +31,7 @@ base64 = "0.22"
 rayon = { workspace = true }
 
 [dev-dependencies]
+photocraft-tablet = { workspace = true }
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot", "eframe"] }
 # Only for examples/snapshot.rs (offscreen UI renders of real files).
 photocraft-io = { workspace = true }

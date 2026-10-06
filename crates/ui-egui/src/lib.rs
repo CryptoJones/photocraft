@@ -174,8 +174,23 @@ pub type RecoverFn = Box<dyn FnMut() -> Vec<(Option<String>, Document)>>;
 pub type AppendTextFn = Box<dyn FnMut(&str, &str) -> Result<(), String>>;
 /// Requests from the operating system since the last call (see [`OsEvent`]).
 pub type OsEventsFn = Box<dyn FnMut() -> Vec<OsEvent>>;
-/// Supplemental mouse motion; `None` starts a press, `Some` matches both OS endpoints.
-pub type MotionSamplesFn = Box<dyn FnMut(Option<egui::Pos2>, egui::Pos2, f32) -> Vec<egui::Pos2>>;
+/// Window events in egui points. Every press is synchronized, even if painting ignores it.
+#[derive(Clone, Copy)]
+pub enum MouseMotion {
+    Press {
+        position: egui::Pos2,
+        button: egui::PointerButton,
+    },
+    Move {
+        from: egui::Pos2,
+        to: egui::Pos2,
+    },
+    /// Drop samples not consumed by this frame (dialogs, other tools, rejected presses).
+    EndFrame,
+}
+/// The second argument is UI zoom, not display DPI. Returned interior points are in egui
+/// points, exclude the OS endpoint, and consume the matching native segment once.
+pub type MotionSamplesFn = Box<dyn FnMut(MouseMotion, f32) -> Vec<egui::Pos2>>;
 
 /// Platform services injected by the app binary (file dialogs, codecs), keeping this crate free of
 /// I/O dependencies.
@@ -845,6 +860,9 @@ impl eframe::App for PhotocraftApp {
         ctx.set_cursor_image(None);
         // Fonts registered via set_fonts only take effect next frame; named families would panic now.
         if !self.fonts_ready {
+            if let Some(read) = self.services.motion_samples.as_mut() {
+                read(MouseMotion::EndFrame, ctx.zoom_factor());
+            }
             ctx.request_repaint();
             self.automation_input = false;
             return;
@@ -892,6 +910,9 @@ impl eframe::App for PhotocraftApp {
         notices::show(self, &ctx);
         // A device lost while drawing this frame: switch to the CPU canvas before the next one.
         gpu_status::check(self, &ctx);
+        if let Some(read) = self.services.motion_samples.as_mut() {
+            read(MouseMotion::EndFrame, ctx.zoom_factor());
+        }
         self.automation_input = false;
         self.perf.frame(gpu_canvas::now_ms() - t0);
         // Synthetic input is injected one press/release step per frame: keep frames coming until

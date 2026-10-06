@@ -3,9 +3,9 @@
 
 use egui::{Event, Modifiers, PointerButton, Response};
 
-use crate::PhotocraftApp;
 use crate::canvas::{ToolEvent, ViewXform, tool_event};
 use crate::state::Tool;
+use crate::{MouseMotion, PhotocraftApp};
 
 #[derive(Default)]
 pub struct BrushInput {
@@ -19,10 +19,6 @@ pub struct BrushInput {
 /// Returns true when this path owns painting; other tools retain their response-based gestures.
 pub fn route(app: &mut PhotocraftApp, response: &Response, xf: &ViewXform, tool: Tool) -> bool {
     let eligible = response.hovered() || response.dragged() || response.drag_stopped() || response.is_pointer_button_down_on();
-    route_with_eligibility(app, response, xf, tool, eligible)
-}
-
-pub fn route_with_eligibility(app: &mut PhotocraftApp, response: &Response, xf: &ViewXform, tool: Tool, eligible: bool) -> bool {
     if !tool.is_brushlike() && tool != Tool::QuickSelection {
         return false;
     }
@@ -34,11 +30,11 @@ pub fn route_with_eligibility(app: &mut PhotocraftApp, response: &Response, xf: 
     let zoom = response.ctx.zoom_factor();
     let automation = app.automation_input;
     let motion = &mut app.services.motion_samples;
-    let samples = app.brush_input.events_with_motion(&events, xf, eligible, secondary, (pressure, mods), |from, to| {
+    let samples = app.brush_input.events_with_motion(&events, xf, eligible, secondary, (pressure, mods), |event| {
         if automation {
             return Vec::new();
         }
-        motion.as_mut().map_or_else(Vec::new, |read| read(from, to, zoom))
+        motion.as_mut().map_or_else(Vec::new, |read| read(event, zoom))
     });
     app.brush_input.defer_preview = true;
     for (event, modifiers, erase) in samples {
@@ -119,7 +115,7 @@ impl BrushInput {
         pressure: f32,
         mods: Modifiers,
     ) -> Vec<(ToolEvent, Modifiers, bool)> {
-        self.events_with_motion(events, xf, eligible, secondary, (pressure, mods), |_, _| Vec::new())
+        self.events_with_motion(events, xf, eligible, secondary, (pressure, mods), |_| Vec::new())
     }
 
     fn events_with_motion(
@@ -129,10 +125,16 @@ impl BrushInput {
         eligible: bool,
         secondary: bool,
         (mut pressure, mut mods): (f32, Modifiers),
-        mut motion: impl FnMut(Option<egui::Pos2>, egui::Pos2) -> Vec<egui::Pos2>,
+        mut motion: impl FnMut(MouseMotion) -> Vec<egui::Pos2>,
     ) -> Vec<(ToolEvent, Modifiers, bool)> {
         let mut out = Vec::new();
         for event in events {
+            // Native records every press; synchronize ignored presses too, before hit testing.
+            if let Event::PointerButton { pos, button, pressed: true, .. } = *event
+                && matches!(button, PointerButton::Primary | PointerButton::Secondary)
+            {
+                motion(MouseMotion::Press { position: pos, button });
+            }
             match *event {
                 Event::PointerButton { pos, button, pressed: true, modifiers }
                     if self.button.is_none()
@@ -143,7 +145,6 @@ impl BrushInput {
                     self.button = Some(button);
                     self.last = Some(pos);
                     self.transform = Some(*xf);
-                    motion(None, pos);
                     mods = modifiers;
                     let [x, y] = xf.to_doc(pos);
                     out.push((ToolEvent::Down { x, y, pressure }, mods, button == PointerButton::Secondary));
@@ -151,7 +152,13 @@ impl BrushInput {
                 Event::PointerMoved(pos) if self.button.is_some() => {
                     let same_transform = self.transform == Some(*xf);
                     self.transform = Some(*xf);
-                    for point in motion(self.last, pos).into_iter().take(64).filter(|p| same_transform && p.x.is_finite() && p.y.is_finite()) {
+                    for point in self
+                        .last
+                        .map_or_else(Vec::new, |from| motion(MouseMotion::Move { from, to: pos }))
+                        .into_iter()
+                        .take(64)
+                        .filter(|p| same_transform && p.x.is_finite() && p.y.is_finite())
+                    {
                         let [x, y] = xf.to_doc(point);
                         out.push((ToolEvent::Move { x, y, pressure }, mods, false));
                     }
@@ -184,6 +191,67 @@ mod tests {
     use egui::{Pos2, Rect, pos2};
 
     use super::*;
+
+    #[test]
+    fn ignored_gestures_cannot_contaminate_the_next_paint_stroke() {
+        use egui_kittest::Harness;
+        use photocraft_tablet::motion::Feed;
+        use serde_json::json;
+        let feed = Feed::default();
+        let native = feed.clone();
+        let services = crate::Services {
+            motion_samples: Some(Box::new(move |event, _| {
+                let point = |p: egui::Pos2| [f64::from(p.x), f64::from(p.y)];
+                match event {
+                    MouseMotion::Press { position, button } => {
+                        native.begin(point(position), button as u8);
+                        Vec::new()
+                    }
+                    MouseMotion::Move { from, to } => native.take(point(from), point(to)).into_iter().map(|p| pos2(p[0] as f32, p[1] as f32)).collect(),
+                    MouseMotion::EndFrame => {
+                        native.clear();
+                        Vec::new()
+                    }
+                }
+            })),
+            ..Default::default()
+        };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+        app.run("file.new", json!({"width":128,"height":128})).unwrap();
+        app.ui.tool = Tool::Brush;
+        let mut h = Harness::builder().with_size(egui::vec2(1000.0, 800.0)).build_eframe(|_| app);
+        h.run_steps(3);
+        let a = h.state().last_canvas_rect.center();
+        let b = a + egui::vec2(20.0, 0.0);
+        let p = |p: egui::Pos2| [f64::from(p.x), f64::from(p.y)];
+        feed.press(p(a), 1);
+        feed.publish(p(a), p(b), vec![p(a + egui::vec2(10.0, -10.0))]);
+        feed.press(p(a), 0);
+        feed.publish(p(a), p(b), vec![p(a + egui::vec2(10.0, 10.0))]);
+        h.input_mut().events.extend([
+            Event::PointerMoved(a),
+            button(a, true, PointerButton::Secondary),
+            Event::PointerMoved(b),
+            button(b, false, PointerButton::Secondary),
+            Event::PointerMoved(a),
+            button(a, true, PointerButton::Primary),
+            Event::PointerMoved(b),
+            button(b, false, PointerButton::Primary),
+        ]);
+        h.step();
+        let strokes: Vec<_> = h.state().session.journal.iter().filter(|(id, _)| id == "paint.stroke").collect();
+        assert_eq!(strokes.len(), 1);
+        let points = strokes[0].1["points"].as_array().unwrap();
+        assert_eq!(points.len(), 3);
+        assert!(points[1][1].as_f64().unwrap() > points[0][1].as_f64().unwrap(), "only the current curve reaches painting");
+        // An ignored primary press while another tool owns the canvas must expire this frame.
+        h.state_mut().ui.tool = Tool::Move;
+        feed.press(p(a), 0);
+        feed.publish(p(a), p(b), vec![p(a + egui::vec2(10.0, -10.0))]);
+        h.input_mut().events.extend([button(a, true, PointerButton::Primary), Event::PointerMoved(b), button(b, false, PointerButton::Primary)]);
+        h.step();
+        assert!(feed.take(p(a), p(b)).is_empty());
+    }
 
     #[test]
     fn captured_resize_completes_without_painting() {
@@ -257,7 +325,7 @@ mod tests {
         input.events(&[button(p, true, PointerButton::Primary)], &transform, true, false, 1.0, Modifiers::NONE);
         transform.zoom = 3.0;
         let mut consumed = false;
-        let out = input.events_with_motion(&[Event::PointerMoved(pos2(30.0, 30.0))], &transform, true, false, (1.0, Modifiers::NONE), |_, _| {
+        let out = input.events_with_motion(&[Event::PointerMoved(pos2(30.0, 30.0))], &transform, true, false, (1.0, Modifiers::NONE), |_| {
             consumed = true;
             vec![pos2(25.0, 50.0)]
         });
@@ -273,7 +341,10 @@ mod tests {
             for smoothing in [0.0, 0.1] {
                 for tool in [Tool::Brush, Tool::Pencil, Tool::Eraser] {
                     let services = crate::Services {
-                        motion_samples: Some(Box::new(|from, to, _| from.map_or_else(Vec::new, |p| vec![p.lerp(to, 0.5) + egui::vec2(0.0, 10.0)]))),
+                        motion_samples: Some(Box::new(|event, _| match event {
+                            MouseMotion::Move { from, to } => vec![from.lerp(to, 0.5) + egui::vec2(0.0, 10.0)],
+                            _ => Vec::new(),
+                        })),
                         ..Default::default()
                     };
                     let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
