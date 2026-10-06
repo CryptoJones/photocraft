@@ -117,7 +117,7 @@ fn wayland_batched_absolute_positions_do_not_compress_a_raw_curve() {
 
 #[test]
 fn touch_native_collector_and_automation_do_not_mix_with_raw_mouse_motion() {
-    for mode in ["touch", "pen", "native", "automation"] {
+    for mode in ["touch", "active touch", "unpressured touch", "invalid force touch", "pen", "native", "automation"] {
         let services = if mode == "native" {
             crate::Services {
                 motion_samples: Some(Box::new(|event, _| match event {
@@ -141,6 +141,15 @@ fn touch_native_collector_and_automation_do_not_mix_with_raw_mouse_motion() {
         h.state_mut().automation_input = mode == "automation";
         let a = h.state().last_canvas_rect.center();
         let b = a + vec2(12.0, 0.0);
+        if mode.ends_with("touch") && mode != "touch" {
+            let force = match mode {
+                "unpressured touch" => None,
+                "invalid force touch" => Some(f32::NAN),
+                _ => Some(0.5),
+            };
+            h.input_mut().events.push(Event::Touch { device_id: egui::TouchDeviceId(0), id: egui::TouchId(0), phase: egui::TouchPhase::Start, pos: a, force });
+            h.step();
+        }
         h.input_mut().events.extend([
             Event::PointerMoved(a),
             button(a, true),

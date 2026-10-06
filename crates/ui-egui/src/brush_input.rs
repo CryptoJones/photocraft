@@ -29,7 +29,7 @@ pub fn route(app: &mut PhotocraftApp, response: &Response, xf: &ViewXform, tool:
             i.raw.events.iter().filter(|e| app.stylus.use_pressure || !matches!(e, Event::Touch { .. })).cloned().collect::<Vec<_>>(),
             i.modifiers,
             i.time,
-            i.raw.events.iter().any(|e| matches!(e, Event::Touch { .. })),
+            i.any_touches() || i.raw.events.iter().any(|e| matches!(e, Event::Touch { .. })),
         )
     });
     let secondary = crate::paint_mouse::right_erases(app, tool);
