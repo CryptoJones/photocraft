@@ -39,7 +39,11 @@ cargo run -p photocraft-tablet --features input-probe --example input_probe -- \
   enclosing NSEvent timestamp separately; fitting uses that event clock for AppKit streams.
   GC callbacks provide no per-delta timestamp argument. The probe also records the profile's
   `lastEventTimestamp` for investigation, but it may refer to a newer update than a queued
-  callback; it is not assumed to be a hardware timestamp for that delta. Rates
+  callback; it is not assumed to be a hardware timestamp for that delta. In this local run
+  profile timestamps resembled Unix wall time, whereas AppKit used system uptime; some
+  successive GC callbacks shared a profile timestamp. Clock origin, clock changes and
+  queued state updates must be checked before using those values to align individual deltas.
+  Rates
   count unique callback times; simultaneous fingers do not count as separate polling ticks.
 
 ## Alignment and limits
@@ -76,3 +80,8 @@ release the raw-input mutex before doing work, and fitting retains event/receipt
 This proves additional information is available in this run, not that endpoint fitting is
 accurate enough to ship. Next evidence: fast curves/reversals, slow straight lines, repeated
 finger lifts, thumb clicking, both coalescing settings, and independent mouse/trackpad runs.
+
+Later runs with the fixed collector put median painting delivery near 8.4 ms for both OS
+and GC, and trackpad event gaps near 8.0 ms. Additional samples still existed, but global
+held-out errors were about 8–10 pixels on some fast scribbles and larger on another run.
+This is useful capture/replay evidence, not a demonstrated latency or accuracy win.
