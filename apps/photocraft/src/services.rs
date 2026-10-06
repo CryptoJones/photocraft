@@ -84,6 +84,7 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
         }) as photocraft_ui_egui::AutomationCommandFn
     });
     Services {
+        motion_samples: None,
         import: Some(Box::new(|name: &str, bytes: &[u8]| {
             crate::crash_guard::guard("Open", || photocraft_io::import(name, bytes).map(|r| (r.document, r.warnings)).map_err(|e| e.to_string()))
         })),
@@ -96,11 +97,6 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
         })),
         pick_open: Some(Box::new(|| {
             let path = rfd::FileDialog::new().add_filter("All Formats", OPEN_EXTS).add_filter("PhotoCraft", &["pcraft"]).pick_file()?;
-            let bytes = std::fs::read(&path).ok()?;
-            Some((path.to_string_lossy().to_string(), bytes))
-        })),
-        pick_brush_recording: Some(Box::new(|| {
-            let path = rfd::FileDialog::new().add_filter("Brush recording", &["json"]).pick_file()?;
             let bytes = std::fs::read(&path).ok()?;
             Some((path.to_string_lossy().to_string(), bytes))
         })),

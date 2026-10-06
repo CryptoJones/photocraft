@@ -77,25 +77,6 @@ pub fn handle(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest
     let s = |k: &str| p.get(k).and_then(Value::as_str);
     let u = |k: &str| p.get(k).and_then(Value::as_u64);
     match req.method.as_str() {
-        "ui.brushReplay.record" => {
-            if p.get("enabled").and_then(Value::as_bool) == Some(false) {
-                app.brush_lab.capturing = false;
-                ok(json!({"recording": false}))
-            } else {
-                wrap(crate::brush_replay::Lab::start(app).map(|()| json!({"recording": true})))
-            }
-        }
-        "ui.brushReplay.read" => wrap(serde_json::to_value(&app.brush_lab.recording).map_err(|e| e.to_string())),
-        "ui.brushReplay.load" => {
-            if app.brush_lab.capturing || app.drag.is_some() {
-                return err("Finish the stroke and stop recording first");
-            }
-            wrap(serde_json::to_vec(p).map_err(|e| e.to_string()).and_then(|bytes| crate::brush_replay::Recording::load(&bytes)).map(|record| {
-                app.brush_lab.recording = Some(record);
-                json!({"loaded": true})
-            }))
-        }
-        "ui.brushReplay.compare" => wrap(crate::brush_replay::compare(app).map(|()| json!({"compared": true}))),
         "engine.execute" | "ui.menu.invoke" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             let params = p.get("params").cloned().unwrap_or(json!({}));
@@ -461,7 +442,6 @@ pub fn inspect(app: &PhotocraftApp, ctx: &egui::Context) -> Value {
         app.ui.dialogs.iter().map(|d| json!({"id": d.id, "kind": d.kind, "title": crate::dialogs::title(d), "fields": d.fields})).collect();
     json!({
         "window": {"width": screen.width(), "height": screen.height(), "pixelsPerPoint": ctx.pixels_per_point()},
-        "brushInput": {"allSamples": app.brush_input.all_samples, "nativeCursor": app.brush_cursor.native, "recording": app.brush_lab.capturing},
         "tool": app.ui.tool,
         "textEdit": app.ui.text_edit,
         "panels": app.ui.panels,

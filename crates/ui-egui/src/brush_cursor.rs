@@ -3,19 +3,18 @@
 use egui::{Context, CustomCursorImage};
 
 pub struct BrushCursor {
-    pub native: bool,
     cached: Option<((u32, u32, bool), CustomCursorImage)>,
 }
 
 impl Default for BrushCursor {
     fn default() -> Self {
-        Self { native: true, cached: None }
+        Self { cached: None }
     }
 }
 
 impl BrushCursor {
     pub fn show(&mut self, ctx: &Context, radius: f32, crosshair: bool) -> bool {
-        if !self.native || cfg!(target_arch = "wasm32") {
+        if cfg!(target_arch = "wasm32") {
             return false;
         }
         // winit 0.30 builds macOS NSImages with size == bitmap dimensions in logical points.
@@ -95,8 +94,6 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&first, &cache.cached.as_ref().unwrap().1.rgba));
         assert!(cache.show(&ctx, 10.0, true));
         assert!(!std::sync::Arc::ptr_eq(&first, &cache.cached.as_ref().unwrap().1.rgba));
-        cache.native = false;
-        assert!(!cache.show(&ctx, 10.0, true));
     }
 
     #[test]

@@ -8,27 +8,27 @@ use crate::canvas::{ToolEvent, ViewXform, tool_event};
 use crate::state::Tool;
 
 pub struct BrushInput {
-    pub all_samples: bool,
     pub defer_preview: bool,
     button: Option<PointerButton>,
     last: Option<egui::Pos2>,
+    owner: Option<(photocraft_doc::DocId, Tool)>,
+    transform: Option<ViewXform>,
 }
 
 impl Default for BrushInput {
     fn default() -> Self {
-        Self { all_samples: true, defer_preview: false, button: None, last: None }
+        Self { defer_preview: false, button: None, last: None, owner: None, transform: None }
     }
 }
 
 /// Returns true when this path owns painting; other tools retain their response-based gestures.
 pub fn route(app: &mut PhotocraftApp, response: &Response, xf: &ViewXform, tool: Tool) -> bool {
-    crate::brush_replay::Lab::capture(app, response, xf, tool);
     let eligible = response.hovered() || response.dragged() || response.drag_stopped() || response.is_pointer_button_down_on();
     route_with_eligibility(app, response, xf, tool, eligible)
 }
 
 pub fn route_with_eligibility(app: &mut PhotocraftApp, response: &Response, xf: &ViewXform, tool: Tool, eligible: bool) -> bool {
-    if !app.brush_input.all_samples || !tool.is_brushlike() && tool != Tool::QuickSelection {
+    if !tool.is_brushlike() && tool != Tool::QuickSelection {
         return false;
     }
     let (events, mods) = response
@@ -36,7 +36,15 @@ pub fn route_with_eligibility(app: &mut PhotocraftApp, response: &Response, xf: 
         .input(|i| (i.raw.events.iter().filter(|e| app.stylus.use_pressure || !matches!(e, Event::Touch { .. })).cloned().collect::<Vec<_>>(), i.modifiers));
     let secondary = crate::paint_mouse::right_erases(app, tool);
     let pressure = app.stylus.pressure();
-    let samples = app.brush_input.events(&events, xf, eligible, secondary, pressure, mods);
+    let zoom = response.ctx.zoom_factor();
+    let automation = app.automation_input;
+    let motion = &mut app.services.motion_samples;
+    let samples = app.brush_input.events_with_motion(&events, xf, eligible, secondary, pressure, mods, |from, to| {
+        if automation {
+            return Vec::new();
+        }
+        motion.as_mut().map_or_else(Vec::new, |read| read(from, to, zoom))
+    });
     app.brush_input.defer_preview = true;
     for (event, modifiers, erase) in samples {
         if matches!(event, ToolEvent::Up { .. }) {
@@ -44,16 +52,82 @@ pub fn route_with_eligibility(app: &mut PhotocraftApp, response: &Response, xf: 
         }
         if matches!(event, ToolEvent::Down { .. }) {
             app.secondary_erase = erase;
+            app.brush_input.owner = app.session.active().map(|st| (st.doc.id, tool));
         }
         tool_event(app, event, modifiers);
+        if matches!(event, ToolEvent::Up { .. }) {
+            app.brush_input.owner = None;
+        }
     }
     app.brush_input.defer_preview = false;
     crate::canvas::feed_live_stroke(app);
     true
 }
 
+/// Complete ink in its original document when a gesture loses its canvas or tool.
+pub fn interrupt(app: &mut PhotocraftApp) {
+    let owner = app.brush_input.owner.take();
+    app.brush_input.button = None;
+    app.brush_input.last = None;
+    let transform = app.brush_input.transform.take();
+    app.brush_input.defer_preview = false;
+    app.brush_resize = None;
+    let Some((doc, tool)) = owner else { return };
+    let previous = app.session.active().map(|st| st.doc.id);
+    let owner_index = app.session.documents().iter().position(|st| st.doc.id == doc);
+    if let Some(index) = owner_index {
+        app.session.set_active(index);
+        let previous_zoom = app.ui.views.get(index).map(|view| view.zoom);
+        if let Some(view) = app.ui.views.get_mut(index)
+            && let Some(transform) = transform
+        {
+            view.zoom = transform.zoom;
+        }
+        crate::canvas::finish_brush_capture(app, tool);
+        if let Some(view) = app.ui.views.get_mut(index)
+            && let Some(zoom) = previous_zoom
+        {
+            view.zoom = zoom;
+        }
+        if let Some(index) = previous.and_then(|id| app.session.documents().iter().position(|st| st.doc.id == id)) {
+            app.session.set_active(index);
+        }
+    } else {
+        app.drag = None;
+        app.live_stroke = None;
+    }
+}
+
+pub fn sync_capture(app: &mut PhotocraftApp, ctx: &egui::Context) {
+    let Some((doc, tool)) = app.brush_input.owner else { return };
+    // Route the current batch first when it contains focus loss, retaining preceding motion.
+    let unfocused = ctx.input(|i| !i.focused && !i.raw.events.iter().any(|event| matches!(event, Event::WindowFocused(false))));
+    if app.session.active().is_none_or(|st| st.doc.id != doc) || app.ui.tool != tool || !app.ui.dialogs.is_empty() || unfocused {
+        interrupt(app);
+    }
+}
+
+pub fn sync_effective_tool(app: &mut PhotocraftApp, tool: Tool) {
+    if app.brush_input.owner.is_some_and(|(_, owner)| owner != tool) {
+        interrupt(app);
+    }
+}
+
 impl BrushInput {
+    #[cfg(test)]
     fn events(
+        &mut self,
+        events: &[Event],
+        xf: &ViewXform,
+        eligible: bool,
+        secondary: bool,
+        pressure: f32,
+        mods: Modifiers,
+    ) -> Vec<(ToolEvent, Modifiers, bool)> {
+        self.events_with_motion(events, xf, eligible, secondary, pressure, mods, |_, _| Vec::new())
+    }
+
+    fn events_with_motion(
         &mut self,
         events: &[Event],
         xf: &ViewXform,
@@ -61,6 +135,7 @@ impl BrushInput {
         secondary: bool,
         mut pressure: f32,
         mut mods: Modifiers,
+        mut motion: impl FnMut(Option<egui::Pos2>, egui::Pos2) -> Vec<egui::Pos2>,
     ) -> Vec<(ToolEvent, Modifiers, bool)> {
         let mut out = Vec::new();
         for event in events {
@@ -73,11 +148,19 @@ impl BrushInput {
                 {
                     self.button = Some(button);
                     self.last = Some(pos);
+                    self.transform = Some(*xf);
+                    motion(None, pos);
                     mods = modifiers;
                     let [x, y] = xf.to_doc(pos);
                     out.push((ToolEvent::Down { x, y, pressure }, mods, button == PointerButton::Secondary));
                 }
                 Event::PointerMoved(pos) if self.button.is_some() => {
+                    let same_transform = self.transform == Some(*xf);
+                    self.transform = Some(*xf);
+                    for point in motion(self.last, pos).into_iter().take(64).filter(|p| same_transform && p.x.is_finite() && p.y.is_finite()) {
+                        let [x, y] = xf.to_doc(point);
+                        out.push((ToolEvent::Move { x, y, pressure }, mods, false));
+                    }
                     self.last = Some(pos);
                     let [x, y] = xf.to_doc(pos);
                     out.push((ToolEvent::Move { x, y, pressure }, mods, false));
@@ -107,6 +190,97 @@ mod tests {
     use egui::{Pos2, Rect, pos2};
 
     use super::*;
+
+    #[test]
+    fn interruption_commits_ink_to_owner_and_restores_current_document() {
+        use serde_json::json;
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        app.session.execute("file.new", json!({"width":100,"height":100})).unwrap();
+        let owner = app.session.active().unwrap().doc.id;
+        app.ui.tool = Tool::Brush;
+        tool_event(&mut app, ToolEvent::Down { x: 10.0, y: 10.0, pressure: 1.0 }, Modifiers::NONE);
+        tool_event(&mut app, ToolEvent::Move { x: 30.0, y: 40.0, pressure: 1.0 }, Modifiers::NONE);
+        app.brush_input.owner = Some((owner, Tool::Brush));
+        app.brush_input.button = Some(PointerButton::Primary);
+        app.brush_input.transform = Some(xf());
+        app.session.execute("file.new", json!({"width":100,"height":100})).unwrap();
+        let current = app.session.active().unwrap().doc.id;
+        app.ui.tool = Tool::Hand;
+        interrupt(&mut app);
+        assert_eq!(app.session.active().unwrap().doc.id, current);
+        assert_eq!(app.ui.tool, Tool::Hand);
+        assert!(app.drag.is_none());
+        assert!(app.brush_input.button.is_none());
+        assert_eq!(app.session.journal.iter().filter(|(id, _)| id == "paint.stroke").count(), 1);
+    }
+
+    #[test]
+    fn capture_without_paint_drag_survives_sync() {
+        use serde_json::json;
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        app.session.execute("file.new", json!({"width":100,"height":100})).unwrap();
+        app.ui.tool = Tool::Brush;
+        app.brush_input.owner = Some((app.session.active().unwrap().doc.id, Tool::Brush));
+        app.brush_input.button = Some(PointerButton::Primary);
+        let ctx = egui::Context::default();
+        sync_capture(&mut app, &ctx);
+        assert!(app.brush_input.button.is_some());
+        sync_effective_tool(&mut app, Tool::Hand);
+        assert!(app.brush_input.button.is_none());
+    }
+
+    #[test]
+    fn view_change_consumes_but_rejects_raw_interval() {
+        let mut input = BrushInput::default();
+        let mut transform = xf();
+        let p = pos2(20.0, 20.0);
+        input.events(&[button(p, true, PointerButton::Primary)], &transform, true, false, 1.0, Modifiers::NONE);
+        transform.zoom = 3.0;
+        let mut consumed = false;
+        let out = input.events_with_motion(&[Event::PointerMoved(pos2(30.0, 30.0))], &transform, true, false, 1.0, Modifiers::NONE, |_, _| {
+            consumed = true;
+            vec![pos2(25.0, 50.0)]
+        });
+        assert!(consumed);
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn production_motion_reaches_strokes_with_smoothing_and_every_depth() {
+        use egui_kittest::Harness;
+        use serde_json::json;
+        for depth in [8, 16, 32] {
+            for smoothing in [0.0, 0.1] {
+                for tool in [Tool::Brush, Tool::Pencil, Tool::Eraser] {
+                    let services = crate::Services {
+                        motion_samples: Some(Box::new(|from, to, _| from.map_or_else(Vec::new, |p| vec![p.lerp(to, 0.5) + egui::vec2(0.0, 10.0)]))),
+                        ..Default::default()
+                    };
+                    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+                    app.run("file.new", json!({"width":128,"height":128,"depth":depth,"background":"white"})).unwrap();
+                    app.ui.tool = tool;
+                    app.session.tools.brush.smoothing.amount = smoothing;
+                    let mut h = Harness::builder().with_size(egui::vec2(1000.0, 800.0)).build_eframe(|_| app);
+                    h.run_steps(3);
+                    let p = h.state().last_canvas_rect.center();
+                    let end = p + egui::vec2(20.0, 0.0);
+                    h.input_mut().events.extend([
+                        Event::PointerMoved(p),
+                        button(p, true, PointerButton::Primary),
+                        Event::PointerMoved(end),
+                        button(end, false, PointerButton::Primary),
+                    ]);
+                    h.step();
+                    let command = if tool == Tool::Pencil { "paint.pencil" } else { "paint.stroke" };
+                    let strokes: Vec<_> = h.state().session.journal.iter().filter(|(id, _)| id == command).collect();
+                    assert_eq!(strokes.len(), 1, "{tool:?}, depth {depth}, smoothing {smoothing}");
+                    let points = strokes[0].1["points"].as_array().unwrap();
+                    assert_eq!(points.len(), 3);
+                    assert_ne!(points[1][1], points[2][1], "interior curve survives input routing");
+                }
+            }
+        }
+    }
 
     fn xf() -> ViewXform {
         ViewXform { rect: Rect::from_min_max(Pos2::ZERO, pos2(100.0, 100.0)), zoom: 2.0, center: [50.0; 2], flip: true }
@@ -193,16 +367,15 @@ mod tests {
     }
 
     #[test]
-    fn real_canvas_preserves_batched_curve_compared_with_old_path() {
+    fn real_canvas_preserves_batched_curve_and_one_undo_step() {
         use egui_kittest::Harness;
         use serde_json::json;
-        for all in [false, true] {
+        for _ in 0..1 {
             let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
             app.run("file.new", json!({"width": 256, "height": 256, "background": "transparent"})).unwrap();
             app.ui.tool = Tool::Brush;
             app.session.tools.brush.size = 6.0;
             app.session.tools.brush.smoothing.amount = 0.0;
-            app.brush_input.all_samples = all;
             let mut h = Harness::builder().with_size(egui::vec2(1000.0, 800.0)).build_eframe(|_| app);
             h.run_steps(3);
             let c = h.state().last_canvas_rect.center();
@@ -219,7 +392,7 @@ mod tests {
             h.run_steps(1);
             let strokes: Vec<_> = h.state().session.journal.iter().filter(|(id, _)| id == "paint.stroke").collect();
             assert_eq!(strokes.len(), 1, "one undo step");
-            assert_eq!(strokes[0].1["points"].as_array().unwrap().len(), if all { 4 } else { 2 });
+            assert_eq!(strokes[0].1["points"].as_array().unwrap().len(), 4);
         }
     }
 }

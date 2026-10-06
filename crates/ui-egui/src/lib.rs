@@ -26,7 +26,6 @@ mod brush_input;
 pub mod brush_panel;
 pub mod brush_picker;
 pub mod brush_preview;
-pub mod brush_replay;
 pub mod brush_resize;
 pub mod brush_sections;
 pub mod brushes_tab;
@@ -174,19 +173,20 @@ pub type RecoverFn = Box<dyn FnMut() -> Vec<(Option<String>, Document)>>;
 pub type AppendTextFn = Box<dyn FnMut(&str, &str) -> Result<(), String>>;
 /// Requests from the operating system since the last call (see [`OsEvent`]).
 pub type OsEventsFn = Box<dyn FnMut() -> Vec<OsEvent>>;
+/// Supplemental mouse motion; `None` starts a press, `Some` matches both OS endpoints.
+pub type MotionSamplesFn = Box<dyn FnMut(Option<egui::Pos2>, egui::Pos2, f32) -> Vec<egui::Pos2>>;
 
 /// Platform services injected by the app binary (file dialogs, codecs), keeping this crate free of
 /// I/O dependencies.
 #[derive(Default)]
 pub struct Services {
+    pub motion_samples: Option<MotionSamplesFn>,
     /// Decode a file's bytes into a document (PSD, PNG, JPEG, …).
     pub import: Option<ImportFn>,
     /// Encode a document for a file name (format chosen by extension).
     pub export: Option<ExportFn>,
     /// Show an "open file" dialog; returns (name, bytes).
     pub pick_open: Option<PickOpenFn>,
-    /// Open a saved brush input recording (JSON), with its own file filter.
-    pub pick_brush_recording: Option<PickOpenFn>,
     /// Show a "save file" dialog; returns a path/name to write.
     pub pick_save: Option<PickSaveFn>,
     /// Write bytes to a path (native) or trigger a download (web).
@@ -342,7 +342,6 @@ pub struct PhotocraftApp {
     pub stylus: stylus::Stylus,
     pub(crate) brush_cursor: brush_cursor::BrushCursor,
     pub(crate) brush_input: brush_input::BrushInput,
-    pub(crate) brush_lab: brush_replay::Lab,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
     live_tokens: theme::live::LiveTokens,
 }
@@ -413,7 +412,6 @@ impl PhotocraftApp {
             stylus: Default::default(),
             brush_cursor: Default::default(),
             brush_input: Default::default(),
-            brush_lab: Default::default(),
             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
             live_tokens: theme::live::LiveTokens::from_env(),
         };
@@ -821,6 +819,7 @@ impl eframe::App for PhotocraftApp {
         self.drain_os_events(ctx);
         // Files dropped onto the window open as documents (with their path, like File › Open).
         self.open_dropped(ctx.input(|i| i.raw.dropped_files.clone()));
+        brush_input::sync_capture(self, ctx);
         // The control transport wakes the UI on arrival (ctx.request_repaint); only poll while a
         // screenshot is pending. (Polling every 50 ms here made idle apps render at 20 fps.)
         if !self.pending_screenshots.is_empty() {
@@ -883,9 +882,6 @@ impl eframe::App for PhotocraftApp {
         wide_angle_ui::show(self, &ctx);
         canvas::extra_windows(self, &ctx);
         notices::show(self, &ctx);
-        if self.brush_lab.open {
-            brush_replay::show(self, &ctx);
-        }
         // A device lost while drawing this frame: switch to the CPU canvas before the next one.
         gpu_status::check(self, &ctx);
         self.automation_input = false;

@@ -251,7 +251,7 @@ pub enum ToolEvent {
 }
 
 /// Document ↔ screen mapping for a canvas rect and a view.
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewXform {
     pub rect: Rect,
     pub zoom: f32,
@@ -1177,7 +1177,6 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
     let mut on_gpu = false;
     // A flipped view draws through the CPU path (the GPU canvas shader has no mirroring).
     if app.gpu.is_some()
-        && !app.brush_lab.cpu_docs.contains(&doc.id)
         && !flip
         && let Some((k, key)) = ensure_adjust_proxy(app, idx, view.zoom * ctx.pixels_per_point())
             .or_else(|| ensure_filter_preview(app, idx))
@@ -1199,7 +1198,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             hdr: hdr_preview(app, &doc),
         };
         crate::gpu_canvas::GpuCanvas::paint(&painter, rect, params);
-    } else if !app.brush_lab.cpu_docs.contains(&doc.id) && !flip && ensure_gpu(app, idx, visible_doc_rect(&xf)) {
+    } else if !flip && ensure_gpu(app, idx, visible_doc_rect(&xf)) {
         on_gpu = true;
         app.perf.gpu = true;
         // Shadow, checkerboard, document and pixel grid in one custom shader (gpu_canvas.rs).
@@ -1378,6 +1377,9 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
         None if middle => Tool::Hand,
         None => app.ui.tool,
     };
+    if primary {
+        crate::brush_input::sync_effective_tool(app, tool);
+    }
     // Zoom direction: the temporary zoom key decides, else ⌥ (Zoom tool).
     let zoom_out = |alt: bool| match temporary {
         Some(crate::hold_keys::Temporary::ZoomOut) => true,
@@ -1517,16 +1519,8 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
                     };
                     match cur.painting {
                         PaintingCursor::Standard => egui::CursorIcon::Default,
-                        PaintingCursor::Precise if app.brush_cursor.native => egui::CursorIcon::Crosshair,
-                        _ if painting && cur.show_only_crosshair_while_painting && app.brush_cursor.native => egui::CursorIcon::Crosshair,
-                        PaintingCursor::Precise => {
-                            crosshair(6.0);
-                            egui::CursorIcon::None
-                        }
-                        _ if painting && cur.show_only_crosshair_while_painting => {
-                            crosshair(5.0);
-                            egui::CursorIcon::None
-                        }
+                        PaintingCursor::Precise => egui::CursorIcon::Crosshair,
+                        _ if painting && cur.show_only_crosshair_while_painting => egui::CursorIcon::Crosshair,
                         // The Pencil: the square of whole pixels its dab fills, on the pixel grid.
                         _ if tool == Tool::Pencil => {
                             let ppp = painter.ctx().pixels_per_point();
@@ -2007,7 +2001,7 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
                 let last = d.points.last().map_or(d.start, |p| [p[0], p[1]]);
                 let [x, y] = crate::stroke_constraint::constrain(d.tool, &mut d.constrain, d.start, last, [x, y], mods.shift, zoom);
                 if d.points.last().is_none_or(|p| {
-                    if app.brush_input.all_samples && (d.tool.is_brushlike() || d.tool == Tool::QuickSelection) {
+                    if d.tool.is_brushlike() || d.tool == Tool::QuickSelection {
                         *p != [x, y, pressure as f64]
                     } else {
                         (p[0] - x).abs() + (p[1] - y).abs() > 0.25
@@ -2053,6 +2047,18 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
             crate::move_mods::finish(app);
         }
     }
+}
+
+pub(crate) fn finish_brush_capture(app: &mut PhotocraftApp, tool: Tool) {
+    let previous = app.ui.tool;
+    app.ui.tool = tool;
+    if app.drag.as_ref().is_some_and(|drag| drag.tool == tool) {
+        feed_live_stroke(app);
+        if let Some(drag) = app.drag.take() {
+            finish_gesture(app, drag);
+        }
+    }
+    app.ui.tool = previous;
 }
 
 fn finish_gesture(app: &mut PhotocraftApp, d: Drag) {
