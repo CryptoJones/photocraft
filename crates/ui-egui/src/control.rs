@@ -95,6 +95,7 @@ pub fn handle(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest
                 json!({"loaded": true})
             }))
         }
+        "ui.brushReplay.compare" => wrap(crate::brush_replay::compare(app).map(|()| json!({"compared": true}))),
         "engine.execute" | "ui.menu.invoke" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             let params = p.get("params").cloned().unwrap_or(json!({}));

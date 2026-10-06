@@ -1177,6 +1177,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
     let mut on_gpu = false;
     // A flipped view draws through the CPU path (the GPU canvas shader has no mirroring).
     if app.gpu.is_some()
+        && !app.brush_lab.cpu_docs.contains(&doc.id)
         && !flip
         && let Some((k, key)) = ensure_adjust_proxy(app, idx, view.zoom * ctx.pixels_per_point())
             .or_else(|| ensure_filter_preview(app, idx))
@@ -1198,7 +1199,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             hdr: hdr_preview(app, &doc),
         };
         crate::gpu_canvas::GpuCanvas::paint(&painter, rect, params);
-    } else if !flip && ensure_gpu(app, idx, visible_doc_rect(&xf)) {
+    } else if !app.brush_lab.cpu_docs.contains(&doc.id) && !flip && ensure_gpu(app, idx, visible_doc_rect(&xf)) {
         on_gpu = true;
         app.perf.gpu = true;
         // Shadow, checkerboard, document and pixel grid in one custom shader (gpu_canvas.rs).

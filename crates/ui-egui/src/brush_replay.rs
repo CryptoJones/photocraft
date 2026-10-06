@@ -1,13 +1,14 @@
 //! Ink-only diagnostics: the same window-event batches through the old and new input paths.
 //! Frame receipt times are recorded, not invented device timestamps or raw trackpad contacts.
 
-use egui::{Event, Modifiers};
-use photocraft_engine::paint::BrushSettings;
+use egui::{Context, Event, Modifiers, RawInput, Sense};
+use photocraft_engine::{Session, paint::BrushSettings};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
-use crate::canvas::ViewXform;
+use crate::canvas::{ToolEvent, ViewXform, tool_event};
 use crate::stylus::PenSample;
-use crate::{PhotocraftApp, Tool};
+use crate::{PhotocraftApp, Services, Tool};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Recording {
@@ -174,11 +175,130 @@ impl Recording {
         Ok(())
     }
 
+    fn replay(&self, all_samples: bool) -> Result<PhotocraftApp, String> {
+        self.validate()?;
+        let mut app = PhotocraftApp::new(Session::new(), Services::default());
+        app.run("file.new", json!({"width": self.size[0], "height": self.size[1], "depth": self.depth, "background": if self.tool == Tool::Eraser { "white" } else { "transparent" }}))?;
+        app.sync_views();
+        app.brush_input.all_samples = all_samples;
+        let ctx = Context::default();
+        app.ui.tool = self.tool;
+        app.ui.smoothing_tool = Some(self.tool);
+        app.session.tools.brush = self.brush.clone();
+        app.session.tools.foreground = self.foreground;
+        app.session.tools.background = self.background;
+        app.ui.tool_options.pencil_auto_erase = self.auto_erase;
+        app.session.edit_prefs(|p| {
+            p.tools.right_click_with_painting_tools =
+                if self.right_erase { photocraft_engine::prefs::RightClickPaint::Erase } else { photocraft_engine::prefs::RightClickPaint::BrushPicker }
+        });
+        for f in &self.frames {
+            if let Some(view) = app.ui.views.first_mut() {
+                view.zoom = f.xf.zoom;
+            }
+            app.stylus.feed.set(f.pen);
+            app.stylus.update(&f.events);
+            let mut events = vec![Event::ModifiersChanged(f.modifiers)];
+            events.extend(f.events.clone());
+            let input = RawInput { time: Some(f.time), events, screen_rect: Some(f.xf.rect.expand(100.0)), ..Default::default() };
+            let mut output = ctx.run_ui(input, |ui| {
+                let sense = if f.eligible || app.drag.is_some() { Sense::click_and_drag() } else { Sense::hover() };
+                let response = ui.allocate_rect(f.xf.rect, sense);
+                let buttons = crate::paint_mouse::canvas_buttons(&mut app, &response, self.tool);
+                if all_samples {
+                    crate::brush_input::route_with_eligibility(&mut app, &response, &f.xf, self.tool, f.eligible);
+                } else {
+                    legacy(&mut app, &response, &f.xf, buttons);
+                }
+            });
+            output.textures_delta.clear();
+            if app.ui.status_error {
+                return Err(app.ui.status);
+            }
+        }
+        if app.drag.is_some() {
+            return Err("Recording ends during a stroke; record its release too".into());
+        }
+        if app.ui.status_error {
+            return Err(app.ui.status);
+        }
+        Ok(app)
+    }
 }
+
+/// The original canvas Brush/Pencil/Eraser response path, kept for replay comparisons.
+fn legacy(app: &mut PhotocraftApp, response: &egui::Response, xf: &ViewXform, buttons: crate::paint_mouse::Buttons) {
+    let mods = response.ctx.input(|i| i.modifiers);
+    let pressure = app.stylus.pressure();
+    if buttons.started
+        && let Some(p) = response.ctx.input(|i| i.pointer.press_origin()).filter(|p| xf.rect.contains(*p)).or(response.interact_pointer_pos())
+    {
+        let [x, y] = xf.to_doc(p);
+        tool_event(app, ToolEvent::Down { x, y, pressure }, mods);
+    }
+    if buttons.dragged
+        && let Some(p) = response.interact_pointer_pos()
+    {
+        let [x, y] = xf.to_doc(p);
+        tool_event(app, ToolEvent::Move { x, y, pressure }, mods);
+    }
+    if buttons.stopped {
+        let point = response.interact_pointer_pos().map(|p| xf.to_doc(p)).or_else(|| app.drag.as_ref().and_then(|d| d.points.last().map(|q| [q[0], q[1]])));
+        if let Some([x, y]) = point {
+            tool_event(app, ToolEvent::Up { x, y }, mods);
+        }
+    }
+    if buttons.clicked
+        && let Some(p) = response.interact_pointer_pos()
+    {
+        let [x, y] = xf.to_doc(p);
+        tool_event(app, ToolEvent::Down { x, y, pressure: 1.0 }, mods);
+        tool_event(app, ToolEvent::Up { x, y }, mods);
+    }
+}
+
+pub fn compare(app: &mut PhotocraftApp) -> Result<(), String> {
+    if app.drag.is_some() || app.brush_lab.capturing {
+        return Err("Finish the stroke and stop recording first".into());
+    }
+    let record = app.brush_lab.recording.as_ref().ok_or("Record a scribble first")?;
+    if record.frames.is_empty() {
+        return Err("The recording has no input".into());
+    }
+    let old = record.replay(false)?;
+    let new = record.replay(true)?;
+    let first = app.session.documents().len();
+    for cpu in [true, false] {
+        for (label, source) in [("Old frame samples", &old), ("All motion samples", &new)] {
+            let mut doc = (*source.session.active().ok_or("Replay has no document")?.doc).clone();
+            doc.name = format!(
+                "{label} · {}",
+                if cpu {
+                    "CPU"
+                } else if app.gpu.is_some() {
+                    "GPU"
+                } else {
+                    "CPU (GPU unavailable)"
+                }
+            );
+            let i = app.session.add_document(doc, None);
+            if cpu && let Some(state) = app.session.documents().get(i) {
+                app.brush_lab.cpu_docs.push(state.doc.id);
+            }
+        }
+    }
+    if !app.session.set_active(first) {
+        return Err("Replay document disappeared".into());
+    }
+    app.sync_views();
+    app.ui.view.arrange = "fourUp".into();
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui::{PointerButton, Rect, pos2, vec2};
+    use egui::{PointerButton, Pos2, Rect, pos2, vec2};
 
     fn recording(depth: u8, smoothing: f32) -> Recording {
         let xf = ViewXform { rect: Rect::from_min_size(pos2(20.0, 20.0), vec2(256.0, 256.0)), zoom: 1.0, center: [128.0; 2], flip: false };
@@ -212,14 +332,62 @@ mod tests {
     }
 
     #[test]
-    fn recording_round_trip_and_invalid_frames() {
+    fn replay_is_deterministic_and_retains_curve_across_depths_and_smoothing() {
+        for depth in [8, 16, 32] {
+            for smoothing in [0.0, 0.1, 0.6] {
+                let r = recording(depth, smoothing);
+                let bytes = serde_json::to_vec(&r).unwrap();
+                let loaded = Recording::load(&bytes).unwrap();
+                let old = loaded.replay(false).unwrap();
+                let new = loaded.replay(true).unwrap();
+                let again = loaded.replay(true).unwrap();
+                let pixels = |app: &PhotocraftApp| photocraft_compose::flatten(&app.session.active().unwrap().doc).to_rgba8().pixels;
+                assert_ne!(pixels(&old), pixels(&new), "depth {depth}, smoothing {smoothing}");
+                assert_eq!(pixels(&new), pixels(&again));
+                let points =
+                    |app: &PhotocraftApp| app.session.journal.iter().find(|(id, _)| id == "paint.stroke").unwrap().1["points"].as_array().unwrap().len();
+                assert_eq!(points(&old), 2);
+                assert_eq!(points(&new), 4);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_and_incomplete_recordings() {
         let mut r = recording(8, 0.0);
-        let bytes = serde_json::to_vec(&r).unwrap();
-        assert_eq!(Recording::load(&bytes).unwrap().frames.len(), 4);
         r.version = 99;
-        assert!(r.validate().is_err());
+        assert!(r.replay(true).is_err());
         r.version = 1;
         r.frames[0].xf.zoom = 0.0;
-        assert!(r.validate().is_err());
+        assert!(r.replay(true).is_err());
+        r.frames[0].xf.zoom = 1.0;
+        r.frames[0].events.push(Event::PointerMoved(Pos2::new(f32::INFINITY, 0.0)));
+        assert!(r.replay(true).is_err());
+        let mut r = recording(8, 0.0);
+        r.frames.pop();
+        assert!(r.replay(true).is_err());
+    }
+
+    #[test]
+    fn comparison_keeps_original_document_and_opens_four_render_views() {
+        let mut app = PhotocraftApp::new(Session::new(), Services::default());
+        app.run("file.new", json!({"width": 128, "height": 128})).unwrap();
+        let original = app.session.active().unwrap().doc.clone();
+        app.brush_lab.recording = Some(recording(8, 0.0));
+        compare(&mut app).unwrap();
+        assert_eq!(app.session.documents().len(), 5);
+        assert!(std::sync::Arc::ptr_eq(&original, &app.session.documents()[0].doc));
+        assert_eq!(app.brush_lab.cpu_docs.len(), 2);
+        assert_eq!(app.ui.view.arrange, "fourUp");
+        // Deterministic synthetic evidence; this is not a human trackpad recording.
+        if let Ok(path) = std::env::var("PHOTOCRAFT_REPLAY_FIXTURE") {
+            std::fs::write(path, serde_json::to_vec(app.brush_lab.recording.as_ref().unwrap()).unwrap()).unwrap();
+            for (i, label) in [(1, "old"), (2, "new")] {
+                let pixels = photocraft_compose::flatten(&app.session.documents()[i].doc).to_rgba8().pixels;
+                if let Ok(dir) = std::env::var("PHOTOCRAFT_REPLAY_EVIDENCE") {
+                    std::fs::write(format!("{dir}/{label}.rgba"), pixels).unwrap();
+                }
+            }
+        }
     }
 }
