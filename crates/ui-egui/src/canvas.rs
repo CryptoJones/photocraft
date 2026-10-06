@@ -251,7 +251,7 @@ pub enum ToolEvent {
 }
 
 /// Document ↔ screen mapping for a canvas rect and a view.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ViewXform {
     pub rect: Rect,
     pub zoom: f32,

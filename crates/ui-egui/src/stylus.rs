@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 
 /// One stylus reading. Tilt is in degrees (-90..90, W3C Pointer Events convention), rotation in
 /// degrees 0..360.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PenSample {
     pub pressure: f32,
     pub tilt_x: f32,

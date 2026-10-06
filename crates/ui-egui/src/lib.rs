@@ -26,6 +26,7 @@ mod brush_input;
 pub mod brush_panel;
 pub mod brush_picker;
 pub mod brush_preview;
+pub mod brush_replay;
 pub mod brush_resize;
 pub mod brush_sections;
 pub mod brushes_tab;
@@ -339,6 +340,7 @@ pub struct PhotocraftApp {
     pub stylus: stylus::Stylus,
     pub(crate) brush_cursor: brush_cursor::BrushCursor,
     pub(crate) brush_input: brush_input::BrushInput,
+    pub(crate) brush_lab: brush_replay::Lab,
     #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
     live_tokens: theme::live::LiveTokens,
 }
@@ -409,6 +411,7 @@ impl PhotocraftApp {
             stylus: Default::default(),
             brush_cursor: Default::default(),
             brush_input: Default::default(),
+            brush_lab: Default::default(),
             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
             live_tokens: theme::live::LiveTokens::from_env(),
         };

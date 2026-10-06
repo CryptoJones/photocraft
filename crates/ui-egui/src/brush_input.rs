@@ -22,6 +22,7 @@ impl Default for BrushInput {
 
 /// Returns true when this path owns painting; other tools retain their response-based gestures.
 pub fn route(app: &mut PhotocraftApp, response: &Response, xf: &ViewXform, tool: Tool) -> bool {
+    crate::brush_replay::Lab::capture(app, response, xf, tool);
     let eligible = response.hovered() || response.dragged() || response.drag_stopped() || response.is_pointer_button_down_on();
     route_with_eligibility(app, response, xf, tool, eligible)
 }
