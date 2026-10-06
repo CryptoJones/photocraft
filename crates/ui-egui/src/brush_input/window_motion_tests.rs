@@ -45,6 +45,15 @@ fn raw_stream_keeps_endpoints_and_rejects_ambiguous_or_interrupted_intervals() {
     let xf = ViewXform { rect: egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(100.0, 100.0)), zoom: 1.0, center: [50.0; 2], flip: false };
     let a = pos2(20.0, 20.0);
     let b = pos2(32.0, 20.0);
+    // Replay one stream through the old OS-only route and the added relative-motion route.
+    let events = [button(a, true), Event::MouseMoved(vec2(2.0, 2.0)), Event::MouseMoved(vec2(2.0, -2.0)), Event::PointerMoved(b), button(b, false)];
+    let mut old = BrushInput::default();
+    let baseline = old.events(&events, &xf, true, false, 1.0, Modifiers::NONE);
+    let mut new = BrushInput { raw_frame_time: Some(1.0), ..Default::default() };
+    let enhanced = new.events(&events, &xf, true, false, 1.0, Modifiers::NONE);
+    assert_eq!((baseline.len(), enhanced.len()), (3, 4));
+    assert_eq!(baseline.first(), enhanced.first());
+    assert_eq!(baseline[1..], enhanced[2..], "same OS endpoint and release; only the interior curve is added");
     for barrier in [None, Some(Event::PointerGone), Some(button(a, false)), Some(Event::WindowFocused(false))] {
         let mut input = BrushInput { raw_frame_time: Some(1.0), ..Default::default() };
         input.events(&[button(a, true), Event::MouseMoved(vec2(2.0, 2.0))], &xf, true, false, 1.0, Modifiers::NONE);
