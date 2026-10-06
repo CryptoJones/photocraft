@@ -63,7 +63,18 @@ draw, release, and stop recording. Keep the brush, colours and document fixed wh
 with the recorded bit depth and brush settings, then opens four views. GPU views explicitly
 report CPU fallback when no GPU is available. Save/load keeps the recording as JSON.
 Frame receipt times and frame-level pen readings are recorded; these are not hardware timestamps
-or raw trackpad touch contacts. Input sampling is independent of the display refresh rate.
+or raw trackpad touch contacts. The OS may limit window-event delivery to display cadence.
+The lab reports incoming motion events and the old/new committed stroke-point counts.
+If painting batches have only one motion event, both paths can produce identical lines.
+**Replay with smoothing off** overrides smoothing for comparison without changing the saved
+recording or the live brush. Smoothing processes each retained input point in order.
+
+To audit a saved recording's points and pixel differences at 0% and 10% smoothing:
+
+```sh
+PHOTOCRAFT_BRUSH_RECORDING=/absolute/path/scribble.brush-replay.json cargo test \
+  -p photocraft-ui-egui saved_recording_sample_and_pixel_audit --lib -- --ignored --nocapture
+```
 
 Automation: `ui.brushReplay.record {enabled:true|false}`, `ui.brushReplay.read`,
 `ui.brushReplay.load` (recording JSON as params), and `ui.brushReplay.compare`.

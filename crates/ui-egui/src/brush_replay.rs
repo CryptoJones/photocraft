@@ -44,6 +44,8 @@ struct Frame {
 pub struct Lab {
     pub open: bool,
     pub capturing: bool,
+    pub replay_without_smoothing: bool,
+    comparison: Option<String>,
     pub recording: Option<Recording>,
     pub cpu_docs: Vec<photocraft_doc::DocId>,
     source: Option<photocraft_doc::DocId>,
@@ -284,8 +286,18 @@ pub fn compare(app: &mut PhotocraftApp) -> Result<(), String> {
     if record.frames.is_empty() {
         return Err("The recording has no input".into());
     }
+    let mut record = record.clone();
+    if app.brush_lab.replay_without_smoothing {
+        record.brush.smoothing.amount = 0.0;
+        record.brush.smoothing.pulled_string = false;
+    }
     let old = record.replay(false)?;
     let new = record.replay(true)?;
+    let points = |source: &PhotocraftApp| source.session.journal.iter()
+        .filter(|(id, _)| id == "paint.stroke")
+        .filter_map(|(_, args)| args["points"].as_array()).map(Vec::len).sum::<usize>();
+    app.brush_lab.comparison = Some(format!("Stroke points: old {}, new {} · replay smoothing {}%",
+        points(&old), points(&new), record.brush.smoothing.amount * 100.0));
     let first = app.session.documents().len();
     for cpu in [true, false] {
         for (label, source) in [("Old frame samples", &old), ("All motion samples", &new)] {
@@ -323,6 +335,10 @@ pub fn show(app: &mut PhotocraftApp, ctx: &Context) {
             ui.checkbox(&mut app.brush_cursor.native, "Native brush cursor");
         });
         ui.label("Replay uses blank RGB canvases and the original frame batches.");
+        ui.checkbox(&mut app.brush_lab.replay_without_smoothing, "Replay with smoothing off");
+        if let Some(summary) = &app.brush_lab.comparison {
+            ui.label(summary);
+        }
         ui.horizontal(|ui| {
             if ui.button(if app.brush_lab.capturing { "Stop recording" } else { "Record new scribble" }).clicked() {
                 action = Some("record");
@@ -340,7 +356,10 @@ pub fn show(app: &mut PhotocraftApp, ctx: &Context) {
             }
         });
         if let Some(r) = &app.brush_lab.recording {
-            ui.label(format!("{} input batches", r.frames.len()));
+            let moves = r.frames.iter().map(|f| f.events.iter().filter(|e| matches!(e, Event::PointerMoved(_))).count()).collect::<Vec<_>>();
+            ui.label(format!("{} input batches · {} motion events · {} batches with multiple moves",
+                r.frames.len(), moves.iter().sum::<usize>(), moves.iter().filter(|n| **n > 1).count()));
+            ui.label("Window events only; this does not capture raw hardware samples.");
         }
     });
     app.brush_lab.open = open;
