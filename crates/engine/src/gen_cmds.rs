@@ -23,6 +23,21 @@ enum Kind {
     Vary,
 }
 
+#[derive(Clone, Copy)]
+enum VariationSource {
+    Composite,
+    Layer,
+}
+
+fn variation_source(p: &Value, cmd: &str) -> Result<VariationSource> {
+    match p.get("source") {
+        None => Ok(VariationSource::Composite),
+        Some(Value::String(s)) if s == "composite" => Ok(VariationSource::Composite),
+        Some(Value::String(s)) if s == "layer" => Ok(VariationSource::Layer),
+        _ => Err(bad(cmd, "`source` debe ser `composite` o `layer`")),
+    }
+}
+
 fn key_enabled(s: &Session) -> std::result::Result<(), String> {
     if s.active().is_none() {
         return Err("no document open".into());
@@ -248,6 +263,7 @@ fn run(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, label: &'stati
 fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, label: &'static str, provider: impl ImageProvider + 'static) -> Result<Value> {
     let text = prompt(p, cmd, !matches!(kind, Kind::Vary))?.to_owned();
     let requested = size(p, cmd)?.to_owned();
+    let source = if matches!(kind, Kind::Vary) { Some(variation_source(p, cmd)?) } else { None };
     let st = s.active().ok_or(EngineError::NoDocument)?;
     let doc = st.doc.clone();
     let bounds = doc.bounds();
@@ -283,13 +299,14 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
             (Rect::from_xywh(0, 0, w, h), None, Some(n))
         }
         Kind::Vary => {
-            let id = st.active_layer.ok_or_else(|| bad(cmd, "requiere una capa activa"))?;
-            let layer = doc.layer(id).and_then(Layer::surface).ok_or_else(|| bad(cmd, "la capa activa debe ser raster"))?;
-            let r = layer.content_bounds().intersect(&bounds);
-            if r.is_empty() {
-                return Err(bad(cmd, "la capa activa está vacía"));
+            if matches!(source, Some(VariationSource::Layer)) {
+                let id = st.active_layer.ok_or_else(|| bad(cmd, "requiere una capa activa"))?;
+                let layer = doc.layer(id).and_then(Layer::surface).ok_or_else(|| bad(cmd, "la capa activa debe ser raster"))?;
+                if layer.content_bounds().intersect(&bounds).is_empty() {
+                    return Err(bad(cmd, "la capa activa está vacía"));
+                }
             }
-            (r, None, None)
+            (bounds, None, None)
         }
     };
     limit(area, cmd)?;
@@ -334,13 +351,19 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
                     (Some(png(&small, r)?), Some(mask), Some(keep), Some(shifted))
                 }
                 Kind::Vary => {
-                    let id = original.ok_or_else(|| bad(cmd, "falta capa activa"))?;
-                    let layer = doc.layer(id).and_then(Layer::surface).ok_or_else(|| bad(cmd, "la capa activa debe ser raster"))?;
-                    let source = layer.convert(PixelFormat::new(doc.mode, doc.depth, true));
-                    let t = Transform::new(&crate::color_cmds::document_profile(&doc), Builtin::Srgb.profile(), Intent::RelativeColorimetric, true)
-                        .map_err(other)?;
-                    let rgb = crate::color_cmds::convert_surface(&source, doc.mode, PixelFormat::new(ColorMode::Rgb, SampleType::U8, true), &t)
-                        .convert(PixelFormat::new(ColorMode::Rgb, SampleType::U8, true));
+                    let rgb = match source {
+                        Some(VariationSource::Composite) => rgb_for_api(&doc, area)?,
+                        Some(VariationSource::Layer) => {
+                            let id = original.ok_or_else(|| bad(cmd, "falta capa activa"))?;
+                            let layer = doc.layer(id).and_then(Layer::surface).ok_or_else(|| bad(cmd, "la capa activa debe ser raster"))?;
+                            let source = layer.convert(PixelFormat::new(doc.mode, doc.depth, true));
+                            let t = Transform::new(&crate::color_cmds::document_profile(&doc), Builtin::Srgb.profile(), Intent::RelativeColorimetric, true)
+                                .map_err(other)?;
+                            crate::color_cmds::convert_surface(&source, doc.mode, PixelFormat::new(ColorMode::Rgb, SampleType::U8, true), &t)
+                                .convert(PixelFormat::new(ColorMode::Rgb, SampleType::U8, true))
+                        }
+                        None => return Err(bad(cmd, "falta origen de variación")),
+                    };
                     let (small, r) = fit(&rgb, area);
                     (Some(png(&small, r)?), None, None, None)
                 }
@@ -425,7 +448,7 @@ pub fn specs() -> Vec<CommandSpec> {
             label: "Variations…",
             menu: &["Layer"],
             shortcut: None,
-            params: r##"{"prompt":str?,"model":"gpt-image-1"?} usa la capa raster activa"##,
+            params: r##"{"prompt":str?,"source":"composite|layer"="composite","model":"gpt-image-1"?} composite usa la imagen visible; layer usa la capa raster activa"##,
             enabled: key_enabled,
             run: |s, p| run(s, p, Kind::Vary, "layer.ai.variations", "Variación generada"),
             journal: true,
@@ -493,6 +516,40 @@ mod tests {
         let mut s = Session::new();
         s.execute("file.new", json!({"width":w,"height":h})).unwrap();
         s
+    }
+    fn depth_session(mode: ColorMode, depth: SampleType) -> Session {
+        let mut s = Session::new();
+        let mode_name = if mode == ColorMode::Grayscale { "gray" } else { "rgb" };
+        let depth_number = match depth {
+            SampleType::U8 => 8,
+            SampleType::U16 => 16,
+            SampleType::F32 => 32,
+        };
+        s.execute("file.new", json!({"width":24,"height":24,"mode":mode_name,"depth":depth_number,"background":"transparent"})).unwrap();
+        let state = s.active_mut().unwrap();
+        let mut doc = (*state.doc).clone();
+        let fmt = doc.pixel_format();
+        let high_precision = if depth == SampleType::F32 { 1.75 } else { 0.123_456 };
+        let pixel = if mode == ColorMode::Grayscale { vec![high_precision, 1.0] } else { vec![high_precision, 0.567_89, 0.812_34, 1.0] };
+        let mut pixels = Vec::new();
+        for _ in 0..24 * 24 {
+            pixels.extend_from_slice(&pixel);
+        }
+        let mut surface = Surface::new(fmt);
+        surface.write_region(doc.bounds(), &pixels);
+        let id = doc.top_layer().unwrap();
+        *doc.layer_mut(id).unwrap().surface_mut().unwrap() = surface;
+        state.doc = Arc::new(doc);
+        s
+    }
+    fn request_image(requests: &Requests) -> Image {
+        let requests = requests.lock().unwrap();
+        let body = &requests[0].2;
+        let marker = b"name=\"image\"";
+        let field = body.windows(marker.len()).position(|w| w == marker).unwrap();
+        let start = body[field..].windows(4).position(|w| w == b"\r\n\r\n").unwrap() + field + 4;
+        let end = body[start..].windows(4).position(|w| w == b"\r\n--").unwrap() + start;
+        codecs::decode_as(Format::Png, &body[start..end]).unwrap()
     }
     fn call(s: &mut Session, kind: Kind, p: Value, provider: OpenAiProvider<MockTransport>) -> Result<Value> {
         let (id, label) = match kind {
@@ -695,7 +752,7 @@ mod tests {
         }
         s.active_mut().unwrap().active_layer = None;
         let (p, _) = provider(response(1024, 1024));
-        assert!(call(&mut s, Kind::Vary, json!({}), p).is_err());
+        assert!(call(&mut s, Kind::Vary, json!({"source":"layer"}), p).is_err());
         s.active_mut().unwrap().active_layer = before.top_layer();
         let (p, _) = provider(response(4, 4));
         assert!(call(&mut s, Kind::Generate, json!({"prompt":"red"}), p).unwrap_err().to_string().contains("tamaño distinto"));
@@ -727,19 +784,113 @@ mod tests {
         let mut s = session(32, 24);
         s.execute("layer.new.layer", json!({})).unwrap();
         let (p, requests) = provider(response(1024, 1024));
-        assert!(call(&mut s, Kind::Vary, json!({}), p).is_err());
+        assert!(call(&mut s, Kind::Vary, json!({"source":"layer"}), p).is_err());
         assert!(requests.lock().unwrap().is_empty());
         s.execute("edit.fill", json!({"color":"#008000"})).unwrap();
         let before = (*s.active().unwrap().doc).clone();
         let old_id = s.active().unwrap().active_layer.unwrap();
         let depth = s.active().unwrap().history.past_len();
         let (p, requests) = provider(response(1536, 1024));
-        call(&mut s, Kind::Vary, json!({}), p).unwrap();
+        call(&mut s, Kind::Vary, json!({"source":"layer"}), p).unwrap();
         assert_eq!(requests.lock().unwrap()[0].0, "/edits");
         assert_eq!(s.active().unwrap().history.past_len(), depth + 1);
         assert_eq!(s.active().unwrap().doc.layer(old_id), before.layer(old_id));
         assert!(s.undo());
         assert_eq!(*s.active().unwrap().doc, before);
+    }
+
+    #[test]
+    fn all_image_commands_preserve_depth_and_untouched_pixels() {
+        for mode in [ColorMode::Rgb, ColorMode::Grayscale] {
+            for depth in [SampleType::U8, SampleType::U16, SampleType::F32] {
+                for (kind, vary_source) in
+                    [(Kind::Generate, "composite"), (Kind::Fill, "composite"), (Kind::Expand, "composite"), (Kind::Vary, "composite"), (Kind::Vary, "layer")]
+                {
+                    let mut s = depth_session(mode, depth);
+                    if matches!(kind, Kind::Fill) {
+                        s.execute("select.rect", json!({"x":12,"y":12,"width":2,"height":2,"antiAlias":false})).unwrap();
+                    }
+                    let before = (*s.active().unwrap().doc).clone();
+                    let old_id = before.top_layer().unwrap();
+                    let old = before.layer(old_id).unwrap().surface().unwrap();
+                    let old_pixel = old.pixel(12, 12);
+                    if depth == SampleType::F32 {
+                        assert_eq!(old_pixel[0], 1.75);
+                    }
+                    let old_bytes = old.to_interleaved(before.bounds());
+                    let history = s.active().unwrap().history.past_len();
+                    let (p, requests) = provider(response(1024, 1024));
+                    let params = match kind {
+                        Kind::Generate => json!({"prompt":"generate"}),
+                        Kind::Fill => json!({"prompt":"fill"}),
+                        Kind::Expand => json!({"prompt":"expand","pixels":8}),
+                        Kind::Vary => json!({"source":vary_source}),
+                    };
+                    let result = call(&mut s, kind, params, p).unwrap();
+                    let state = s.active().unwrap();
+                    let layer = state.doc.layer(photocraft_doc::LayerId(result["layer"].as_u64().unwrap())).unwrap().surface().unwrap();
+                    assert_eq!(layer.format(), PixelFormat::new(mode, depth, true), "{mode:?} {depth:?}");
+                    let source = state.doc.layer(old_id).unwrap().surface().unwrap();
+                    if matches!(kind, Kind::Expand) {
+                        assert_eq!(source.pixel(20, 20), old_pixel);
+                        assert_eq!(layer.rgba(20, 20)[3], 0.0);
+                    } else {
+                        assert_eq!(source.to_interleaved(before.bounds()), old_bytes);
+                    }
+                    if matches!(kind, Kind::Fill) {
+                        assert_eq!(layer.rgba(0, 0)[3], 0.0);
+                        assert_eq!(layer.rgba(20, 20)[3], 0.0);
+                        assert!(layer.rgba(12, 12)[3] > 0.0);
+                    }
+                    if !matches!(kind, Kind::Generate) {
+                        let image = request_image(&requests);
+                        assert_eq!(image.layout(), ChannelLayout::Rgba);
+                        assert_eq!(image.sample_type(), CodecSample::U8);
+                        assert!(image.width() > 0 && image.height() > 0);
+                    }
+                    assert_eq!(state.history.past_len(), history + 1);
+                    assert!(s.undo());
+                    assert_eq!(*s.active().unwrap().doc, before);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn variations_use_visible_composite_by_default_or_active_layer_only() {
+        let mut s = depth_session(ColorMode::Rgb, SampleType::U8);
+        s.execute("layer.new.layer", json!({})).unwrap();
+        let state = s.active_mut().unwrap();
+        let mut doc = (*state.doc).clone();
+        let active = state.active_layer.unwrap();
+        let top = doc.layer_mut(active).unwrap().surface_mut().unwrap();
+        top.write_region(Rect::from_xywh(12, 12, 2, 2), &[0.0, 1.0, 0.0, 1.0].repeat(4));
+        state.doc = Arc::new(doc);
+        let before = (*s.active().unwrap().doc).clone();
+        for (params, lower_visible) in [(json!({}), true), (json!({"source":"layer"}), false)] {
+            let (p, requests) = provider(response(1024, 1024));
+            let result = call(&mut s, Kind::Vary, params, p).unwrap();
+            assert_eq!(result["bounds"], json!([0, 0, 24, 24]));
+            let layer_id = photocraft_doc::LayerId(result["layer"].as_u64().unwrap());
+            assert_eq!(s.active().unwrap().doc.layer(layer_id).unwrap().surface().unwrap().content_bounds(), before.bounds());
+            let image = request_image(&requests);
+            let outside = &image.data()[..4];
+            assert_eq!(outside[3] > 0, lower_visible);
+            let inside = (12 * 24 + 12) * 4;
+            assert!(image.data()[inside + 1] > image.data()[inside]);
+            assert!(s.undo());
+            assert_eq!(*s.active().unwrap().doc, before);
+        }
+        s.active_mut().unwrap().active_layer = None;
+        let (p, _) = provider(response(1024, 1024));
+        call(&mut s, Kind::Vary, json!({}), p).unwrap();
+        assert!(s.undo());
+        let (p, requests) = provider(response(1024, 1024));
+        assert!(call(&mut s, Kind::Vary, json!({"source":"invalid"}), p).is_err());
+        assert!(requests.lock().unwrap().is_empty());
+        let (p, requests) = provider(response(1024, 1024));
+        assert!(call(&mut s, Kind::Vary, json!({"source":3}), p).is_err());
+        assert!(requests.lock().unwrap().is_empty());
     }
 
     #[test]

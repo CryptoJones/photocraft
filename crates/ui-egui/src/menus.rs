@@ -304,18 +304,7 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             if let Some(Err(why)) = photocraft_engine::commands::find(id).map(|c| (c.enabled)(&app.session)) {
                 return Err(why);
             }
-            let mut fields = serde_json::Map::new();
-            fields.insert("__command".into(), json!(id));
-            fields.insert("__label".into(), json!(photocraft_engine::commands::find(id).map_or(id, |c| c.label)));
-            fields.insert("__form".into(), json!(true));
-            fields.insert("prompt".into(), json!(if id == "layer.ai.variations" { "Create a faithful visual variation of this image." } else { "" }));
-            if id == "image.ai.generate" {
-                fields.insert("size".into(), json!("1024x1024"));
-                fields.insert("__choices".into(), json!({"size":["1024x1024","1024x1536","1536x1024","auto"]}));
-            }
-            if id == "image.ai.expandCanvas" {
-                fields.insert("pixels".into(), json!(128));
-            }
+            let fields = generative_fields(id);
             Ok(json!({"dialog":app.ui.open_dialog(DialogKind::Command,fields)}))
         }
         "file.export.quickExportAsPng" => crate::export_dialog::quick_export_png(app),
@@ -458,6 +447,26 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
         }
         _ => app.run(id, params),
     }
+}
+
+fn generative_fields(id: &str) -> serde_json::Map<String, Value> {
+    let mut fields = serde_json::Map::new();
+    fields.insert("__command".into(), json!(id));
+    fields.insert("__label".into(), json!(photocraft_engine::commands::find(id).map_or(id, |c| c.label)));
+    fields.insert("__form".into(), json!(true));
+    fields.insert("prompt".into(), json!(if id == "layer.ai.variations" { "Create a faithful visual variation of this image." } else { "" }));
+    if id == "layer.ai.variations" {
+        fields.insert("source".into(), json!("composite"));
+        fields.insert("__choices".into(), json!({"source":["composite","layer"]}));
+    }
+    if id == "image.ai.generate" {
+        fields.insert("size".into(), json!("1024x1024"));
+        fields.insert("__choices".into(), json!({"size":["1024x1024","1024x1536","1536x1024","auto"]}));
+    }
+    if id == "image.ai.expandCanvas" {
+        fields.insert("pixels".into(), json!(128));
+    }
+    fields
 }
 
 fn open_path(app: &mut PhotocraftApp, path: &str) -> Result<Value, String> {
@@ -980,6 +989,13 @@ mod tests {
             "keep the Photoshop Modify route"
         );
         assert!(!top.iter().any(|i| i.id == "select.modify.feather"), "no extra top-level Feather");
+    }
+
+    #[test]
+    fn variations_form_defaults_to_visible_composite_and_offers_layer_source() {
+        let fields = generative_fields("layer.ai.variations");
+        assert_eq!(fields.get("source"), Some(&json!("composite")));
+        assert_eq!(fields.get("__choices"), Some(&json!({"source":["composite","layer"]})));
     }
 
     #[test]
