@@ -75,8 +75,10 @@ fn is_file(_path: &str) -> bool {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+/// Every file the engine opens is read here: in bounded reads, with a clear error when it does
+/// not fit in memory (see [`photocraft_format::read`]).
 pub(crate) fn read_file(path: &str) -> Result<Vec<u8>> {
-    std::fs::read(path).map_err(|e| EngineError::Other(format!("{path}: {e}")))
+    photocraft_format::read_file(std::path::Path::new(path)).map_err(|e| EngineError::Other(format!("{path}: {e}")))
 }
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn read_file(path: &str) -> Result<Vec<u8>> {
@@ -114,12 +116,23 @@ pub(crate) fn list_images(dir: &str) -> Result<Vec<String>> {
 
 /// Extensions the batch commands pick up from a folder.
 const OPENABLE: &[&str] = &[
-    "psd", "psb", "pcraft", "png", "jpg", "jpeg", "tif", "tiff", "webp", "gif", "bmp", "tga", "exr", "hdr", "qoi", "ico", "pnm", "ppm", "pgm", "dng", "cr2",
-    "nef", "nrw", "arw", "pef",
+    "psd", "psb", "pcraft", "png", "jpg", "jpeg", "tif", "tiff", "webp", "gif", "bmp", "tga", "exr", "hdr", "qoi", "ico", "pnm", "ppm", "pgm", "heic", "heif",
+    "hif", "dng", "cr2", "nef", "nrw", "arw", "pef",
 ];
 
 pub(crate) fn file_name(path: &str) -> String {
     path.rsplit(['/', '\\']).next().unwrap_or(path).to_string()
+}
+
+/// The lower-case extension of the file name in `path` (none for `.hidden` or `name`).
+pub fn extension(path: &str) -> Option<String> {
+    file_name(path).rsplit_once('.').filter(|(base, ext)| !base.is_empty() && !ext.is_empty()).map(|(_, ext)| ext.to_ascii_lowercase())
+}
+
+/// Whether a save without a new path may write back to `path`: only layered files (PSD, PSB,
+/// .pcraft). A flat file goes through Save As instead, so it is never flattened over the original.
+pub fn saves_in_place(path: &str) -> bool {
+    extension(path).is_some_and(|ext| matches!(ext.as_str(), "psd" | "psb" | "pcraft"))
 }
 
 pub(crate) fn stem(path: &str) -> String {
@@ -605,29 +618,52 @@ pub(crate) fn process_files(
 ) -> Value {
     let mut files = Vec::new();
     let mut errors = Vec::new();
+    let mut written = OutputClaims::default();
     for path in inputs {
-        let r = (|| -> Result<String> {
+        let ext =
+            if format == "same" { path.rsplit('.').next().unwrap_or("png").to_ascii_lowercase() } else { format.trim_start_matches('.').to_ascii_lowercase() };
+        let out = join(output, &format!("{}{suffix}.{ext}", stem(path)));
+        let r = (|| -> Result<()> {
+            written.check(&out).map_err(EngineError::Other)?;
             let bytes = read_file(path)?;
             let mut scratch = Session::new();
             let doc = import(&file_name(path), &bytes)?;
             scratch.add_document(doc, Some(path.clone()));
             f(&mut scratch)?;
-            let ext = if format == "same" {
-                path.rsplit('.').next().unwrap_or("png").to_ascii_lowercase()
-            } else {
-                format.trim_start_matches('.').to_ascii_lowercase()
-            };
-            let out = join(output, &format!("{}{suffix}.{ext}", stem(path)));
             let d = scratch.active().ok_or(EngineError::NoDocument)?;
             save_doc(&d.doc, &out, quality)?;
-            Ok(out)
+            Ok(())
         })();
         match r {
-            Ok(out) => files.push(out),
+            Ok(()) => {
+                written.record(&out, path);
+                files.push(out);
+            }
             Err(e) => errors.push(json!({"file": path, "error": e.to_string()})),
         }
     }
     json!({"files": files, "errors": errors})
+}
+
+/// The output paths a batch run has written, so a later input whose output name matches an
+/// earlier one's (`a.png` and `a.jpg` saved as JPEG, or the same name in two input folders) is
+/// reported instead of silently replacing that result (#420, #422). Names are compared ignoring
+/// case, because macOS and Windows file systems do.
+#[derive(Default)]
+pub struct OutputClaims(std::collections::HashMap<String, String>);
+
+impl OutputClaims {
+    /// `Err` (naming the earlier input) when `out` was already written in this run.
+    pub fn check(&self, out: &str) -> std::result::Result<(), String> {
+        match self.0.get(&out.to_lowercase()) {
+            Some(first) => Err(format!("not written: {out} already holds the result of {first} from this run (same output name)")),
+            None => Ok(()),
+        }
+    }
+    /// Remember that `input`'s result was written to `out`.
+    pub fn record(&mut self, out: &str, input: &str) {
+        self.0.insert(out.to_lowercase(), input.to_string());
+    }
 }
 
 fn batch(_s: &mut Session, p: &Value) -> Result<Value> {
@@ -1071,7 +1107,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Batch…",
             &["File", "Automate"],
             None,
-            r##"{"steps":[[commandId,params]|{"command":id,"params":{}}…] (a recorded action),"input":folder|[paths],"output":folder,"format":"same|png|jpg|psd|tiff|…"="same","quality":0..12?} → {files, errors}"##,
+            r##"{"steps":[[commandId,params]|{"command":id,"params":{}}…] (a recorded action),"input":folder|[paths],"output":folder,"format":"same|png|jpg|psd|tiff|…"="same","quality":0..12?} → {files, errors} (an input whose output name was already written in the run goes to errors)"##,
             native,
             batch
         ),
@@ -1080,7 +1116,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Image Processor…",
             &["File", "Scripts"],
             None,
-            r##"{"input":folder|[paths],"output":folder,"format":"jpg|png|psd|tiff|…"="jpg","quality":0..12=8,"width":px?,"height":px? (fit, never enlarge),"convertToSrgb":bool=false} → {files, errors}"##,
+            r##"{"input":folder|[paths],"output":folder,"format":"jpg|png|psd|tiff|…"="jpg","quality":0..12=8,"width":px?,"height":px? (fit, never enlarge),"convertToSrgb":bool=false} → {files, errors} (an input whose output name was already written in the run goes to errors)"##,
             native,
             image_processor
         ),

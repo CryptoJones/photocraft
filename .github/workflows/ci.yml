@@ -51,11 +51,35 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo fmt --all -- --check
 
+      # `--features heif`: official builds open HEIC photos via the optional photocraft-heif crate.
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --features heif
+
+      # The same codecs without the optional decoder: HEIC must stay a clear "not in this build"
+      # error for distributors who leave it out.
+      - name: Test without heif
+        if: runner.os == 'Linux'
+        run: cargo test -p photocraft-heif -p photocraft-codecs -p photocraft-io --locked
+
+      # The same tests built with the optional craft-fonts input (crates/text/build.rs), so the
+      # Japanese font tests that skip without it run here. Linux only.
+      - name: Check out craft-fonts
+        if: runner.os == 'Linux'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: storytold/craft-fonts
+          ref: abb83316d96aa59c1cf64784289e378fe9fa5695
+          path: craft-fonts
+
+      - name: Test with craft-fonts
+        if: runner.os == 'Linux'
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: cargo test --workspace --locked --features heif
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked --features heif -- -D warnings
 
       - name: Dependency layering
         run: cargo xtask layers
@@ -119,6 +143,7 @@ jobs:
           - { crate: codecs, name: decode_jpeg }
           - { crate: codecs, name: decode_tiff }
           - { crate: codecs, name: decode_exr }
+          - { crate: codecs, name: decode_heif }
           - { crate: format, name: load }
     steps:
       - uses: actions/checkout@v4

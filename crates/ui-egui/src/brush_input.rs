@@ -60,7 +60,9 @@ pub fn route(app: &mut PhotocraftApp, response: &Response, xf: &ViewXform, tool:
             crate::canvas::feed_live_stroke(app);
         }
         if matches!(event, ToolEvent::Down { .. }) {
-            app.secondary_erase = erase;
+            // Preserve the secondary-button gesture priority from canvas_buttons.
+            app.brush_resize_armed = erase && crate::brush_resize::is_right_gesture(crate::workspace_ui::sticky_mods(app, modifiers));
+            app.secondary_erase = erase && !app.brush_resize_armed;
             app.brush_input.owner = app.session.active().map(|st| (st.doc.id, tool));
         }
         tool_event(app, event, modifiers);
@@ -163,7 +165,7 @@ impl BrushInput {
                     if self.button.is_none()
                         && eligible
                         && xf.rect.contains(pos)
-                        && (button == PointerButton::Primary || secondary && button == PointerButton::Secondary) =>
+                        && (button == PointerButton::Primary || button == PointerButton::Secondary && (modifiers.alt || secondary && !modifiers.command)) =>
                 {
                     self.button = Some(button);
                     self.last = Some(pos);

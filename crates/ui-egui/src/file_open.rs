@@ -31,6 +31,11 @@ impl PhotocraftApp {
         if let Some(r) = crate::preset_files_ui::open(self, path, bytes) {
             return r.map(|()| Vec::new());
         }
+        if self.background_jobs {
+            // The path and Open Recent are recorded when the background open finishes.
+            crate::jobs_ui::start_open(self, &display_name(path), Some(path.to_string()), crate::jobs_ui::bytes(bytes))?;
+            return Ok(Vec::new());
+        }
         let warnings = self.open_bytes(&display_name(path), bytes)?;
         if let Some(st) = self.session.active_mut() {
             st.path = Some(path.to_string());
@@ -42,7 +47,14 @@ impl PhotocraftApp {
     /// Read and open the file at `path` (see [`open_file`](Self::open_file)).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_path(&mut self, path: &str) -> Result<Vec<String>, String> {
-        let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+        // Documents opening in the background are read on the worker too (a 2 GB PSB read
+        // would block the window). Preset files (brushes, gradients) go the usual way.
+        let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        if self.background_jobs && !crate::preset_files_ui::PRESET_EXTS.contains(&ext.as_str()) {
+            crate::jobs_ui::start_open(self, &display_name(path), Some(path.to_string()), photocraft_engine::jobs::OpenSource::Path(path.to_string()))?;
+            return Ok(Vec::new());
+        }
+        let bytes = photocraft_format::read_file(std::path::Path::new(path)).map_err(|e| format!("{path}: {e}"))?;
         self.open_file(path, &bytes)
     }
 
@@ -79,8 +91,13 @@ impl PhotocraftApp {
         for f in files {
             let path = f.path().to_string_lossy().to_string();
             let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped".into());
-            let opened =
-                crate::read_dropped(&*f).and_then(|bytes| if f.path().is_absolute() { self.open_file(&path, &bytes) } else { self.open_bytes(&name, &bytes) });
+            // A desktop drop opens like File › Open: on the background worker when jobs are on, and
+            // read in bounded reads either way (#375) rather than with egui's whole-file read.
+            let opened = if f.path().is_absolute() {
+                self.open_path(&path).map(|_| ())
+            } else {
+                crate::read_dropped(&*f).and_then(|bytes| self.open_bytes(&name, &bytes)).map(|_| ())
+            };
             if let Err(e) = opened {
                 self.open_failed(&name, &e);
             }

@@ -346,6 +346,8 @@ fn adaptive_wide_angle(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn camera_raw_cmd(s: &mut Session, p: &Value) -> Result<Value> {
     let cr = raw_params(RAW, p)?;
+    // New settings are strict; stored Smart Filters re-apply through the lenient `raw_params`.
+    cr.validate().map_err(|e| bad(RAW, e))?;
     let t0 = Stopwatch::start();
     let id = run_filter(s, RAW, "Camera Raw Filter", p.clone(), false, &|surf, canvas| camera_raw_surface(surf, canvas.union(&surf.content_bounds()), &cr))?;
     Ok(json!({"layer": id.0, "identity": cr.is_identity(), "ms": t0.ms()}))
@@ -401,7 +403,7 @@ pub fn specs() -> Vec<CommandSpec> {
             id: RAW,
             label: "Camera Raw Filter…",
             menu: &["Filter"],
-            shortcut: None,
+            shortcut: Some("Cmd+Shift+A"),
             params: r##"{"temperature":-100..100=0,"tint":-100..100=0,"exposure":-5..5=0,"contrast":-100..100=0,"highlights":-100..100=0,"shadows":-100..100=0,"whites":-100..100=0,"blacks":-100..100=0,"texture":-100..100=0,"clarity":-100..100=0,"dehaze":-100..100=0,"vibrance":-100..100=0,"saturation":-100..100=0,"curveHighlights":-100..100=0,"curveLights":-100..100=0,"curveDarks":-100..100=0,"curveShadows":-100..100=0,"curveSplits":[25,50,75],"pointCurve":[[in,out]],"pointCurveRed":[[in,out]],"pointCurveGreen":[[in,out]],"pointCurveBlue":[[in,out]],"hslHue":[8],"hslSat":[8],"hslLum":[8],"gradeShadows":{"hue":deg,"sat":0..100,"lum":-100..100},"gradeMidtones":{},"gradeHighlights":{},"gradeGlobal":{},"gradeBlending":0..100=50,"gradeBalance":-100..100=0,"sharpenAmount":0..150=0,"sharpenRadius":0.5..3=1,"sharpenDetail":0..100=25,"sharpenMasking":0..100=0,"noiseLuminance":0..100=0,"noiseLuminanceDetail":0..100=50,"noiseColor":0..100=0,"noiseColorDetail":0..100=50,"grainAmount":0..100=0,"grainSize":0..100=25,"grainRoughness":0..100=50,"vignetteAmount":-100..100=0,"vignetteMidpoint":0..100=50,"vignetteRoundness":-100..100=0,"vignetteFeather":0..100=50,"vignetteHighlights":0..100=0,"vignetteStyle":"highlightPriority|colorPriority|paintOverlay","seed":u32=0}"##,
             enabled: raw_enabled,
             run: camera_raw_cmd,
@@ -529,6 +531,12 @@ mod tests {
         assert!(active_px(&s, 10, 40)[1] < inside_before[1]);
         assert_eq!(active_px(&s, 100, 40), outside_before);
         assert!(s.execute(RAW, json!({"exposure": "bright"})).is_err());
+        let legacy_curve = json!([[0, 0], [60, 40], [60, 200], [255, 255]]);
+        assert!(s.execute(RAW, json!({"pointCurve": legacy_curve})).is_err(), "new curves are validated");
+        // A curve an older editor saved must still re-apply as a Smart Filter.
+        let surf = s.active().unwrap().doc.layer(s.active().unwrap().active_layer.unwrap()).unwrap().surface().unwrap().clone();
+        let stored = apply_to_surface(RAW, &json!({"pointCurve": legacy_curve, "exposure": 1.0}), &surf, Rect::new(0, 0, 120, 80));
+        assert!(stored.is_some(), "a stored legacy curve must not drop the whole filter");
         // Smart filter.
         let mut s = session(8);
         s.execute("layer.smartObjects.convertToSmartObject", json!({})).unwrap();

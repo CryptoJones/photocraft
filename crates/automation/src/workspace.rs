@@ -1,6 +1,6 @@
 //! Capability-based filesystem policy for untrusted automation paths.
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -46,9 +46,8 @@ impl AuthorizedWorkspace {
         if !metadata.is_file() {
             return Err(AutomationError::BadRequest(format!("automation read path is not a regular file: `{path}`")));
         }
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).map_err(|e| file_error("read", path, e))?;
-        Ok(bytes)
+        // Bounded reads, and a clear error for a file larger than memory (#375).
+        photocraft_format::read::read_all(&mut file, metadata.len()).map_err(|e| file_error("read", path, e))
     }
 
     /// Create or replace one file below the configured write root, crash-safely: the bytes go to
@@ -154,6 +153,7 @@ pub fn authorize_engine_command(id: &str, params: &Value) -> Result<(), Automati
     let safe_file_command = matches!(
         id,
         "file.new"
+            | "file.newFromClipboard"
             | "file.close"
             | "file.closeAll"
             | "file.closeOthers"
@@ -407,7 +407,11 @@ mod tests {
     #[test]
     fn filesystem_commands_fail_closed() {
         for id in [
+            "file.open",
             "file.openAs",
+            "file.save",
+            "file.saveAs",
+            "file.saveACopy",
             "file.export.saveForWebLegacy",
             "pattern.import",
             "layer.smartObjects.exportContents",
@@ -419,6 +423,10 @@ mod tests {
             assert!(authorize_engine_command(id, &serde_json::json!({})).is_err());
         }
         assert!(authorize_engine_command("file.new", &serde_json::json!({})).is_ok());
+        // The UI-level examples in docs/control-protocol.md.
+        for id in ["view.zoomIn", "window.theme.pro", "edit.search"] {
+            assert!(authorize_desktop_engine_command(id, &serde_json::json!({})).is_ok(), "{id}");
+        }
         assert!(authorize_engine_command("image.mode.cmyk", &serde_json::json!({})).is_ok());
         assert!(authorize_desktop_engine_command("image.mode.cmyk", &serde_json::json!({})).is_err());
         assert!(authorize_engine_command("filter.distort.displace", &serde_json::json!({"mapPath": "outside.png"})).is_err());
