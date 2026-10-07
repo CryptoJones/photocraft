@@ -254,6 +254,57 @@ async fn open_png_and_inspect() {
     cleanup(&dir);
 }
 
+fn write_image(dir: &std::path::Path, name: &str, format: photocraft_codecs::Format) -> Vec<u8> {
+    let img = photocraft_codecs::Image::from_u8(16, 8, photocraft_codecs::ChannelLayout::Rgb, (0..384).map(|i| (i * 7 % 251) as u8).collect()).unwrap();
+    let bytes = photocraft_codecs::encode(&img, format, &Default::default()).unwrap();
+    std::fs::write(dir.join(name), &bytes).unwrap();
+    bytes
+}
+
+/// A save without `path` writes back only to a layered file in its own format (#416).
+#[tokio::test(flavor = "multi_thread")]
+async fn save_without_path_never_flattens_over_the_opened_file() {
+    let dir = tmp("save-in-place");
+    let png = write_image(&dir, "seed.png", photocraft_codecs::Format::Png);
+    let jpg = write_image(&dir, "seed.jpg", photocraft_codecs::Format::Jpeg);
+    let client = connect(headless_in(&dir)).await;
+    let refused = |r: &CallToolResult| r.is_error == Some(true) && text(r).contains("pass `path`");
+
+    // A flat file, edited or not, is left unchanged.
+    json_of(&call(&client, "doc_open", json!({"path": "seed.png"})).await);
+    json_of(&call(&client, "command_run", json!({"id": "layer.newAdjustmentLayer.curves", "params": {"points": [[0, 0], [128, 170], [255, 255]]}})).await);
+    let r = call(&client, "doc_save", json!({})).await;
+    assert!(refused(&r), "{}", text(&r));
+    assert_eq!(std::fs::read(dir.join("seed.png")).unwrap(), png);
+    json_of(&call(&client, "doc_open", json!({"path": "seed.jpg"})).await);
+    let r = call(&client, "doc_save", json!({})).await;
+    assert!(refused(&r), "{}", text(&r));
+    assert_eq!(std::fs::read(dir.join("seed.jpg")).unwrap(), jpg);
+
+    // An explicit path, even the opened file's own, still writes and reports what was lost.
+    let r = json_of(&call(&client, "doc_save", json!({"path": "seed.jpg"})).await);
+    assert!(r["warnings"].to_string().contains("lossy"), "{r}");
+
+    // A layered file saves in place in its own format, but not converted over itself.
+    json_of(&call(&client, "doc_select", json!({"index": 0})).await);
+    json_of(&call(&client, "doc_save", json!({"path": "layered.psd"})).await);
+    json_of(&call(&client, "doc_open", json!({"path": "layered.psd"})).await);
+    let psd = std::fs::read(dir.join("layered.psd")).unwrap();
+    let r = call(&client, "doc_save", json!({"format": "png"})).await;
+    assert!(refused(&r), "{}", text(&r));
+    assert_eq!(std::fs::read(dir.join("layered.psd")).unwrap(), psd);
+    assert_eq!(json_of(&call(&client, "doc_save", json!({})).await)["path"], "layered.psd");
+    assert!(photocraft_io::is_psd(&std::fs::read(dir.join("layered.psd")).unwrap()));
+
+    // Once saved as .pcraft, a flat-born document saves in place there.
+    json_of(&call(&client, "doc_select", json!({"index": 0})).await);
+    json_of(&call(&client, "doc_save", json!({"path": "work.pcraft"})).await);
+    assert_eq!(json_of(&call(&client, "doc_save", json!({})).await)["path"], "work.pcraft");
+    assert_eq!(std::fs::read(dir.join("seed.png")).unwrap(), png);
+    client.cancel().await.unwrap();
+    cleanup(&dir);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn filesystem_policy_rejects_absolute_and_escaping_paths_before_effects() {
     let base = tmp("filesystem-policy");
@@ -317,7 +368,7 @@ async fn fake_app() -> (String, tokio::task::JoinHandle<Vec<Value>>) {
                     json!({"id": id, "ok": true, "result": {"tool": "brush", "panels": ["layers"]}})
                 }
                 "engine.execute" => {
-                    json!({"id": id, "ok": true, "result": {"ran": req["params"]["command"], "params": req["params"]["params"]}})
+                    json!({"id": id, "ok": true, "result": {"ran": req["params"]["command"], "params": req["params"]["params"], "wait": req["params"]["wait"]}})
                 }
                 "engine.commands" => {
                     json!({"id": id, "ok": true, "result": [{"id": "file.new", "label": "New…", "enabled": true}]})
@@ -419,6 +470,48 @@ async fn command_batch_runs_steps_in_order() {
     let doc = json_of(&call(&client, "doc_inspect", json!({})).await).to_string();
     assert!(doc.contains("\"Two\"") && !doc.contains("\"Three\""));
     client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn command_batch_step_without_waiting_starts_a_background_job() {
+    let client = connect(PhotocraftMcp::headless()).await;
+    json_of(&call(&client, "doc_new", json!({"width": 600, "height": 400})).await);
+    let blur = json!({"id": "filter.blur.gaussianBlur", "params": {"radius": 40}, "wait": false});
+    let r = json_of(
+        &call(&client, "command_batch", json!({"steps": [{"id": "layer.new.layer"}, {"id": "edit.fill", "params": {"color": "#808080"}}, blur]})).await,
+    );
+    assert_eq!(r["completed"], 3, "{r}");
+    let started = &r["results"][2]["result"];
+    assert_eq!(started["pending"], true, "the step returned without waiting: {r}");
+    let job = started["job"].as_u64().expect("a job id");
+    // The job is listed and finishes like one started by command_run.
+    let t = std::time::Instant::now();
+    loop {
+        let l = json_of(&call(&client, "jobs_list", json!({})).await);
+        let state = l["jobs"].as_array().unwrap().iter().find(|j| j["id"] == job).map(|j| j["state"].clone());
+        assert!(state.is_some(), "job {job} not listed: {l}");
+        if state == Some(json!("done")) {
+            break;
+        }
+        assert!(t.elapsed().as_secs() < 60, "{l}");
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    // Without `wait` a step still returns the command's own result.
+    let r = json_of(&call(&client, "command_batch", json!({"steps": [{"id": "filter.blur.gaussianBlur", "params": {"radius": 2}}]})).await);
+    assert!(r["results"][0]["result"]["filter"].is_object(), "{r}");
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bridge_command_batch_forwards_each_steps_wait() {
+    let (addr, app) = fake_app().await;
+    let client = connect(PhotocraftMcp::bridge(&addr, CONTROL_TOKEN).unwrap()).await;
+    let r = json_of(&call(&client, "command_batch", json!({"steps": [{"id": "filter.blur.gaussianBlur", "wait": false}, {"id": "layer.new.layer"}]})).await);
+    assert_eq!(r["completed"], 2, "{r}");
+    assert_eq!(r["results"][0]["result"]["wait"], false, "{r}");
+    assert_eq!(r["results"][1]["result"]["wait"], true, "{r}");
+    client.cancel().await.unwrap();
+    app.abort();
 }
 
 #[tokio::test(flavor = "multi_thread")]
