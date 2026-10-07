@@ -298,6 +298,26 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             Ok(json!({"dialog": dialog, "info": crate::gpu_status::system_info_json(app)}))
         }
         "file.export.exportAs" => Ok(json!({"dialog": crate::export_dialog::open(app)?})),
+        id @ ("image.ai.generate" | "edit.ai.generativeFill" | "image.ai.expandCanvas" | "layer.ai.variations")
+            if params.as_object().is_none_or(|o| o.is_empty()) =>
+        {
+            if let Some(Err(why)) = photocraft_engine::commands::find(id).map(|c| (c.enabled)(&app.session)) {
+                return Err(why);
+            }
+            let mut fields = serde_json::Map::new();
+            fields.insert("__command".into(), json!(id));
+            fields.insert("__label".into(), json!(photocraft_engine::commands::find(id).map_or(id, |c| c.label)));
+            fields.insert("__form".into(), json!(true));
+            fields.insert("prompt".into(), json!(if id == "layer.ai.variations" { "Create a faithful visual variation of this image." } else { "" }));
+            if id == "image.ai.generate" {
+                fields.insert("size".into(), json!("1024x1024"));
+                fields.insert("__choices".into(), json!({"size":["1024x1024","1024x1536","1536x1024","auto"]}));
+            }
+            if id == "image.ai.expandCanvas" {
+                fields.insert("pixels".into(), json!(128));
+            }
+            Ok(json!({"dialog":app.ui.open_dialog(DialogKind::Command,fields)}))
+        }
         "file.export.quickExportAsPng" => crate::export_dialog::quick_export_png(app),
         // Layer › Export As… / Quick Export as PNG: the export pipeline on just the active layer.
         l if matches!(l, "layer.exportAs" | "layer.quickExportAsPng") && params.as_object().is_none_or(|o| o.is_empty()) => {
@@ -612,7 +632,13 @@ pub fn is_live(id: &str) -> bool {
 }
 
 /// Commands outside the catalogue that belong right after a catalogue item: `(id, after)`.
-const PLACE_AFTER: &[(&str, &str)] = &[("file.newFromClipboard", "file.new")];
+const PLACE_AFTER: &[(&str, &str)] = &[
+    ("file.newFromClipboard", "file.new"),
+    ("image.ai.generate", "image.mode.colorTable"),
+    ("edit.ai.generativeFill", "edit.undo"),
+    ("image.ai.expandCanvas", "image.ai.generate"),
+    ("layer.ai.variations", "layer.new.layer"),
+];
 
 pub fn menu_items(app: &PhotocraftApp) -> Vec<MenuItem> {
     // 1) Photoshop's full menu tree, in Photoshop order; live where we implement the command.
