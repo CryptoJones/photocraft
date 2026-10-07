@@ -403,6 +403,9 @@ mod tests {
             assert!(film.iter().any(|p| p.0 == name));
         }
         for lang in crate::i18n::Lang::all().filter(|lang| lang.code() != "en") {
+            for name in ["Square 1:1", "Portrait 4:5", "Story 9:16", "Full HD Portrait", "QHD 1440p", "UHD 4K Portrait"] {
+                assert!(crate::i18n::has(lang, name), "{}: {name}", lang.code());
+            }
             for name in ["Square 1:1", "Portrait 4:5", "Story 9:16", "Full HD Portrait", "UHD 4K Portrait"] {
                 assert_ne!(crate::i18n::tr(lang, name), name, "{}: {name}", lang.code());
             }
@@ -538,6 +541,21 @@ mod tests {
             type_into(&mut h, 1, "1.5");
             enter(&mut h);
             assert_eq!(created(&h), (600, 450, 300.0));
+        }
+
+        #[test]
+        fn changing_resolution_in_inches_preserves_physical_dimensions() {
+            let mut h = harness();
+            let mut f = fields(&h);
+            f.insert("__unit".into(), serde_json::json!("in"));
+            f.insert("width".into(), serde_json::json!(720));
+            f.insert("height".into(), serde_json::json!(360));
+            set_fields(&mut h, f);
+            type_into(&mut h, 2, "300");
+            let f = fields(&h);
+            assert_eq!((f["width"].as_u64(), f["height"].as_u64()), (Some(3000), Some(1500)));
+            enter(&mut h);
+            assert_eq!(created(&h), (3000, 1500, 300.0));
         }
 
         #[test]
