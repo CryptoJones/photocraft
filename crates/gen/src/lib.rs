@@ -5,6 +5,7 @@
 use base64::Engine as _;
 use serde_json::{Value, json};
 
+#[cfg(not(target_arch = "wasm32"))]
 const BASE: &str = "https://api.openai.com/v1/images";
 const MAX_RESPONSE: usize = 32 * 1024 * 1024;
 
