@@ -23,6 +23,7 @@
 	Help	Ayuda
 	(coming soon)	(próximamente)
 	New…	Nuevo…
+	New from Clipboard	Nuevo desde el portapapeles
 	Open…	Abrir…
 	Open As…	Abrir como…
 	Open Recent	Archivos recientes
@@ -101,6 +102,7 @@
 	Free Transform	Transformación libre
 	Transform	Transformar
 	Again	Repetir
+	Transform Again on a Copy	Duplicar y repetir la transformación
 	Scale	Escalar
 	Rotate	Rotar
 	Skew	Sesgar
@@ -342,6 +344,12 @@
 	Merge Down	Combinar hacia abajo
 	Merge Visible	Combinar visibles
 	Stamp Visible	Estampar visibles
+	Select Layer Above	Seleccionar la capa de arriba
+	Select Layer Below	Seleccionar la capa de abajo
+	Select Top Layer	Seleccionar la capa superior
+	Select Bottom Layer	Seleccionar la capa inferior
+	Add Layer Above to Selection	Añadir la capa de arriba a la selección
+	Add Layer Below to Selection	Añadir la capa de abajo a la selección
 	Stamp Down	Estampar hacia abajo
 	Flatten Image	Acoplar imagen
 	Matting	Matizado

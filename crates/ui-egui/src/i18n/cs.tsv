@@ -31,6 +31,7 @@
 	Help	Nápověda
 	(coming soon)	(připravujeme)
 	New…	Nový…
+	New from Clipboard	Nový ze schránky
 	Open…	Otevřít…
 	Open As…	Otevřít jako…
 	Open Recent	Otevřít nedávné
@@ -109,6 +110,7 @@
 	Free Transform	Volná transformace
 	Transform	Transformace
 	Again	Opakovat
+	Transform Again on a Copy	Duplikovat a opakovat transformaci
 	Scale	Měřítko
 	Rotate	Otočit
 	Skew	Zkosit
@@ -350,6 +352,12 @@
 	Merge Down	Sloučit dolů
 	Merge Visible	Sloučit viditelné
 	Stamp Visible	Otisknout viditelné
+	Select Layer Above	Vybrat vrstvu nad
+	Select Layer Below	Vybrat vrstvu pod
+	Select Top Layer	Vybrat horní vrstvu
+	Select Bottom Layer	Vybrat spodní vrstvu
+	Add Layer Above to Selection	Přidat vrstvu nad do výběru
+	Add Layer Below to Selection	Přidat vrstvu pod do výběru
 	Stamp Down	Otisknout dolů
 	Flatten Image	Sloučit do jedné vrstvy
 	Matting	Začištění okrajů

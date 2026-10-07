@@ -72,7 +72,9 @@ pub struct NewParams {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct SaveParams {
     /// Forward-slash relative target beneath the configured automation write root.
-    /// The extension selects the format. Omit to save to the document's own relative path.
+    /// The extension selects the format. Omit to write back to the document's own file, which
+    /// works only for a PSD, PSB or .pcraft file kept in its own format; any other save needs
+    /// `path`, so a flattened or converted copy never replaces the opened file.
     #[serde(default)]
     pub path: Option<String>,
     /// Format override as an extension (pcraft, psd, png, jpg, tif, webp, exr, …).
@@ -112,7 +114,7 @@ pub struct ListParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RunParams {
-    /// Command id, e.g. `layer.new.layer`, `filter.blur.gaussian`.
+    /// Command id, e.g. `layer.new.layer`, `filter.blur.gaussianBlur`.
     pub id: String,
     /// Command parameters as a JSON object (see the `params` doc in `command_list`).
     #[serde(default)]
@@ -396,7 +398,7 @@ impl PhotocraftMcp {
     }
 
     #[tool(description = "Save the document. `.pcraft` is the lossless native format (incremental); other extensions \
-        (psd, png, jpg, tif, webp, exr, …) export. Returns warnings about anything the format cannot hold.")]
+        (psd, png, jpg, tif, webp, exr, …) export. Without `path` only a PSD, PSB or .pcraft document is written back to its own         file. Returns warnings about anything the format cannot hold.")]
     async fn doc_save(&self, Parameters(p): Parameters<SaveParams>) -> Result<CallToolResult, McpError> {
         self.save_impl(p).await
     }
