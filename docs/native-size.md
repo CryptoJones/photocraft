@@ -60,3 +60,8 @@ architecture contained two copies of the four bundled fonts (1.45 MiB redundant 
 architecture); the existing source sharing fix predates this packaging change. The Windows
 x64 ZIP's CLI entry alone contributed 10.33 MiB compressed. Installed size and download size
 must be reported separately; app bundle resources/signatures are additional to executable size.
+
+Mac DMG verification includes the app inside the mounted image, not just the DMG signature.
+`makehybrid` synthesizes FinderInfo on resources; packaging clears only that attribute inside
+the app on a writable intermediate image, verifies the existing signature, then compresses and
+signs the DMG. Notarization metadata and the volume's Finder presentation are preserved.

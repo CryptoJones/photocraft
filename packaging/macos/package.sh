@@ -150,11 +150,30 @@ mkdir -p "$STAGE"
 ditto "$APP" "$STAGE/PhotoCraft.app"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$DMG" "$WORK/raw.dmg"
-# makehybrid + convert builds the image without attaching a device, unlike `create -srcfolder`,
-# which is flaky on CI runners ("Resource busy") and hangs in sandboxed sessions.
+# Avoid create -srcfolder (flaky on CI). makehybrid synthesizes FinderInfo on
+# resource files, so clear that metadata on a writable image before compression;
+# otherwise the app's valid signature fails strict verification inside the DMG.
 hdiutil makehybrid -hfs -hfs-volume-name "PhotoCraft $VERSION" -hfs-openfolder "$STAGE" -o "$WORK/raw.dmg" "$STAGE"
-hdiutil convert "$WORK/raw.dmg" -format UDZO -imagekey zlib-level=9 -o "$DMG"
-rm -f "$WORK/raw.dmg"
+hdiutil convert "$WORK/raw.dmg" -format UDRW -o "$WORK/writable.dmg"
+MOUNT="$WORK/dmg-clean"
+MOUNTED=0
+cleanup_mount() {
+  if [ "$MOUNTED" = 1 ]; then hdiutil detach "$MOUNT" -quiet || true; fi
+}
+trap cleanup_mount EXIT
+mkdir -p "$MOUNT"
+hdiutil attach "$WORK/writable.dmg" -nobrowse -mountpoint "$MOUNT" -quiet
+MOUNTED=1
+# Preserve all other attributes, including notarization metadata. Do not follow
+# the /Applications symlink or touch volume-level Finder presentation metadata.
+find "$MOUNT/PhotoCraft.app" -xattrname com.apple.FinderInfo \
+  -exec xattr -d com.apple.FinderInfo {} +
+codesign --verify --strict --deep --verbose=2 "$MOUNT/PhotoCraft.app"
+hdiutil detach "$MOUNT" -quiet
+MOUNTED=0
+trap - EXIT
+hdiutil convert "$WORK/writable.dmg" -format UDZO -imagekey zlib-level=9 -o "$DMG"
+rm -f "$WORK/raw.dmg" "$WORK/writable.dmg"
 sign "$DMG"
 codesign --verify --strict --verbose=2 "$DMG"
 if [ "$NOTARIZE" = 1 ]; then
