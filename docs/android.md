@@ -34,6 +34,16 @@ The installer uses `adb install -r` and launches `ai.storyteller.photocraft/andr
 
 Build and signature checks do not establish runtime compatibility. Check startup, painting, graphics, suspend/resume, rotation, and folding on the target device before relying on it.
 
+## Full immersive mode
+
+The APK requests full immersive mode on native-window creation, resume, and focus gain. Android's status, navigation, and caption bars are requested hidden. An edge swipe can reveal transient system bars; this is not kiosk mode and does not disable system navigation. Android can still show required system UI, such as the keyboard or window-manager controls.
+
+On API 30 and later the native backend uses `WindowInsetsController` with `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`. API 28/29 use the legacy immersive-sticky flags. The calls run on the Java UI thread through the activity's existing owned JNI reference. No raw JNI pointer conversion or additional unsafe-code exception is introduced.
+
+The source is `apps/photocraft-android/src/immersive.rs`, copied into the APK's patched android-activity 0.6.1 dependency. winit 0.30.13's Android fullscreen flag is a no-op, so setting a desktop viewport flag alone does not provide this behavior.
+
+Verify on the tablet that the bars hide at startup, an edge swipe can reveal them, and the app returns to immersive mode after background/resume. Check keyboard entry and multi-window separately; operating-system policy can limit immersion there.
+
 ## Automatic palm rejection
 
 The Android APK rejects finger and unknown touch contacts while Android reports a pen hovering or touching the screen. Touch resumes 250 ms after the pen leaves. A contact rejected during that interval stays blocked until it lifts; moving a resting palm after the delay does not restart a stroke. Android contacts explicitly marked as palms are always rejected. Mouse contacts are not rejected by this policy.
@@ -44,7 +54,7 @@ This applies across the app, including menus. Finger gestures are unavailable wh
 
 ### Dependency patch
 
-`nix/android-input.nix` patches only the APK's vendored winit, egui-winit, and egui sources. Desktop and web builds use the original locked crates. winit keeps pen identity until after arbitration. egui-winit then maps cancellation to an explicit egui pointer-cancel event, which releases without a click. The original `PointerGone` behavior remains unchanged for mouse drags.
+`nix/android-input.nix` patches only the APK's vendored winit, egui-winit, egui, and android-activity sources. Desktop and web builds use the original locked crates. winit keeps pen identity until after arbitration. egui-winit then maps cancellation to an explicit egui pointer-cancel event, which releases without a click. The original `PointerGone` behavior remains unchanged for mouse drags.
 
 The policy source is `apps/photocraft-android/src/palm_rejection.rs`. Nix copies that exact file into winit, and host tests compile the same file. The patch pins winit 0.30.13 and egui/egui-winit 0.36.2; dependency upgrades must rebase and retest it. File checksums are refreshed after the reviewed patch while retaining the locked package checksum.
 

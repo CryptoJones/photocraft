@@ -10,7 +10,7 @@
 //! - File › Save writes a new file in the app-specific files folder and refuses overwrites;
 //! - no Android screen-reader support or lifecycle recovery yet;
 //! - no clipboard images, pen tilt/eraser integration, or display profile reader;
-//! - automatic palm rejection in the Nix APK's patched native input backend;
+//! - automatic palm rejection and immersive system bars in the Nix APK's patched native backend;
 //! - logs and panics go to logcat with the tag `photocraft`.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
