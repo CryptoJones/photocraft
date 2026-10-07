@@ -68,6 +68,8 @@ pub struct LiquifyDialog {
     pub strokes: Vec<LiquifyStroke>,
     /// The stroke being drawn and its last point.
     cur: Option<(LiquifyStroke, [f64; 3])>,
+    /// The lasso polygon being drawn (document px) and whether it thaws (Alt held at pointer-down).
+    lasso: Option<(bool, Vec<[f64; 2]>)>,
     proxy: ProxyImage,
     out: Vec<[u8; 4]>,
     tex: Option<TextureHandle>,
@@ -161,6 +163,27 @@ impl LiquifyDialog {
         }
     }
 
+    /// Closes the lasso polygon into the freeze mask, recorded like any stroke (so undo, replay
+    /// and OK all treat it the same as Freeze/Thaw brush work).
+    fn close_lasso(&mut self, subtract: bool, mut pts: Vec<[f64; 2]>) {
+        if pts.len() < 3 {
+            return;
+        }
+        if let (Some(&first), Some(&last)) = (pts.first(), pts.last())
+            && ((first[0] - last[0]).abs() > 0.5 || (first[1] - last[1]).abs() > 0.5)
+        {
+            pts.push(first);
+        }
+        let mut s = self.template();
+        s.tool = LiquifyTool::LassoMask;
+        s.amount = Some(if subtract { 0.0 } else { 1.0 });
+        s.points = pts.into_iter().map(|p| p.to_vec()).collect();
+        let d = self.field.apply_stroke(&s);
+        self.strokes.push(s);
+        self.mark(d, true);
+        self.render_dirty();
+    }
+
     /// Applies a whole-field operation (Reconstruct…, mask buttons) as a stroke.
     fn global(&mut self, tool: LiquifyTool, amount: Option<f64>) {
         self.end();
@@ -188,6 +211,7 @@ impl LiquifyDialog {
 
     fn restore_all(&mut self) {
         self.cur = None;
+        self.lasso = None;
         self.strokes.clear();
         self.rebuild();
     }
@@ -252,6 +276,7 @@ pub fn open(app: &mut PhotocraftApp, ctx: &egui::Context) -> Result<(), String> 
         field: LiquifyField::new(canvas, cell),
         strokes: Vec::new(),
         cur: None,
+        lasso: None,
         proxy,
         out,
         tex: None,
@@ -345,19 +370,34 @@ pub fn control(app: &mut PhotocraftApp, ui: &Value) -> Result<Value, String> {
     Ok(d.describe())
 }
 
-/// Pointer in document coordinates (from the preview or the control channel).
-pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, _mods: egui::Modifiers) {
+/// Pointer in document coordinates (from the preview or the control channel). Alt = subtract
+/// from the freeze mask (lasso only); Shift adds, same as no modifier.
+pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers) {
     let now = crate::gpu_canvas::now_ms();
     let Some(d) = app.distort.liquify.as_mut() else { return };
     match ev {
-        ToolEvent::Down { x, y, pressure } => d.begin([x, y, f64::from(pressure)], now),
+        ToolEvent::Down { x, y, pressure } => {
+            if d.opts.tool == LiquifyTool::LassoMask {
+                d.lasso = Some((mods.alt, vec![[x, y]]));
+            } else {
+                d.begin([x, y, f64::from(pressure)], now);
+            }
+        }
         ToolEvent::Move { x, y, pressure } => {
             d.hover = Some([x, y]);
-            if d.cur.is_some() {
+            if let Some((_, pts)) = &mut d.lasso {
+                if pts.last().is_none_or(|&l| l[0] != x || l[1] != y) {
+                    pts.push([x, y]);
+                }
+            } else if d.cur.is_some() {
                 d.extend([x, y, f64::from(pressure)], now);
             }
         }
         ToolEvent::Up { x, y } => {
+            if let Some((subtract, pts)) = d.lasso.take() {
+                d.close_lasso(subtract, pts);
+                return;
+            }
             if let Some((_, last)) = d.cur
                 && (last[0] != x || last[1] != y)
             {
@@ -372,6 +412,17 @@ pub fn keys(app: &mut PhotocraftApp, ctx: &egui::Context) {
     let Some(d) = app.distort.liquify.as_mut() else { return };
     if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::Z)) {
         d.undo();
+    }
+    // Ctrl+H (Hide Extras) toggles the red freeze-mask overlay; the mask itself stays active.
+    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::H)) {
+        d.opts.show_mask = !d.opts.show_mask;
+    }
+    // Ctrl+I inverts the freeze mask (the Invert All button); Ctrl+D clears it (None).
+    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::I)) {
+        d.global(LiquifyTool::InvertFreeze, None);
+    }
+    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::D)) {
+        d.global(LiquifyTool::ThawAll, None);
     }
     if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::OpenBracket)) {
         d.opts.size = (d.opts.size * 0.9).max(1.0);
@@ -389,6 +440,7 @@ pub fn keys(app: &mut PhotocraftApp, ctx: &egui::Context) {
         (egui::Key::O, LiquifyTool::PushLeft),
         (egui::Key::F, LiquifyTool::Freeze),
         (egui::Key::D, LiquifyTool::Thaw),
+        (egui::Key::L, LiquifyTool::LassoMask),
     ];
     for (k, t) in tools {
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, k)) {
@@ -409,6 +461,7 @@ fn tool_icon(t: LiquifyTool) -> &'static str {
         LiquifyTool::PushLeft => "chevrons-left",
         LiquifyTool::Freeze => "lock",
         LiquifyTool::Thaw => "lock-open",
+        LiquifyTool::LassoMask => "lasso",
         _ => "circle",
     }
 }
@@ -424,6 +477,7 @@ fn shortcut(t: LiquifyTool) -> &'static str {
         LiquifyTool::PushLeft => "O",
         LiquifyTool::Freeze => "F",
         LiquifyTool::Thaw => "D",
+        LiquifyTool::LassoMask => "L",
         _ => "",
     }
 }
@@ -450,6 +504,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
     }
     let mut action: Option<&str> = None;
     let mut events: Vec<ToolEvent> = Vec::new();
+    let mut mods = egui::Modifiers::NONE;
     egui::Area::new(egui::Id::new("liquify-dialog")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
         let Some(d) = app.distort.liquify.as_mut() else { return };
         d.upload(ctx);
@@ -474,9 +529,15 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             if crate::icons::button(&mut strip, tool_icon(tool), 34.0, d.opts.tool == tool, &tip).clicked() {
                 d.opts.tool = tool;
             }
-            if matches!(tool, LiquifyTool::Smooth | LiquifyTool::PushLeft) {
+            if matches!(tool, LiquifyTool::Smooth | LiquifyTool::PushLeft | LiquifyTool::Thaw) {
                 strip.add_space(6.0);
             }
+        }
+        // The lasso works on the same freeze mask as Freeze/Thaw: drag to freeze the polygon,
+        // Alt-drag to thaw it.
+        let lasso_tip = format!("{} (L) — {} + {}, Alt = {}", tl!("Freeze Lasso"), tl!("Drag"), tl!("freeze"), tl!("thaw"));
+        if crate::icons::button(&mut strip, tool_icon(LiquifyTool::LassoMask), 34.0, d.opts.tool == LiquifyTool::LassoMask, &lasso_tip).clicked() {
+            d.opts.tool = LiquifyTool::LassoMask;
         }
         // Right properties panel.
         let right = ERect::from_min_size(pos2(body.right() - RIGHT_W, body.top()), vec2(RIGHT_W, body.height()));
@@ -595,11 +656,22 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         if d.opts.show_mesh {
             draw_mesh(d, &clip, area);
         }
-        // Brush outline.
+        // The lasso polygon being drawn (red freezes, blue thaws; the mask overlay paints the
+        // applied area red like the Freeze brush).
+        if let Some((subtract, pts)) = &d.lasso
+            && pts.len() > 1
+        {
+            let color = if *subtract { Color32::from_rgb(70, 180, 255) } else { Color32::from_rgb(230, 40, 40) };
+            let line: Vec<Pos2> = pts.iter().map(|p| to_screen(d, area, *p)).collect();
+            clip.add(egui::Shape::line(line, Stroke::new(1.0, color)));
+        }
+        // Brush outline (the lasso has none).
         if let Some(hp) = resp.hover_pos() {
-            let r = d.opts.size * 0.5 * d.zoom;
-            clip.circle_stroke(hp, r, Stroke::new(1.5, Color32::BLACK));
-            clip.circle_stroke(hp, r, Stroke::new(0.75, Color32::WHITE));
+            if d.opts.tool != LiquifyTool::LassoMask {
+                let r = d.opts.size * 0.5 * d.zoom;
+                clip.circle_stroke(hp, r, Stroke::new(1.5, Color32::BLACK));
+                clip.circle_stroke(hp, r, Stroke::new(0.75, Color32::WHITE));
+            }
             d.hover = Some(to_doc(d, area, hp));
         }
         clip.rect_stroke(img, 0.0, Stroke::new(1.0, t.separator), egui::StrokeKind::Outside);
@@ -611,7 +683,14 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         } else if let Some(pp) = resp.interact_pointer_pos() {
             let q = to_doc(d, area, pp);
             let pr = 1.0;
-            if resp.drag_started() || (resp.is_pointer_button_down_on() && d.cur.is_none()) {
+            mods = ui.input(|i| i.modifiers);
+            if d.lasso.is_some() {
+                // A lasso in progress: collect the polygon, no brush dabs.
+                if resp.dragged() {
+                    events.push(ToolEvent::Move { x: q[0], y: q[1], pressure: pr });
+                    ctx.request_repaint();
+                }
+            } else if resp.drag_started() || (resp.is_pointer_button_down_on() && d.cur.is_none()) {
                 events.push(ToolEvent::Down { x: q[0], y: q[1], pressure: pr });
             } else if resp.dragged() || resp.is_pointer_button_down_on() {
                 let moved = d.cur.as_ref().is_some_and(|(_, l)| l[0] != q[0] || l[1] != q[1]);
@@ -623,13 +702,20 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 ctx.request_repaint();
             }
         }
-        if resp.drag_stopped() || (d.cur.is_some() && !ui.input(|i| i.pointer.primary_down())) {
-            let q = d.cur.as_ref().map(|(_, l)| [l[0], l[1]]).unwrap_or_default();
+        let primary_down = ui.input(|i| i.pointer.primary_down());
+        let lasso_up = d.lasso.is_some() && !primary_down;
+        if resp.drag_stopped() || lasso_up || (d.cur.is_some() && !primary_down) {
+            let q = d
+                .lasso
+                .as_ref()
+                .and_then(|(_, pts)| pts.last().copied())
+                .or_else(|| d.cur.as_ref().map(|(_, l)| [l[0], l[1]]))
+                .unwrap_or_default();
             events.push(ToolEvent::Up { x: q[0], y: q[1] });
         }
     });
     for ev in events {
-        pointer(app, ev, egui::Modifiers::NONE);
+        pointer(app, ev, mods);
     }
     match action {
         Some("ok") => commit(app),

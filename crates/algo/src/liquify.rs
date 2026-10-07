@@ -38,6 +38,7 @@ pub enum LiquifyTool {
     PushLeft,
     Freeze,
     Thaw,
+    LassoMask,
     /// The Reconstruct… button: scales the whole (unfrozen) field toward zero by `amount` %.
     ReconstructAll,
     /// Mask Options › Mask All / None / Invert All (whole-field freeze edits).
@@ -72,6 +73,7 @@ impl LiquifyTool {
             LiquifyTool::PushLeft => "Push Left",
             LiquifyTool::Freeze => "Freeze Mask",
             LiquifyTool::Thaw => "Thaw Mask",
+            LiquifyTool::LassoMask => "Freeze Lasso",
             LiquifyTool::ReconstructAll => "Reconstruct All",
             LiquifyTool::FreezeAll => "Mask All",
             LiquifyTool::ThawAll => "Mask None",
@@ -86,7 +88,7 @@ impl LiquifyTool {
 
     /// Tools that act while the brush is held still (each recorded point is a dab).
     pub fn is_stationary(self) -> bool {
-        !matches!(self, LiquifyTool::ForwardWarp | LiquifyTool::PushLeft)
+        !matches!(self, LiquifyTool::ForwardWarp | LiquifyTool::PushLeft | LiquifyTool::LassoMask)
     }
 }
 
@@ -124,7 +126,8 @@ pub struct LiquifyStroke {
     pub rate: f64,
     #[serde(default)]
     pub points: Vec<Vec<f64>>,
-    /// `reconstructAll` only: how much to restore, 0..100.
+    /// `reconstructAll` only: how much to restore, 0..100. `lassoMask`: 1.0/none freezes the
+    /// polygon, 0.0 thaws it.
     #[serde(default)]
     pub amount: Option<f64>,
 }
@@ -216,6 +219,7 @@ impl LiquifyField {
     /// Applies one stroke. Returns the document rectangle whose output changed.
     pub fn apply_stroke(&mut self, s: &LiquifyStroke) -> Rect {
         match s.tool {
+            LiquifyTool::LassoMask => return self.apply_lasso(s),
             LiquifyTool::ReconstructAll => {
                 let k = (s.amount.unwrap_or(100.0) / 100.0).clamp(0.0, 1.0) as f32;
                 for (v, f) in self.d.iter_mut().zip(&self.freeze) {
@@ -240,6 +244,42 @@ impl LiquifyField {
             dirty = dirty.union(&self.stroke_segment(s, w[0], w[1]));
         }
         dirty
+    }
+
+    /// Lasso: sets the freeze mask to `amount` (1.0 when none) at every field node inside the
+    /// closed polygon in `s.points`. Returns the document rectangle the mask changed in.
+    fn apply_lasso(&mut self, s: &LiquifyStroke) -> Rect {
+        let poly: Vec<[f64; 2]> = s.points.iter().filter(|p| p.len() >= 2).map(|p| [p[0], p[1]]).collect();
+        if poly.len() < 3 {
+            return Rect::EMPTY;
+        }
+        let (mut px0, mut py0, mut px1, mut py1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for p in &poly {
+            px0 = px0.min(p[0]);
+            py0 = py0.min(p[1]);
+            px1 = px1.max(p[0]);
+            py1 = py1.max(p[1]);
+        }
+        let (gx0, gy0) = self.to_grid(px0, py0);
+        let (gx1, gy1) = self.to_grid(px1, py1);
+        let (w, h) = (self.w as isize, self.h as isize);
+        let i0 = (gx0.floor() as isize).max(0);
+        let j0 = (gy0.floor() as isize).max(0);
+        let i1 = (gx1.floor() as isize).min(w - 1);
+        let j1 = (gy1.floor() as isize).min(h - 1);
+        if i1 < i0 || j1 < j0 {
+            return Rect::EMPTY;
+        }
+        let v = if s.amount.unwrap_or(1.0) > 0.5 { 1.0f32 } else { 0.0 };
+        for j in j0..=j1 {
+            for i in i0..=i1 {
+                let p = self.node_pos(i as usize, j as usize);
+                if point_in_polygon(p, &poly) {
+                    self.freeze[(j * w + i) as usize] = v;
+                }
+            }
+        }
+        Rect::new(px0.floor() as i32, py0.floor() as i32, px1.ceil() as i32, py1.ceil() as i32).intersect(&self.bounds)
     }
 
     /// Starts a stroke at `p` (`[x, y, pressure]`): stationary tools dab once there. Interactive
@@ -276,6 +316,9 @@ impl LiquifyField {
 
     /// One dab at `c` with brush motion `delta`. Returns the document rect it affected.
     fn dab(&mut self, s: &LiquifyStroke, c: [f64; 2], delta: [f64; 2], point_pressure: f64) -> Rect {
+        if s.tool == LiquifyTool::LassoMask {
+            return Rect::EMPTY; // the lasso is polygon-only; never a brush dab
+        }
         let r = (s.size / 2.0).max(0.5);
         let strength = (s.pressure / 100.0).clamp(0.0, 1.0) * point_pressure;
         let rate = (s.rate / 100.0).clamp(0.0, 1.0);
@@ -426,6 +469,20 @@ impl LiquifyField {
         let j1 = (gy1.ceil() as isize + 2).clamp(0, self.h as isize - 1) as usize;
         (j0..=j1).any(|j| self.d[j * self.w + i0..=j * self.w + i1].iter().any(|v| v[0] != 0.0 || v[1] != 0.0))
     }
+}
+
+/// Even-odd ray casting: is `p` inside `poly` (open polygon; the closing edge is implied)?
+fn point_in_polygon(p: [f64; 2], poly: &[[f64; 2]]) -> bool {
+    let mut inside = false;
+    let mut j = poly.len() - 1;
+    for (i, a) in poly.iter().enumerate() {
+        let b = poly[j];
+        if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0] {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 fn bilinear(d: &[[f32; 2]], w: usize, h: usize, gx: f64, gy: f64) -> [f64; 2] {
