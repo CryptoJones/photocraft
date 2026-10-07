@@ -52,8 +52,8 @@ fn native_options() -> eframe::NativeOptions {
         .with_drag_and_drop(true)
         .with_fullsize_content_view(true)
         .with_titlebar_shown(false)
-        .with_title_shown(false);
-    let viewport = if app_icon::use_bundle_icon() { viewport } else { viewport.with_icon(app_icon::window_icon()) };
+        .with_title_shown(false)
+        .with_icon(app_icon::window_icon());
     eframe::NativeOptions { viewport, centered: true, ..Default::default() }
 }
 
@@ -256,6 +256,7 @@ mod tests {
         let o = super::native_options();
         assert!(o.centered, "#419: centred, not cascaded from the top-left corner");
         assert_eq!(o.viewport.inner_size, Some(egui::vec2(1440.0, 900.0)));
+        assert!(o.viewport.icon.is_some(), "the running app must keep the PhotoCraft Dock icon");
         // eframe shrinks the start size to the monitor, so the centred position is on-screen.
         assert_ne!(o.viewport.clamp_size_to_monitor_size, Some(false));
     }
