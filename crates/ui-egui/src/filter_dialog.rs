@@ -363,7 +363,7 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
     }
     if let Some(mut preview) = f.get("__preview").and_then(Value::as_bool) {
         ui.add_space(4.0);
-        crate::widgets::checkbox(ui, &mut preview, tl!("Preview"));
+        crate::widgets::checkbox(ui, &mut preview, tl_id!("ui-preview-a43d5afecaa46489"));
         f.insert("__preview".into(), json!(preview));
     }
 }

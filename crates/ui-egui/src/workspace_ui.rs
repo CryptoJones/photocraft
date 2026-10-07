@@ -295,8 +295,8 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let cmd = crate::shortcuts::pretty("Cmd");
         let shift = crate::shortcuts::pretty("Shift");
         let alt = crate::shortcuts::pretty("Alt");
-        crate::analysis_ui::panel_window(app, ctx, "modifier-keys", tl!("Modifier Keys"), vec2(-420.0, 80.0), 150.0, |ui| {
-            close = crate::analysis_ui::title_row(ui, tl!("Modifier Keys"));
+        crate::analysis_ui::panel_window(app, ctx, "modifier-keys", tl_id!("ui-modifier-keys-c54f0038266c25de"), vec2(-420.0, 80.0), 150.0, |ui| {
+            close = crate::analysis_ui::title_row(ui, tl_id!("ui-modifier-keys-c54f0038266c25de"));
             ui.horizontal(|ui| {
                 for (label, on) in [(&*shift, &mut s.sticky_shift), (&*cmd, &mut s.sticky_command), (&*alt, &mut s.sticky_alt)] {
                     if ui.add(egui::Button::new(RichText::new(label).size(14.0)).selected(*on).min_size(vec2(40.0, 30.0))).clicked() {
@@ -357,16 +357,12 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
             };
             match kind.as_str() {
                 "newWorkspace" => {
-                    text(ui, &mut f, "name", tl!("Name:"));
-                    ui.label(RichText::new(tl!("Capture")).color(t.text_dim).size(11.0));
-                    ui.label(
-                        RichText::new(tl!("Panel locations are saved in the workspace. Keyboard shortcuts, menus and toolbar are optional."))
-                            .color(t.text_faint)
-                            .size(10.5),
-                    );
-                    check(ui, &mut f, "keyboardShortcuts", tl!("Keyboard Shortcuts"));
-                    check(ui, &mut f, "menus", tl!("Menus"));
-                    check(ui, &mut f, "toolbar", tl!("Toolbar"));
+                    text(ui, &mut f, "name", tl_id!("ui-name-48d899dd92fbc032"));
+                    ui.label(RichText::new(tl_id!("ui-capture-19dc15290645ad77")).color(t.text_dim).size(11.0));
+                    ui.label(RichText::new(tl_id!("ui-panel-locations-are-saved-in-the-workspa-3ccb69a1d6f80267")).color(t.text_faint).size(10.5));
+                    check(ui, &mut f, "keyboardShortcuts", tl_id!("ui-keyboard-shortcuts-146b196f5c9d2fd5"));
+                    check(ui, &mut f, "menus", tl_id!("ui-menus-d3594737e87b2859"));
+                    check(ui, &mut f, "toolbar", tl_id!("ui-toolbar-dafc8fbbdcafabd6"));
                 }
                 "deleteWorkspace" => {
                     let mut cur = f.get("name").and_then(Value::as_str).unwrap_or("").to_string();
@@ -376,8 +372,8 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
                     }
                 }
                 "customPar" => {
-                    text(ui, &mut f, "name", tl!("Name:"));
-                    number(ui, &mut f, "ratio", tl!("Factor:"), 0.1..=10.0);
+                    text(ui, &mut f, "name", tl_id!("ui-name-48d899dd92fbc032"));
+                    number(ui, &mut f, "ratio", tl_id!("ui-factor-cedf668562a18afe"), 0.1..=10.0);
                 }
                 "preview32" => {
                     let mut m = f.get("method").and_then(Value::as_str).unwrap_or("exposureGamma").to_string();
@@ -385,31 +381,34 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
                         ui,
                         "p32-method",
                         &mut m,
-                        &[("exposureGamma".to_string(), tl!("Exposure and Gamma")), ("highlightCompression".to_string(), tl!("Highlight Compression"))],
+                        &[
+                            ("exposureGamma".to_string(), tl_id!("ui-exposure-and-gamma-8513b6bf2c39f106")),
+                            ("highlightCompression".to_string(), tl_id!("ui-highlight-compression-7a99c194b61b9297")),
+                        ],
                         180.0,
                     ) {
                         f.insert("method".into(), json!(m));
                     }
                     ui.add_enabled_ui(m == "exposureGamma", |ui| {
-                        number(ui, &mut f, "exposure", tl!("Exposure:"), -20.0..=20.0);
-                        number(ui, &mut f, "gamma", tl!("Gamma:"), 0.1..=9.99);
+                        number(ui, &mut f, "exposure", tl_id!("ui-exposure-c802a835ac58dc1c"), -20.0..=20.0);
+                        number(ui, &mut f, "gamma", tl_id!("ui-gamma-d18e65af0ca8587a"), 0.1..=9.99);
                     });
                 }
                 _ => {
                     for (k, label) in [
-                        ("layerEdges", tl!("Layer Edges")),
-                        ("selectionEdges", tl!("Selection Edges")),
-                        ("targetPath", tl!("Target Path")),
-                        ("notes", tl!("Notes")),
-                        ("pixelGrid", tl!("Pixel Grid")),
-                        ("slices", tl!("Slices")),
-                        ("count", tl!("Count")),
-                        ("smartGuides", tl!("Smart Guides")),
-                        ("brushPreview", tl!("Brush Preview")),
-                        ("mesh", tl!("Mesh")),
-                        ("editPins", tl!("Edit Pins")),
-                        ("canvasGuides", tl!("Canvas Guides")),
-                        ("artboardGuides", tl!("Artboard Guides")),
+                        ("layerEdges", tl_id!("ui-layer-edges-ef823c294cf28e42")),
+                        ("selectionEdges", tl_id!("ui-selection-edges-10f0b5fc33c11b21")),
+                        ("targetPath", tl_id!("ui-target-path-e8f368760eab594d")),
+                        ("notes", tl_id!("ui-notes-c54c5e311372a994")),
+                        ("pixelGrid", tl_id!("ui-pixel-grid-fa46ba2e1ea19833")),
+                        ("slices", tl_id!("ui-slices-2824433449fae824")),
+                        ("count", tl_id!("ui-count-c941513842a342a6")),
+                        ("smartGuides", tl_id!("ui-smart-guides-28bfdac6cab8a8a1")),
+                        ("brushPreview", tl_id!("ui-brush-preview-626c213d4519f731")),
+                        ("mesh", tl_id!("ui-mesh-eadbde58fe65c4f2")),
+                        ("editPins", tl_id!("ui-edit-pins-0e5874a633e4c081")),
+                        ("canvasGuides", tl_id!("ui-canvas-guides-a9b65ae5587cf3b4")),
+                        ("artboardGuides", tl_id!("ui-artboard-guides-d0463cdea1ff4e55")),
                     ] {
                         check(ui, &mut f, k, label);
                     }
@@ -418,11 +417,11 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let ok = if kind == "deleteWorkspace" { tl!("Delete") } else { tl!("OK") };
+                    let ok = if kind == "deleteWorkspace" { tl_id!("ui-delete-af3196ad6b727abc") } else { tl_id!("ui-ok-d840e3186b2b9581") };
                     if crate::widgets::primary_button(ui, ok, 70.0).clicked() {
                         result = Some(true);
                     }
-                    if crate::widgets::secondary_button(ui, tl!("Cancel"), 70.0).clicked() {
+                    if crate::widgets::secondary_button(ui, tl_id!("ui-cancel-f09e4b5c35aa14b9"), 70.0).clicked() {
                         result = Some(false);
                     }
                 });

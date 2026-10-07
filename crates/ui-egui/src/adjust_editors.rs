@@ -103,9 +103,9 @@ pub fn editor(ui: &mut egui::Ui, kind: &str, v: &mut Value, cx: &EditorCx) -> Ed
             ui,
             v,
             &[
-                ("exposure", tl!("Exposure"), -20.0, 20.0, 0.0, ""),
-                ("offset", tl!("Offset"), -0.5, 0.5, 0.0, ""),
-                ("gamma", tl!("Gamma Correction"), 0.01, 9.99, 1.0, ""),
+                ("exposure", tl_id!("ui-exposure-d0f5f8782db60d4e"), -20.0, 20.0, 0.0, ""),
+                ("offset", tl_id!("ui-offset-6a06d6c989a3ef64"), -0.5, 0.5, 0.0, ""),
+                ("gamma", tl_id!("ui-gamma-correction-ef3cb6870346b5d4"), 0.01, 9.99, 1.0, ""),
             ],
         ),
         "vibrance" => sliders(ui, v, &[("vibrance", "Vibrance", -100.0, 100.0, 0.0, "%"), ("saturation", "Saturation", -100.0, 100.0, 0.0, "%")]),
@@ -202,9 +202,16 @@ fn gradient_slider(ui: &mut egui::Ui, text: &str, x: &mut f32, range: std::ops::
 fn brightness_contrast(ui: &mut egui::Ui, v: &mut Value) -> Edit {
     let legacy = flag(v, "legacy", false);
     let lo = if legacy { -100.0 } else { -50.0 };
-    let mut e = sliders(ui, v, &[("brightness", tl!("Brightness"), -150.0, 150.0, 0.0, ""), ("contrast", tl!("Contrast"), lo, 100.0, 0.0, "")]);
+    let mut e = sliders(
+        ui,
+        v,
+        &[
+            ("brightness", tl_id!("ui-brightness-91d9b1aa07255ac4"), -150.0, 150.0, 0.0, ""),
+            ("contrast", tl_id!("ui-contrast-353a0e552d0ae1e9"), lo, 100.0, 0.0, ""),
+        ],
+    );
     let mut l = legacy;
-    if widgets::checkbox(ui, &mut l, tl!("Use Legacy")).changed() {
+    if widgets::checkbox(ui, &mut l, tl_id!("ui-use-legacy-ce8f790b3275eb99")).changed() {
         v["legacy"] = json!(l);
         if !l {
             v["contrast"] = json!(num(v, "contrast", 0.0).max(-50.0));
@@ -404,7 +411,7 @@ fn curves(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let chans = tone_channels(space, cx.gray);
     let state_id = cx.mem.with("curves");
     let mut st: CurveUi = ui.data(|d| d.get_temp(state_id)).unwrap_or_default();
-    let ch = channel_picker(ui, cx.mem.with("curves-ch"), chans, tl!("Channel:"));
+    let ch = channel_picker(ui, cx.mem.with("curves-ch"), chans, tl_id!("ui-channel-44d4b9bc3e717fac"));
     if ch != st.channel {
         st = CurveUi { channel: ch, ..Default::default() };
     }
@@ -561,9 +568,9 @@ fn curves(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     ui.horizontal(|ui| {
         let i = st.sel.filter(|i| *i < pts.len());
         let (mut vi, mut vo) = i.map_or((0.0, 0.0), |i| (pts[i][0], pts[i][1]));
-        label(ui, tl!("Input:"));
+        label(ui, tl_id!("ui-input-6b4795ab9ec37475"));
         let ri = ui.add_enabled_ui(i.is_some(), |ui| widgets::value_field(ui, &mut vi, 0.0..=255.0, "", 52.0)).inner;
-        label(ui, tl!("Output:"));
+        label(ui, tl_id!("ui-output-1a566208f0c7b218"));
         let ro = ui.add_enabled_ui(i.is_some(), |ui| widgets::value_field(ui, &mut vo, 0.0..=255.0, "", 52.0)).inner;
         if let Some(i) = i
             && (ri.changed() || ro.changed())
@@ -664,9 +671,9 @@ fn levels(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let mut ch = 0;
     let mut auto = false;
     ui.horizontal(|ui| {
-        ch = channel_picker(ui, cx.mem.with("levels-ch"), chans, tl!("Channel:"));
+        ch = channel_picker(ui, cx.mem.with("levels-ch"), chans, tl_id!("ui-channel-44d4b9bc3e717fac"));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            auto = widgets::secondary_button(ui, tl!("Auto"), 0.0).clicked();
+            auto = widgets::secondary_button(ui, tl_id!("ui-auto-a5b5d9b93340662c"), 0.0).clicked();
         });
     });
     let chan = chans.get(ch).copied().unwrap_or(ToneChannel { key: "", label: "" });
@@ -751,7 +758,7 @@ fn levels(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     });
     // Output levels.
     ui.add_space(6.0);
-    label(ui, tl!("Output Levels:"));
+    label(ui, tl_id!("ui-output-levels-e25ff1f8cc0aa2bd"));
     let (ob_r, _) = ui.allocate_exact_size(vec2(w, 10.0), Sense::hover());
     gradient_bar(ui.painter(), ob_r.shrink2(vec2(6.0, 0.0)), Color32::BLACK, bar_color(&chan, &t), false);
     let (or, oresp) = ui.allocate_exact_size(vec2(w, 14.0), Sense::click_and_drag());
@@ -823,7 +830,7 @@ fn threshold(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     p.line_segment([pos2(x, hr.top()), pos2(x, hr.bottom())], Stroke::new(1.0, t.accent));
     p.rect_stroke(hr, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
     ui.add_space(4.0);
-    sliders(ui, v, &[("level", tl!("Threshold Level"), 1.0, 255.0, 128.0, "")])
+    sliders(ui, v, &[("level", tl_id!("ui-threshold-level-c51d8020736bd40c"), 1.0, 255.0, 128.0, "")])
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -869,7 +876,8 @@ fn hue_saturation(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
         range = 0;
     }
     ui.horizontal(|ui| {
-        let opts: Vec<(usize, &str)> = std::iter::once((0, tl!("Master"))).chain(RANGE_LABELS.iter().enumerate().map(|(i, l)| (i + 1, *l))).collect();
+        let opts: Vec<(usize, &str)> =
+            std::iter::once((0, tl_id!("ui-master-e53622684802b745"))).chain(RANGE_LABELS.iter().enumerate().map(|(i, l)| (i + 1, *l))).collect();
         ui.add_enabled_ui(!colorize, |ui| widgets::dropdown(ui, &format!("{range_id:?}"), &mut range, &opts, 120.0));
     });
     ui.data_mut(|d| d.insert_temp(range_id, range));
@@ -878,18 +886,18 @@ fn hue_saturation(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     if range == 0 {
         let (hlo, hhi, slo) = if colorize { (0.0, 360.0, 0.0) } else { (-180.0, 180.0, -100.0) };
         let mut h = num(v, "hue", 0.0).clamp(hlo, hhi);
-        let r = widgets::slider_row(ui, tl!("Hue"), &mut h, hlo..=hhi, "°", Some(&hue_grad));
+        let r = widgets::slider_row(ui, tl_id!("ui-hue-de79e57e3d673fbf"), &mut h, hlo..=hhi, "°", Some(&hue_grad));
         if r.changed() {
             v["hue"] = json!(h.round());
         }
         e.add(Edit::of(&r));
         let mut s = num(v, "saturation", 0.0).clamp(slo, 100.0);
-        let r = widgets::slider_row(ui, tl!("Saturation"), &mut s, slo..=100.0, "%", None);
+        let r = widgets::slider_row(ui, tl_id!("ui-saturation-d71c9cb7228f3ccb"), &mut s, slo..=100.0, "%", None);
         if r.changed() {
             v["saturation"] = json!(s.round());
         }
         e.add(Edit::of(&r));
-        e.add(sliders(ui, v, &[("lightness", tl!("Lightness"), -100.0, 100.0, 0.0, "%")]));
+        e.add(sliders(ui, v, &[("lightness", tl_id!("ui-lightness-869f608f9e2a33be"), -100.0, 100.0, 0.0, "%")]));
     } else {
         let key = HUE_RANGES[range - 1];
         if !v.get(key).is_some_and(Value::is_object) {
@@ -898,19 +906,26 @@ fn hue_saturation(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
         let mut o = v[key].clone();
         let mut sub = Edit::default();
         let mut h = num(&o, "hue", 0.0);
-        let r = widgets::slider_row(ui, tl!("Hue"), &mut h, -180.0..=180.0, "°", Some(&hue_grad));
+        let r = widgets::slider_row(ui, tl_id!("ui-hue-de79e57e3d673fbf"), &mut h, -180.0..=180.0, "°", Some(&hue_grad));
         if r.changed() {
             o["hue"] = json!(h.round());
         }
         sub.add(Edit::of(&r));
-        sub.add(sliders(ui, &mut o, &[("saturation", tl!("Saturation"), -100.0, 100.0, 0.0, "%"), ("lightness", tl!("Lightness"), -100.0, 100.0, 0.0, "%")]));
+        sub.add(sliders(
+            ui,
+            &mut o,
+            &[
+                ("saturation", tl_id!("ui-saturation-d71c9cb7228f3ccb"), -100.0, 100.0, 0.0, "%"),
+                ("lightness", tl_id!("ui-lightness-869f608f9e2a33be"), -100.0, 100.0, 0.0, "%"),
+            ],
+        ));
         if sub.changed {
             v[key] = o;
         }
         e.add(sub);
     }
     let mut c = colorize;
-    if widgets::checkbox(ui, &mut c, tl!("Colorize")).changed() {
+    if widgets::checkbox(ui, &mut c, tl_id!("ui-colorize-cc4a832f61eb6438")).changed() {
         v["colorize"] = json!(c);
         let h = num(v, "hue", 0.0);
         v["hue"] = json!(if c {
@@ -1006,8 +1021,10 @@ fn color_balance(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let tone_id = cx.mem.with("cb-tone");
     let mut tone_ix: usize = ui.data(|d| d.get_temp(tone_id)).unwrap_or(1);
     ui.horizontal(|ui| {
-        label(ui, tl!("Tone:"));
-        for (i, l) in [tl!("Shadows"), tl!("Midtones"), tl!("Highlights")].iter().enumerate() {
+        label(ui, tl_id!("ui-tone-af2b8280b2e3e4b3"));
+        for (i, l) in
+            [tl_id!("ui-shadows-d96716d0107dc7bc"), tl_id!("ui-midtones-072137379417d47c"), tl_id!("ui-highlights-8f08df786c69be0a")].iter().enumerate()
+        {
             if ui.radio(tone_ix == i, *l).clicked() {
                 tone_ix = i;
             }
@@ -1018,9 +1035,9 @@ fn color_balance(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let mut vals = nums(v, key, [0.0; 3]);
     let mut e = Edit::default();
     let rows = [
-        (tl!("Cyan  ·  Red"), Color32::from_rgb(0, 190, 210), Color32::from_rgb(225, 40, 40)),
-        (tl!("Magenta  ·  Green"), Color32::from_rgb(210, 40, 190), Color32::from_rgb(40, 190, 60)),
-        (tl!("Yellow  ·  Blue"), Color32::from_rgb(230, 210, 30), Color32::from_rgb(40, 80, 230)),
+        (tl_id!("ui-cyan-red-90bb919c7ee7207e"), Color32::from_rgb(0, 190, 210), Color32::from_rgb(225, 40, 40)),
+        (tl_id!("ui-magenta-green-81e59539591f6798"), Color32::from_rgb(210, 40, 190), Color32::from_rgb(40, 190, 60)),
+        (tl_id!("ui-yellow-blue-cbeeae4c68dac970"), Color32::from_rgb(230, 210, 30), Color32::from_rgb(40, 80, 230)),
     ];
     let mut changed = false;
     for (i, (text, a, b)) in rows.iter().enumerate() {
@@ -1032,7 +1049,7 @@ fn color_balance(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
         v[key] = json!(vals.map(f32::round));
     }
     let mut pl = flag(v, "preserveLuminosity", true);
-    if widgets::checkbox(ui, &mut pl, tl!("Preserve Luminosity")).changed() {
+    if widgets::checkbox(ui, &mut pl, tl_id!("ui-preserve-luminosity-5f89a70110304460")).changed() {
         v["preserveLuminosity"] = json!(pl);
         e.add(Edit::discrete(true));
     }
@@ -1057,7 +1074,7 @@ fn black_white(ui: &mut egui::Ui, v: &mut Value) -> Edit {
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         let mut on = flag(v, "tint", false);
-        if widgets::checkbox(ui, &mut on, tl!("Tint")).changed() {
+        if widgets::checkbox(ui, &mut on, tl_id!("ui-tint-b98ce21d9bf0f412")).changed() {
             v["tint"] = json!(on);
             e.add(Edit::discrete(true));
         }
@@ -1067,7 +1084,7 @@ fn black_white(ui: &mut egui::Ui, v: &mut Value) -> Edit {
             v["tintColor"] = json!(adjust_params::hex(c));
         }
         e.add(r);
-        if widgets::secondary_button(ui, tl!("Default"), 0.0).clicked() {
+        if widgets::secondary_button(ui, tl_id!("ui-default-ab2a3d4ef1c9d1a8"), 0.0).clicked() {
             for (i, key) in HUE_RANGES.iter().enumerate() {
                 v[*key] = json!(adjust_params::BW_DEFAULTS[i]);
             }
@@ -1088,7 +1105,7 @@ fn photo_filter(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let mode_id = cx.mem.with("pf-mode");
     let mut use_color: bool = ui.data(|d| d.get_temp(mode_id)).unwrap_or(preset.is_none());
     ui.horizontal(|ui| {
-        if ui.radio(!use_color, tl!("Filter:")).clicked() {
+        if ui.radio(!use_color, tl_id!("ui-filter-d43b88702e996ed9")).clicked() {
             use_color = false;
         }
         let mut sel = preset.unwrap_or("custom").to_string();
@@ -1104,7 +1121,7 @@ fn photo_filter(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
         }
     });
     ui.horizontal(|ui| {
-        if ui.radio(use_color, tl!("Color:")).clicked() {
+        if ui.radio(use_color, tl_id!("ui-color-73a9475ddd11219c")).clicked() {
             use_color = true;
         }
         let r = ui.add_enabled_ui(use_color, |ui| color_button(ui, &mut c)).inner;
@@ -1114,9 +1131,9 @@ fn photo_filter(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
         e.add(r);
     });
     ui.data_mut(|d| d.insert_temp(mode_id, use_color));
-    e.add(sliders(ui, v, &[("density", tl!("Density"), 0.0, 100.0, 25.0, "%")]));
+    e.add(sliders(ui, v, &[("density", tl_id!("ui-density-58e9ad6f5cc15351"), 0.0, 100.0, 25.0, "%")]));
     let mut pl = flag(v, "preserveLuminosity", true);
-    if widgets::checkbox(ui, &mut pl, tl!("Preserve Luminosity")).changed() {
+    if widgets::checkbox(ui, &mut pl, tl_id!("ui-preserve-luminosity-5f89a70110304460")).changed() {
         v["preserveLuminosity"] = json!(pl);
         e.add(Edit::discrete(true));
     }
@@ -1131,12 +1148,16 @@ fn channel_mixer(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let mono = flag(v, "monochrome", false);
     let out_id = cx.mem.with("cm-out");
     let mut out: usize = ui.data(|d| d.get_temp(out_id)).unwrap_or(0);
-    let outs: &[(usize, &str)] = if mono { &[(0, tl!("Gray"))] } else { &[(0, tl!("Red")), (1, tl!("Green")), (2, tl!("Blue"))] };
+    let outs: &[(usize, &str)] = if mono {
+        &[(0, tl_id!("ui-gray-0e3bcc88f8ad3aec"))]
+    } else {
+        &[(0, tl_id!("ui-red-88116e7e0c857056")), (1, tl_id!("ui-green-b8dd8abe799a20f6")), (2, tl_id!("ui-blue-b4ac30b262e06f4b"))]
+    };
     if out >= outs.len() {
         out = 0;
     }
     ui.horizontal(|ui| {
-        label(ui, tl!("Output Channel:"));
+        label(ui, tl_id!("ui-output-channel-65d0af6ca7cc3b11"));
         widgets::dropdown(ui, &format!("{out_id:?}"), &mut out, outs, 110.0);
     });
     ui.data_mut(|d| d.insert_temp(out_id, out));
@@ -1145,25 +1166,32 @@ fn channel_mixer(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let mut row = nums(v, key, if mono { nums(v, "red", identity) } else { identity });
     let mut e = Edit::default();
     let mut changed = false;
-    for (i, (text, c)) in [(tl!("Red"), [225, 50, 50]), (tl!("Green"), [50, 190, 70]), (tl!("Blue"), [60, 100, 235])].iter().enumerate() {
+    for (i, (text, c)) in [
+        (tl_id!("ui-red-88116e7e0c857056"), [225, 50, 50]),
+        (tl_id!("ui-green-b8dd8abe799a20f6"), [50, 190, 70]),
+        (tl_id!("ui-blue-b4ac30b262e06f4b"), [60, 100, 235]),
+    ]
+    .iter()
+    .enumerate()
+    {
         let r = gradient_slider(ui, text, &mut row[i], -200.0..=200.0, "%", Color32::BLACK, Color32::from_rgb(c[0], c[1], c[2]));
         changed |= r.changed;
         e.add(r);
     }
     let total = row[0] + row[1] + row[2];
     ui.horizontal(|ui| {
-        label(ui, tl!("Total:"));
+        label(ui, tl_id!("ui-total-1879317f42087d47"));
         let warn = total > 100.0;
         ui.label(RichText::new(format!("{total:+.0}%")).font(crate::theme::mono(12.0)).color(if warn { t.warning } else { t.text }));
     });
-    let r = widgets::slider_row(ui, tl!("Constant"), &mut row[3], -200.0..=200.0, "%", None);
+    let r = widgets::slider_row(ui, tl_id!("ui-constant-4420365bad346a4b"), &mut row[3], -200.0..=200.0, "%", None);
     changed |= r.changed();
     e.add(Edit::of(&r));
     if changed {
         v[key] = json!(row.map(f32::round));
     }
     let mut m = mono;
-    if widgets::checkbox(ui, &mut m, tl!("Monochrome")).changed() {
+    if widgets::checkbox(ui, &mut m, tl_id!("ui-monochrome-910b1c7880814a4a")).changed() {
         v["monochrome"] = json!(m);
         if m {
             v["gray"] = json!([40.0, 40.0, 20.0, 0.0]);
@@ -1228,15 +1256,18 @@ fn gradient_map(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let mut e = Edit::default();
     let mut stops = read_stops(v);
     let presets: [(&str, Vec<Stop>); 5] = [
-        (tl!("Black, White"), vec![(0.0, [0.0; 3]), (1.0, [1.0; 3])]),
-        (tl!("Foreground to Background"), vec![(0.0, cx.swatches[0]), (1.0, cx.swatches[1])]),
-        (tl!("Violet, Orange"), vec![(0.0, [0.161, 0.039, 0.349]), (1.0, [1.0, 0.486, 0.0])]),
-        (tl!("Blue, Red, Yellow"), vec![(0.0, [0.039, 0.0, 0.698]), (0.5, [1.0, 0.0, 0.0]), (1.0, [1.0, 0.988, 0.0])]),
-        (tl!("Copper"), vec![(0.0, [0.592, 0.275, 0.102]), (0.4, [0.984, 0.847, 0.773]), (0.7, [0.424, 0.180, 0.086]), (1.0, [0.937, 0.859, 0.804])]),
+        (tl_id!("ui-black-white-360948fe0a110557"), vec![(0.0, [0.0; 3]), (1.0, [1.0; 3])]),
+        (tl_id!("ui-foreground-to-background-4fba9c133f9b2f4d"), vec![(0.0, cx.swatches[0]), (1.0, cx.swatches[1])]),
+        (tl_id!("ui-violet-orange-8d5548d2947ea07a"), vec![(0.0, [0.161, 0.039, 0.349]), (1.0, [1.0, 0.486, 0.0])]),
+        (tl_id!("ui-blue-red-yellow-40e15f0f88591a3a"), vec![(0.0, [0.039, 0.0, 0.698]), (0.5, [1.0, 0.0, 0.0]), (1.0, [1.0, 0.988, 0.0])]),
+        (
+            tl_id!("ui-copper-9d20fe80b7293762"),
+            vec![(0.0, [0.592, 0.275, 0.102]), (0.4, [0.984, 0.847, 0.773]), (0.7, [0.424, 0.180, 0.086]), (1.0, [0.937, 0.859, 0.804])],
+        ),
     ];
     let mut preset = usize::MAX;
     ui.horizontal(|ui| {
-        label(ui, tl!("Preset:"));
+        label(ui, tl_id!("ui-preset-1b0ab5e5f92d1576"));
         let mut opts: Vec<(usize, &str)> = vec![(usize::MAX, tl!("Custom"))];
         opts.extend(presets.iter().enumerate().map(|(i, p)| (i, p.0)));
         if widgets::dropdown(ui, &format!("{:?}-gm-preset", cx.mem), &mut preset, &opts, 190.0)
@@ -1275,7 +1306,7 @@ fn gradient_map(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
                 changed = true;
             }
             e.add(Edit::of(&rl));
-            if crate::icons::button(ui, "x", 20.0, false, tl!("Remove stop")).clicked() {
+            if crate::icons::button(ui, "x", 20.0, false, tl_id!("ui-remove-stop-b3cfcb6f0913bc69")).clicked() {
                 remove = Some(i);
             }
         });
@@ -1287,7 +1318,7 @@ fn gradient_map(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
         changed = true;
         e.add(Edit::discrete(true));
     }
-    if stops.len() < 64 && widgets::secondary_button(ui, tl!("Add Stop"), 0.0).clicked() {
+    if stops.len() < 64 && widgets::secondary_button(ui, tl_id!("ui-add-stop-222d40042180e9c6"), 0.0).clicked() {
         // Halfway along the widest gap, in the gradient's colour there.
         let mut sorted = stops.clone();
         sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -1301,7 +1332,7 @@ fn gradient_map(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
         e.changed = true;
     }
     ui.horizontal(|ui| {
-        for (key, text) in [("reverse", tl!("Reverse")), ("dither", tl!("Dither"))] {
+        for (key, text) in [("reverse", tl_id!("ui-reverse-ca95c3c55e05662b")), ("dither", tl_id!("ui-dither-7b21c9863aa04d13"))] {
             let mut b = flag(v, key, false);
             if widgets::checkbox(ui, &mut b, text).changed() {
                 v[key] = json!(b);
@@ -1334,7 +1365,7 @@ pub fn layer_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: LayerId, adj
         Adjustment::SelectiveColor { .. } => return crate::adjust_ui::selective_color_editor(app, ui, id, adj),
         Adjustment::ColorLookup { .. } => return crate::adjust_ui::color_lookup_editor(app, ui, id, adj),
         Adjustment::Invert => {
-            ui.label(RichText::new(tl!("Invert has no settings.")).color(t.text_faint));
+            ui.label(RichText::new(tl_id!("ui-invert-has-no-settings-88e45fa92df4df2b")).color(t.text_faint));
             return;
         }
         Adjustment::Unsupported { psd_key, .. } => {

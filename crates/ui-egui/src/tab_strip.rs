@@ -142,8 +142,8 @@ fn tabs_in(
             ui.painter().rect_filled(r.shrink2(vec2(1.0, 3.0)), t.radius_sm, t.hover.gamma_multiply(0.6));
         }
         crate::icons::paint(ui, r, "chevrons-right", 12.0, if resp.hovered() { t.text } else { t.text_dim });
-        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("More panels")));
-        let resp = resp.on_hover_text(tl!("More panels"));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl_id!("ui-more-panels-179b83bbde5b401d")));
+        let resp = resp.on_hover_text(tl_id!("ui-more-panels-179b83bbde5b401d"));
         egui::Popup::menu(&resp).show(|ui| {
             ui.set_min_width(140.0);
             for &i in &f.overflow {

@@ -74,22 +74,23 @@ continue to control the document independently of UI scaling.
 
 ## Localisation
 
-Strings in code stay English and are the default lookup keys. `crates/ui-egui/src/i18n` maps them
-to display text at render time from one catalog per language (`i18n/<code>.tsv`; the format is
-documented in the header of `ja.tsv`). Command ids, menu paths used for logic, the control channel,
-the CLI and MCP always use the English ids and labels.
+UI messages use stable IDs in the Fluent catalogs at `crates/ui-egui/src/i18n/<code>.ftl`.
+English is the fallback catalog. `keys.tsv` maps remaining English-string calls to those IDs;
+new static UI text should use `tl_id!`. Command ids, menu paths used for logic, the control
+channel, the CLI and MCP continue to use their English ids and labels.
 
 Languages shipped (`complete_menus` marks a catalog that covers every menu string and `tl!` literal;
 the tests enforce it):
 
 - English (`en`), the source language.
 - Japanese (`ja`), complete.
-- Simplified Chinese (`zh-hans`; see [`localization-zh-hans.md`](localization-zh-hans.md)), partial.
+- Simplified Chinese (`zh-hans`; see [`localization-zh-hans.md`](localization-zh-hans.md)), complete for the cataloged UI.
 - Traditional Chinese (`zh-hant`), complete, in the vocabulary used in Taiwan; `zh-TW`, `zh-HK`,
   `zh-MO` and `zh-Hant-*` locales all resolve to it. The resolver distinguishes the two Chinese
   scripts, so neither catalog is shown to the other script's locales.
 - Spanish (`es`), complete.
 - Russian (`ru`), complete, with three plural forms (`one|few|many`, see `plural_russian`).
+- Czech (`cs`), complete.
 
 - `tr(lang, s)` plain strings; `tr_ctx` when one English word needs different translations;
   `tr_id(lang, command_id, label)` for menu items (keyed by command id, English label as the
@@ -97,20 +98,19 @@ the tests enforce it):
   translators may reorder.
 - The language is Preferences › Interface › Language (`interface.language`: `auto` or a language
   code; `auto` follows the system locale, an unknown code falls back to `auto`).
-- To add a language: add `<code>.tsv` and one row in `i18n::LANGUAGES` (code, native name, catalog,
-  plural rule). The dropdown, locale matching and the catalog tests (well-formed, no duplicates,
-  placeholders and ellipses agree, command ids exist) pick it up. Set `complete_menus` once every
-  menu string is translated; a test then enforces it. A language with more plural forms lists them
-  all in `@plural` entries (Russian: `one|few|many`); the row's plural rule picks the form.
+- To add a language: translate `en.ftl` into `<code>.ftl` and add one row in `i18n::LANGUAGES`.
+  `cargo xtask i18n check` parses every catalog and checks IDs, variables and source references.
+  Set `complete_menus` once every cataloged menu string is translated; tests then enforce it.
+  Fluent selects plural forms using the chosen locale.
 - Translations are clean-room: written from the meaning of the English text in ordinary vocabulary,
   never from another product's localisation resources.
 
-Localised so far: menus, the command palette, dialogs and panels (literals wrapped in `tl!("…")`;
+Localised so far: menus, the command palette, dialogs and panels (static literals use `tl_id!`;
 widgets such as `checkbox`, `slider_row`, `dropdown` and the buttons translate their labels
 themselves). A test fails when a `tl!` literal, a menu string, a blend mode name or a generated
 preference label has no entry in a language marked `complete_menus`. Not translated: status-bar
 messages and errors (they stay English, also for agents), names that are user data (layers, styles,
 documents), strings assembled with `format!` that were not converted to `fmt`/`trn`. Not done yet:
-per-language font fallback (the CJK fallback prefers Japanese forms), right-to-left layout,
+complete per-language font fallback for already registered fonts and the web build, right-to-left layout,
 locale-aware number and date formats, automatic language detection on the web build (native
 builds read `LANG`/`LC_*`, the macOS preferred languages and the Windows user locale).

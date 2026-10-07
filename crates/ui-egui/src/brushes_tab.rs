@@ -129,11 +129,11 @@ fn preset_interactions(ui: &egui::Ui, resp: &egui::Response, r: egui::Rect, p: &
         acts.push(Action::Select(p.name.clone()));
     }
     resp.context_menu(|ui| {
-        if ui.button(tl!("Rename Brush…")).clicked() {
+        if ui.button(tl_id!("ui-rename-brush-d1304f98c0e6f2f3")).clicked() {
             acts.push(Action::Rename(Renaming { group: false, name: p.name.clone(), text: String::new() }));
             ui.close();
         }
-        if ui.button(tl!("Delete Brush")).clicked() {
+        if ui.button(tl_id!("ui-delete-brush-c1bc99e90e0b31e4")).clicked() {
             acts.push(Action::Delete(p.name.clone()));
             ui.close();
         }
@@ -243,11 +243,11 @@ fn group_header(ui: &mut egui::Ui, label: &str, key: &str, open: bool, count: us
         acts.push(Action::ToggleGroup(label.to_string()));
     }
     resp.context_menu(|ui| {
-        if ui.button(tl!("Rename Group…")).clicked() {
+        if ui.button(tl_id!("ui-rename-group-2cdd688082a286d6")).clicked() {
             acts.push(Action::Rename(Renaming { group: true, name: key.to_string(), text: String::new() }));
             ui.close();
         }
-        if ui.button(tl!("Delete Group")).clicked() {
+        if ui.button(tl_id!("ui-delete-group-69cde2a4a0964f07")).clicked() {
             acts.push(Action::DeleteGroup(key.to_string()));
             ui.close();
         }
@@ -264,16 +264,16 @@ fn rename_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, acts: &mut Vec<Action>
     }
     let mut cancel = false;
     ui.horizontal(|ui| {
-        ui.label(RichText::new(if r.group { tl!("Group name") } else { tl!("Brush name") }).color(t.text_dim));
+        ui.label(RichText::new(if r.group { tl_id!("ui-group-name-1dc4c510f9a6d319") } else { tl_id!("ui-brush-name-17e105a3dae09884") }).color(t.text_dim));
         let resp = ui.add(egui::TextEdit::singleline(&mut r.text).desired_width(WIDTH - 230.0).id_salt("brush-rename"));
         if !resp.has_focus() && !resp.lost_focus() {
             resp.request_focus();
         }
         let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        if widgets::primary_button(ui, tl!("OK"), 52.0).clicked() || enter {
+        if widgets::primary_button(ui, tl_id!("ui-ok-d840e3186b2b9581"), 52.0).clicked() || enter {
             acts.push(Action::Rename(r.clone()));
         }
-        if widgets::secondary_button(ui, tl!("Cancel"), 60.0).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if widgets::secondary_button(ui, tl_id!("ui-cancel-f09e4b5c35aa14b9"), 60.0).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             cancel = true;
         }
     });
@@ -290,7 +290,7 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let before = app.session.tools.brush.clone();
     let mut b = before.clone();
     ui.horizontal(|ui| {
-        ui.label(RichText::new(tl!("Size")).color(t.text_dim));
+        ui.label(RichText::new(tl_id!("ui-size-16021b2387e0b7d6")).color(t.text_dim));
         let mut lv = b.size.max(1.0).ln();
         ui.add_sized(vec2(WIDTH - 140.0, 18.0), |ui: &mut egui::Ui| {
             let r = widgets::slider(ui, &mut lv, 0.0..=5000f32.ln(), None);
@@ -309,7 +309,9 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         icons::paint(ui, egui::Rect::from_min_size(ui.cursor().min + vec2(0.0, 3.0), vec2(16.0, 16.0)), "search", 14.0, t.text_faint);
         ui.add_space(20.0);
-        ui.add(egui::TextEdit::singleline(&mut app.ui.brushes_panel.filter).hint_text(tl!("Search Brushes")).desired_width(WIDTH - 120.0));
+        ui.add(
+            egui::TextEdit::singleline(&mut app.ui.brushes_panel.filter).hint_text(tl_id!("ui-search-brushes-8fd13968d7499fbb")).desired_width(WIDTH - 120.0),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let view = &mut app.ui.brushes_panel.view;
             if icons::button(ui, "grid-2x2", 24.0, *view == BrushesView::Grid, "Grid view").clicked() {

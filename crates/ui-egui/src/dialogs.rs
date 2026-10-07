@@ -85,12 +85,12 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                         ui.add(egui::Label::new(egui::RichText::new(l).font(crate::theme::mono(12.0))).selectable(true));
                     }
                     ui.add_space(8.0);
-                    if crate::widgets::secondary_button(ui, tl!("Copy"), 84.0).clicked() {
+                    if crate::widgets::secondary_button(ui, tl_id!("ui-copy-83ceddac8fb7324e"), 84.0).clicked() {
                         ui.ctx().copy_text(lines.join("\n"));
                     }
                 }
                 DialogKind::About => {
-                    ui.label(tl!("PhotoCraft — an open-source, native image editor written in Rust."));
+                    ui.label(tl_id!("ui-photocraft-an-open-source-native-image-e-9bc3e9560e6dee97"));
                     ui.label(crate::i18n::fmt(tl!("Version {version}"), &[("version", &photocraft_engine::build_info::long_version())]));
                     ui.add_space(12.0);
                     ui.vertical_centered(|ui| {
@@ -125,25 +125,32 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 if matches!(d.kind, DialogKind::About | DialogKind::Error) {
-                    if crate::widgets::primary_button(ui, tl!("OK"), 84.0).clicked() {
+                    if crate::widgets::primary_button(ui, tl_id!("ui-ok-d840e3186b2b9581"), 84.0).clicked() {
                         outcome = Some(false);
                     }
                 } else {
                     let ok_label = if d.kind == DialogKind::NewDocument {
-                        tl!("Create")
+                        tl_id!("ui-create-a30211799ecff867")
                     } else if d.fields.contains_key("__export") {
-                        tl!("Export")
+                        tl_id!("ui-export-0179318dc40118ed")
                     } else {
-                        crate::file_ui::ok_label(&d.fields).unwrap_or(tl!("OK"))
+                        crate::file_ui::ok_label(&d.fields).unwrap_or(tl_id!("ui-ok-d840e3186b2b9581"))
                     };
                     if crate::widgets::primary_button(ui, ok_label, 84.0).clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         outcome = Some(true);
                     }
                     if d.kind == DialogKind::Command && crate::prefs_ui::is_preferences(&fields) {
                         let changed = crate::prefs_ui::preferences_changed(app, &fields);
-                        apply_requested = ui.add_enabled_ui(changed, |ui| crate::widgets::secondary_button(ui, tl!("Apply"), 84.0)).inner.clicked();
+                        apply_requested =
+                            ui.add_enabled_ui(changed, |ui| crate::widgets::secondary_button(ui, tl_id!("ui-apply-d7323c887b0a2951"), 84.0)).inner.clicked();
                     }
-                    if crate::widgets::secondary_button(ui, if d.kind == DialogKind::NewDocument { tl!("Close") } else { tl!("Cancel") }, 84.0).clicked() {
+                    if crate::widgets::secondary_button(
+                        ui,
+                        if d.kind == DialogKind::NewDocument { tl_id!("ui-close-bac64c1b2e060ee5") } else { tl_id!("ui-cancel-f09e4b5c35aa14b9") },
+                        84.0,
+                    )
+                    .clicked()
+                    {
                         outcome = Some(false);
                     }
                 }

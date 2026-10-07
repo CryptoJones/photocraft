@@ -71,7 +71,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                         let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
                         icons::paint(ui, r, "search", 16.0, t.text_dim);
                         let te = egui::TextEdit::singleline(&mut q)
-                            .hint_text(tl!("Search commands, tools and panels…"))
+                            .hint_text(tl_id!("ui-search-commands-tools-and-panels-4b0d545c890cd526"))
                             .frame(egui::Frame::NONE)
                             .font(egui::FontId::proportional(15.0))
                             .desired_width(width - 40.0);
@@ -124,7 +124,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                     }
                     sel = sel.min(hits.len().saturating_sub(1));
                     if hits.is_empty() {
-                        ui.label(RichText::new(tl!("No matching commands")).color(t.text_faint));
+                        ui.label(RichText::new(tl_id!("ui-no-matching-commands-8e06392185a3a077")).color(t.text_faint));
                     }
                     for (i, (_, id, label, detail, enabled)) in hits.iter().enumerate() {
                         let (rect, resp) = ui.allocate_exact_size(vec2(width, 32.0), Sense::click());

@@ -26,6 +26,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 base64 = "0.22"
+fluent-bundle = "0.16"
+unic-langid = { version = "0.9", features = ["macros"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = { workspace = true }

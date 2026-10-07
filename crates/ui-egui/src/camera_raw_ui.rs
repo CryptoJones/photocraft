@@ -186,7 +186,7 @@ pub fn menu(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &Val
 }
 
 fn commit(app: &mut PhotocraftApp) -> Result<Value, String> {
-    let d = app.camera_raw.take().ok_or(tl!("Camera Raw isn't open"))?;
+    let d = app.camera_raw.take().ok_or(tl_id!("ui-camera-raw-isn-t-open-99ad694093e909ed"))?;
     let mut p = d.command_params();
     p["layer"] = json!(d.layer.0);
     app.run("filter.cameraRaw", p)
@@ -218,9 +218,9 @@ fn section(ui: &mut egui::Ui, title: &str, open: bool, body: impl FnOnce(&mut eg
 fn wheel(ui: &mut egui::Ui, dirty: &mut bool, title: &str, w: &mut Wheel) {
     widgets::section_label(ui, title);
     let hs = widgets::hue_stops();
-    row(ui, dirty, tl!("Hue"), &mut w.hue, 0.0..=360.0, Some(&hs));
-    row(ui, dirty, tl!("Saturation"), &mut w.sat, 0.0..=100.0, None);
-    row(ui, dirty, tl!("Luminance"), &mut w.lum, -100.0..=100.0, None);
+    row(ui, dirty, tl_id!("ui-hue-de79e57e3d673fbf"), &mut w.hue, 0.0..=360.0, Some(&hs));
+    row(ui, dirty, tl_id!("ui-saturation-d71c9cb7228f3ccb"), &mut w.sat, 0.0..=100.0, None);
+    row(ui, dirty, tl_id!("ui-luminance-a8d219ab05f918e3"), &mut w.lum, -100.0..=100.0, None);
 }
 
 /// Small point-curve editor (master channel): click to add, drag to move, right-click to delete.
@@ -325,46 +325,49 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             ui.spacing_mut().item_spacing.y = 4.0;
             let p = &mut d.params;
             let (ts, tn) = (temp_stops(), tint_stops());
-            section(ui, tl!("Basic"), true, |ui| {
-                widgets::section_label(ui, tl!("White Balance: As Shot"));
-                row(ui, &mut dirty, tl!("Temperature"), &mut p.temperature, -100.0..=100.0, Some(&ts));
-                row(ui, &mut dirty, tl!("Tint"), &mut p.tint, -100.0..=100.0, Some(&tn));
-                row(ui, &mut dirty, tl!("Exposure"), &mut p.exposure, -5.0..=5.0, None);
-                row(ui, &mut dirty, tl!("Contrast"), &mut p.contrast, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Highlights"), &mut p.highlights, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Shadows"), &mut p.shadows, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Whites"), &mut p.whites, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Blacks"), &mut p.blacks, -100.0..=100.0, None);
+            section(ui, tl_id!("ui-basic-9f769cf44186be37"), true, |ui| {
+                widgets::section_label(ui, tl_id!("ui-white-balance-as-shot-7a2ad0385cd5067e"));
+                row(ui, &mut dirty, tl_id!("ui-temperature-a94984343a5e6bdb"), &mut p.temperature, -100.0..=100.0, Some(&ts));
+                row(ui, &mut dirty, tl_id!("ui-tint-b98ce21d9bf0f412"), &mut p.tint, -100.0..=100.0, Some(&tn));
+                row(ui, &mut dirty, tl_id!("ui-exposure-d0f5f8782db60d4e"), &mut p.exposure, -5.0..=5.0, None);
+                row(ui, &mut dirty, tl_id!("ui-contrast-353a0e552d0ae1e9"), &mut p.contrast, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-highlights-8f08df786c69be0a"), &mut p.highlights, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-shadows-d96716d0107dc7bc"), &mut p.shadows, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-whites-ff68ffa0558b6aa1"), &mut p.whites, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-blacks-98cc796519744c6f"), &mut p.blacks, -100.0..=100.0, None);
                 widgets::hairline(ui);
-                row(ui, &mut dirty, tl!("Texture"), &mut p.texture, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Clarity"), &mut p.clarity, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Dehaze"), &mut p.dehaze, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-texture-6b9af49cafa3099e"), &mut p.texture, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-clarity-d5bb2f8855648b2d"), &mut p.clarity, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-dehaze-622eced1257d8a96"), &mut p.dehaze, -100.0..=100.0, None);
                 widgets::hairline(ui);
-                row(ui, &mut dirty, tl!("Vibrance"), &mut p.vibrance, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Saturation"), &mut p.saturation, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-vibrance-3ff37da63ba389ed"), &mut p.vibrance, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-saturation-d71c9cb7228f3ccb"), &mut p.saturation, -100.0..=100.0, None);
             });
-            section(ui, tl!("Curve"), false, |ui| {
+            section(ui, tl_id!("ui-curve-f482485c579bf14e"), false, |ui| {
                 curve_editor(ui, p, &mut dirty);
-                row(ui, &mut dirty, tl!("Highlights"), &mut p.curve_highlights, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Lights"), &mut p.curve_lights, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Darks"), &mut p.curve_darks, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Shadows"), &mut p.curve_shadows, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-highlights-8f08df786c69be0a"), &mut p.curve_highlights, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-lights-5b7d3b405975fbbe"), &mut p.curve_lights, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-darks-b773338a65e9789c"), &mut p.curve_darks, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-shadows-d96716d0107dc7bc"), &mut p.curve_shadows, -100.0..=100.0, None);
             });
-            section(ui, tl!("Detail"), false, |ui| {
-                widgets::section_label(ui, tl!("Sharpening"));
-                row(ui, &mut dirty, tl!("Amount"), &mut p.sharpen_amount, 0.0..=150.0, None);
-                row(ui, &mut dirty, tl!("Radius"), &mut p.sharpen_radius, 0.5..=3.0, None);
-                row(ui, &mut dirty, tl!("Detail"), &mut p.sharpen_detail, 0.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Masking"), &mut p.sharpen_masking, 0.0..=100.0, None);
-                widgets::section_label(ui, tl!("Noise Reduction"));
-                row(ui, &mut dirty, tl!("Luminance"), &mut p.noise_luminance, 0.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Luminance Detail"), &mut p.noise_luminance_detail, 0.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Color"), &mut p.noise_color, 0.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Color Detail"), &mut p.noise_color_detail, 0.0..=100.0, None);
+            section(ui, tl_id!("ui-detail-e37b6e77e326131e"), false, |ui| {
+                widgets::section_label(ui, tl_id!("ui-sharpening-f42a6e1ff5a78276"));
+                row(ui, &mut dirty, tl_id!("ui-amount-06ce2e017c351f2b"), &mut p.sharpen_amount, 0.0..=150.0, None);
+                row(ui, &mut dirty, tl_id!("ui-radius-3aca19ca3b8e58dd"), &mut p.sharpen_radius, 0.5..=3.0, None);
+                row(ui, &mut dirty, tl_id!("ui-detail-e37b6e77e326131e"), &mut p.sharpen_detail, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-masking-91354dce0b8a55fd"), &mut p.sharpen_masking, 0.0..=100.0, None);
+                widgets::section_label(ui, tl_id!("ui-noise-reduction-3bcc445881a7d566"));
+                row(ui, &mut dirty, tl_id!("ui-luminance-a8d219ab05f918e3"), &mut p.noise_luminance, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-luminance-detail-b0a4cebb1fdbb508"), &mut p.noise_luminance_detail, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-color-8beb3c381fb2f1ce"), &mut p.noise_color, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-color-detail-9cb6b9f3d321ac3b"), &mut p.noise_color_detail, 0.0..=100.0, None);
             });
-            section(ui, tl!("Color Mixer"), false, |ui| {
+            section(ui, tl_id!("ui-color-mixer-e72dadff2d9d5663"), false, |ui| {
                 ui.horizontal(|ui| {
-                    for (i, name) in [tl!("Hue"), tl!("Saturation"), tl!("Luminance")].iter().enumerate() {
+                    for (i, name) in [tl_id!("ui-hue-de79e57e3d673fbf"), tl_id!("ui-saturation-d71c9cb7228f3ccb"), tl_id!("ui-luminance-a8d219ab05f918e3")]
+                        .iter()
+                        .enumerate()
+                    {
                         if widgets::pill_tab(ui, name, d.mixer_tab == i).clicked() {
                             d.mixer_tab = i;
                         }
@@ -382,40 +385,40 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                     row(ui, &mut dirty, name, &mut arr[k], -100.0..=100.0, Some(&grad));
                 }
             });
-            section(ui, tl!("Color Grading"), false, |ui| {
-                wheel(ui, &mut dirty, tl!("Shadows"), &mut p.grade_shadows);
-                wheel(ui, &mut dirty, tl!("Midtones"), &mut p.grade_midtones);
-                wheel(ui, &mut dirty, tl!("Highlights"), &mut p.grade_highlights);
-                wheel(ui, &mut dirty, tl!("Global"), &mut p.grade_global);
-                row(ui, &mut dirty, tl!("Blending"), &mut p.grade_blending, 0.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Balance"), &mut p.grade_balance, -100.0..=100.0, None);
+            section(ui, tl_id!("ui-color-grading-c785f48913ed86c6"), false, |ui| {
+                wheel(ui, &mut dirty, tl_id!("ui-shadows-d96716d0107dc7bc"), &mut p.grade_shadows);
+                wheel(ui, &mut dirty, tl_id!("ui-midtones-072137379417d47c"), &mut p.grade_midtones);
+                wheel(ui, &mut dirty, tl_id!("ui-highlights-8f08df786c69be0a"), &mut p.grade_highlights);
+                wheel(ui, &mut dirty, tl_id!("ui-global-dc75eeba4492bce4"), &mut p.grade_global);
+                row(ui, &mut dirty, tl_id!("ui-blending-9e95eba57ae2afba"), &mut p.grade_blending, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-balance-0c011e1007f8d04d"), &mut p.grade_balance, -100.0..=100.0, None);
             });
-            section(ui, tl!("Effects"), false, |ui| {
-                widgets::section_label(ui, tl!("Grain"));
-                row(ui, &mut dirty, tl!("Amount"), &mut p.grain_amount, 0.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Size"), &mut p.grain_size, 0.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Roughness"), &mut p.grain_roughness, 0.0..=100.0, None);
-                widgets::section_label(ui, tl!("Vignetting"));
+            section(ui, tl_id!("ui-effects-fed483e64de023cb"), false, |ui| {
+                widgets::section_label(ui, tl_id!("ui-grain-dd0e2ebe8e89e3b6"));
+                row(ui, &mut dirty, tl_id!("ui-amount-06ce2e017c351f2b"), &mut p.grain_amount, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-size-16021b2387e0b7d6"), &mut p.grain_size, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-roughness-5300b56df8586183"), &mut p.grain_roughness, 0.0..=100.0, None);
+                widgets::section_label(ui, tl_id!("ui-vignetting-fb47c91b049cbe4a"));
                 let mut style = p.vignette_style.clone();
                 if widgets::dropdown(
                     ui,
                     "cr-vig-style",
                     &mut style,
                     &[
-                        ("highlightPriority".to_string(), tl!("Highlight Priority")),
-                        ("colorPriority".to_string(), tl!("Color Priority")),
-                        ("paintOverlay".to_string(), tl!("Paint Overlay")),
+                        ("highlightPriority".to_string(), tl_id!("ui-highlight-priority-d73e0f22b7de97cf")),
+                        ("colorPriority".to_string(), tl_id!("ui-color-priority-138e732eacbefb9e")),
+                        ("paintOverlay".to_string(), tl_id!("ui-paint-overlay-44fd9262c12cc01d")),
                     ],
                     200.0,
                 ) {
                     p.vignette_style = style;
                     dirty = true;
                 }
-                row(ui, &mut dirty, tl!("Amount"), &mut p.vignette_amount, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Midpoint"), &mut p.vignette_midpoint, 0.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Roundness"), &mut p.vignette_roundness, -100.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Feather"), &mut p.vignette_feather, 0.0..=100.0, None);
-                row(ui, &mut dirty, tl!("Highlights"), &mut p.vignette_highlights, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-amount-06ce2e017c351f2b"), &mut p.vignette_amount, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-midpoint-017191844fcc6193"), &mut p.vignette_midpoint, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-roundness-29335974bf6801f2"), &mut p.vignette_roundness, -100.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-feather-2e85a6a1b4fad6f6"), &mut p.vignette_feather, 0.0..=100.0, None);
+                row(ui, &mut dirty, tl_id!("ui-highlights-8f08df786c69be0a"), &mut p.vignette_highlights, 0.0..=100.0, None);
             });
         });
         d.dirty |= dirty;
@@ -424,14 +427,14 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         painter.rect_filled(foot, 0.0, t.dock);
         painter.line_segment([foot.left_top(), foot.right_top()], Stroke::new(1.0, t.separator));
         let mut fu = ui.new_child(egui::UiBuilder::new().max_rect(foot.shrink2(vec2(16.0, 9.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
-        if widgets::primary_button(&mut fu, tl!("OK"), 90.0).clicked() {
+        if widgets::primary_button(&mut fu, tl_id!("ui-ok-d840e3186b2b9581"), 90.0).clicked() {
             action = Some("ok");
         }
-        if widgets::secondary_button(&mut fu, tl!("Cancel"), 90.0).clicked() {
+        if widgets::secondary_button(&mut fu, tl_id!("ui-cancel-f09e4b5c35aa14b9"), 90.0).clicked() {
             action = Some("cancel");
         }
         fu.add_space(12.0);
-        widgets::checkbox(&mut fu, &mut d.show_before, tl!("Before (Y)"));
+        widgets::checkbox(&mut fu, &mut d.show_before, tl_id!("ui-before-y-f33f79b67fe3dd26"));
         fu.label(egui::RichText::new(format!("{:.0} ms", d.render_ms)).color(t.text_faint));
     });
     if ctx.input(|i| i.key_pressed(egui::Key::Y))

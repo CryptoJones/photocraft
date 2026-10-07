@@ -177,7 +177,7 @@ pub fn control(app: &mut PhotocraftApp, ui: &Value) -> Result<Value, String> {
         app.distort.puppet = None;
         return Ok(json!({"cancelled": true}));
     }
-    let s = app.distort.puppet.as_mut().ok_or(tl!("Puppet Warp is not active"))?;
+    let s = app.distort.puppet.as_mut().ok_or(tl_id!("ui-puppet-warp-is-not-active-369bd48a920a578c"))?;
     let mut remesh = false;
     if let Some(m) = ui.get("mode").and_then(Value::as_str) {
         s.warp.mode = PuppetMode::parse(m).ok_or("mode: rigid|normal|distort")?;
@@ -293,48 +293,62 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let mut remesh = false;
     let mut resolve = false;
     let mut rebind = false;
-    ui.label(tl!("Mode:"));
+    ui.label(tl_id!("ui-mode-46f1486db9b6a7a6"));
     let mode = s.warp.mode;
     crate::widgets::dropdown(
         ui,
         "puppet-mode",
         &mut s.warp.mode,
-        &[(PuppetMode::Rigid, tl!("Rigid")), (PuppetMode::Normal, tl!("Normal")), (PuppetMode::Distort, tl!("Distort"))],
+        &[
+            (PuppetMode::Rigid, tl_id!("ui-rigid-7e176fba9a828f2a")),
+            (PuppetMode::Normal, tl_id!("ui-normal-63acd193c4316f68")),
+            (PuppetMode::Distort, tl_id!("ui-distort-962dea169ca11c36")),
+        ],
         90.0,
     );
     resolve |= mode != s.warp.mode;
-    ui.label(tl!("Density:"));
+    ui.label(tl_id!("ui-density-d6651f3a9c80bed1"));
     let density = s.warp.density;
     crate::widgets::dropdown(
         ui,
         "puppet-density",
         &mut s.warp.density,
-        &[(PuppetDensity::Fewer, tl!("Fewer Points")), (PuppetDensity::Normal, tl!("Normal")), (PuppetDensity::More, tl!("More Points"))],
+        &[
+            (PuppetDensity::Fewer, tl_id!("ui-fewer-points-07c53ddedbaf272b")),
+            (PuppetDensity::Normal, tl_id!("ui-normal-63acd193c4316f68")),
+            (PuppetDensity::More, tl_id!("ui-more-points-5c45ec96f2353d79")),
+        ],
         110.0,
     );
     remesh |= density != s.warp.density;
-    ui.label(tl!("Expansion:"));
+    ui.label(tl_id!("ui-expansion-c8c501e131a7b126"));
     let mut e = s.warp.expansion as f32;
     if crate::widgets::value_field(ui, &mut e, -50.0..=100.0, "px", 56.0).changed() {
         s.warp.expansion = f64::from(e);
         remesh = true;
     }
-    crate::widgets::checkbox(ui, &mut s.show_mesh, tl!("Show Mesh"));
+    crate::widgets::checkbox(ui, &mut s.show_mesh, tl_id!("ui-show-mesh-dc6ea432f1ec671f"));
     crate::widgets::vline(ui, 22.0);
     if let Some(i) = s.selected.filter(|i| *i < s.warp.pins.len()) {
-        ui.label(tl!("Pin Depth:"));
-        if ui.small_button("+").on_hover_text(tl!("Bring the selected pin forward")).clicked() {
+        ui.label(tl_id!("ui-pin-depth-d6c3118fea2e3993"));
+        if ui.small_button("+").on_hover_text(tl_id!("ui-bring-the-selected-pin-forward-2b94434a1cc3f275")).clicked() {
             s.warp.pins[i].depth += 1;
             resolve = true;
         }
-        if ui.small_button("−").on_hover_text(tl!("Send the selected pin backward")).clicked() {
+        if ui.small_button("−").on_hover_text(tl_id!("ui-send-the-selected-pin-backward-72893a04579fcf71")).clicked() {
             s.warp.pins[i].depth -= 1;
             resolve = true;
         }
-        ui.label(tl!("Rotate:"));
+        ui.label(tl_id!("ui-rotate-35c7dbbb2f31e262"));
         let mut fixed = s.warp.pins[i].rotate.is_some();
         let was = fixed;
-        crate::widgets::dropdown(ui, "puppet-rotate", &mut fixed, &[(false, tl!("Auto")), (true, tl!("Fixed"))], 70.0);
+        crate::widgets::dropdown(
+            ui,
+            "puppet-rotate",
+            &mut fixed,
+            &[(false, tl_id!("ui-auto-a5b5d9b93340662c")), (true, tl_id!("ui-fixed-bb4ef1f2389423fb"))],
+            70.0,
+        );
         if fixed != was {
             s.warp.pins[i].rotate = fixed.then_some(0.0);
             rebind = true;
@@ -348,7 +362,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         }
         crate::widgets::vline(ui, 22.0);
     }
-    if ui.button(tl!("Remove All Pins")).clicked() {
+    if ui.button(tl_id!("ui-remove-all-pins-ca3eab656c957c74")).clicked() {
         s.warp.pins.clear();
         s.selected = None;
         rebind = true;
@@ -366,7 +380,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             .clicked()
         {
             commit(app);
-        } else if crate::widgets::secondary_button(ui, "⊘", 32.0).on_hover_text(tl!("Cancel (Esc)")).clicked() {
+        } else if crate::widgets::secondary_button(ui, "⊘", 32.0).on_hover_text(tl_id!("ui-cancel-esc-6690b4a67d5c2651")).clicked() {
             app.distort.puppet = None;
         }
     });

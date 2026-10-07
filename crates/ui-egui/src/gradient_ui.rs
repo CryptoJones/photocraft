@@ -568,7 +568,7 @@ pub fn preset_swatch(ui: &mut egui::Ui, stops: &[(f32, [f32; 4])]) {
     let (r, resp) = ui.allocate_exact_size(vec2(96.0, 20.0), Sense::hover());
     paint_ramp(ui.painter(), r, |u| photocraft_algo::paint::sample_stops(stops, u));
     ui.painter().rect_stroke(r, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
-    let _ = resp.on_hover_text(tl!("The current gradient (pick one in Window › Gradients)"));
+    let _ = resp.on_hover_text(tl_id!("ui-the-current-gradient-pick-one-in-window-g-98e4325b38ed895f"));
 }
 
 /// Live mode: style, reverse and dither changes in the options bar also edit the selected
@@ -677,7 +677,10 @@ pub fn properties(app: &mut PhotocraftApp, ui: &mut egui::Ui, layer: &Layer) {
             }
         });
         ui.add_space(crate::theme::ROW_GAP);
-        if widgets::secondary_button(ui, "Reset Alignment", ui.available_width()).on_hover_text(tl!("Centre the gradient (offset 0, 0)")).clicked() {
+        if widgets::secondary_button(ui, "Reset Alignment", ui.available_width())
+            .on_hover_text(tl_id!("ui-centre-the-gradient-offset-0-0-e9e3321aa27fe051"))
+            .clicked()
+        {
             runs.push(json!({"offset": [0, 0]}));
         }
         ui.add_space(crate::theme::ROW_GAP);

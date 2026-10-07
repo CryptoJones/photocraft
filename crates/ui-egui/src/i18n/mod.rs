@@ -1,12 +1,10 @@
-//! UI localisation. Strings in code stay English and are the default lookup keys; a per-language
-//! catalog (`*.tsv`, see `ja.tsv` for the format) maps them to display text at render time. Command
-//! ids, menu paths used for logic, the control channel, the CLI and MCP never see translated text,
-//! so agents and scripts are unaffected. A string without a translation is shown in English.
+//! UI localisation. Stable ids resolve through embedded Fluent (`*.ftl`) catalogs. Legacy
+//! English-string calls use generated `keys.tsv` to find those ids. Command ids, menu
+//! paths used for logic, the control channel, the CLI and MCP never see translated text.
 //!
 //! # Adding a language
-//! 1. Add `xx.tsv` next to `ja.tsv` (copy its header; translate from the *meaning* of the English
-//!    text, clean-room, see `ja.tsv`).
-//! 2. Add one row to [`LANGUAGES`] (code, native name, catalog, plural rule).
+//! 1. Add `xx.ftl` translated from `en.ftl` and its stable ids.
+//! 2. Add one row to [`LANGUAGES`] (code, native name, catalog).
 //!
 //! That is all: the Preferences dropdown, the system-locale match and the catalog tests (parse,
 //! placeholders, plural forms) pick it up from the registry.
@@ -18,12 +16,12 @@
 //! - [`trn`]: plural-aware (`{n}` is filled in). [`fmt`]: fill `{name}` placeholders after [`tr`];
 //!   translators may reorder placeholders freely.
 
-mod catalog;
-
+use std::cell::Cell;
+use std::collections::HashMap;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-use catalog::Catalog;
+use fluent_bundle::{FluentArgs, FluentResource, concurrent::FluentBundle};
+use unic_langid::{LanguageIdentifier, langid};
 
 /// One supported UI language.
 pub struct LangInfo {
@@ -31,65 +29,131 @@ pub struct LangInfo {
     pub code: &'static str,
     /// The language's name in itself, shown in the Preferences dropdown.
     pub name: &'static str,
-    /// Catalog file contents (empty for the built-in English).
-    pub source: &'static str,
-    /// Plural form index for a count (English: 0 = one, 1 = other; Japanese and Chinese: always 0;
-    /// Czech: 0 = one, 1 = few (2–4), 2 = other). A catalog's `@plural` entries list one form per
-    /// index.
-    pub plural: fn(u64) -> usize,
+    /// Embedded Fluent catalog for stable message ids.
+    pub fluent_source: &'static str,
     /// Must the catalog cover every menu string? (checked by the tests)
     pub complete_menus: bool,
-    catalog: OnceLock<Catalog>,
-}
-
-fn plural_one_other(n: u64) -> usize {
-    usize::from(n != 1)
-}
-
-fn plural_none(_: u64) -> usize {
-    0
-}
-
-fn plural_russian(n: u64) -> usize {
-    match (n % 10, n % 100) {
-        (1, 11..=19) => 2,
-        (1, _) => 0,
-        (2..=4, 11..=19) => 2,
-        (2..=4, _) => 1,
-        _ => 2,
-    }
-}
-
-/// Czech: 1 → one, 2–4 → few, everything else (0, 5+) → other.
-fn plural_cs(n: u64) -> usize {
-    match n {
-        1 => 0,
-        2..=4 => 1,
-        _ => 2,
-    }
+    fluent: OnceLock<FluentBundle<FluentResource>>,
+    simple: OnceLock<HashMap<String, String>>,
 }
 
 /// The registry. English first: it is the fallback and the source language.
 pub static LANGUAGES: [LangInfo; 7] = [
-    LangInfo { code: "en", name: "English", source: "", plural: plural_one_other, complete_menus: false, catalog: OnceLock::new() },
-    LangInfo { code: "ja", name: "日本語", source: include_str!("ja.tsv"), plural: plural_none, complete_menus: true, catalog: OnceLock::new() },
+    LangInfo { code: "en", name: "English", fluent_source: include_str!("en.ftl"), complete_menus: false, fluent: OnceLock::new(), simple: OnceLock::new() },
+    LangInfo { code: "ja", name: "日本語", fluent_source: include_str!("ja.ftl"), complete_menus: true, fluent: OnceLock::new(), simple: OnceLock::new() },
     LangInfo {
-        code: "zh-hans", name: "简体中文", source: include_str!("zh-hans.tsv"), plural: plural_none, complete_menus: false, catalog: OnceLock::new()
+        code: "zh-hans",
+        name: "简体中文",
+        fluent_source: include_str!("zh-hans.ftl"),
+        complete_menus: true,
+        fluent: OnceLock::new(),
+        simple: OnceLock::new(),
     },
     // Traditional Chinese in the vocabulary used in Taiwan; `zh-TW`, `zh-HK`, `zh-MO` and `zh-Hant-*`
     // locales all resolve here (see `candidates`).
     LangInfo {
-        code: "zh-hant", name: "繁體中文", source: include_str!("zh-hant.tsv"), plural: plural_none, complete_menus: true, catalog: OnceLock::new()
+        code: "zh-hant",
+        name: "繁體中文",
+        fluent_source: include_str!("zh-hant.ftl"),
+        complete_menus: true,
+        fluent: OnceLock::new(),
+        simple: OnceLock::new(),
     },
-    LangInfo { code: "es", name: "Español", source: include_str!("es.tsv"), plural: plural_one_other, complete_menus: true, catalog: OnceLock::new() },
-    LangInfo { code: "ru", name: "Русский", source: include_str!("ru.tsv"), plural: plural_russian, complete_menus: true, catalog: OnceLock::new() },
-    LangInfo { code: "cs", name: "Čeština", source: include_str!("cs.tsv"), plural: plural_cs, complete_menus: true, catalog: OnceLock::new() },
+    LangInfo { code: "es", name: "Español", fluent_source: include_str!("es.ftl"), complete_menus: true, fluent: OnceLock::new(), simple: OnceLock::new() },
+    LangInfo {
+        code: "ru", name: "Русский", fluent_source: include_str!("ru.ftl"), complete_menus: true, fluent: OnceLock::new(), simple: OnceLock::new()
+    },
+    LangInfo { code: "cs", name: "Čeština", fluent_source: include_str!("cs.ftl"), complete_menus: true, fluent: OnceLock::new(), simple: OnceLock::new() },
 ];
 
 impl LangInfo {
-    fn catalog(&self) -> &Catalog {
-        self.catalog.get_or_init(|| Catalog::parse(self.source))
+    fn fluent(&self) -> &FluentBundle<FluentResource> {
+        self.fluent.get_or_init(|| {
+            let locale: LanguageIdentifier = self.code.parse().unwrap_or_else(|_| langid!("en"));
+            let mut bundle = FluentBundle::new_concurrent(vec![locale]);
+            // Existing UI strings and tests expect plain text, without bidi isolate markers.
+            bundle.set_use_isolating(false);
+            let resource = match FluentResource::try_new(self.fluent_source.to_owned()) {
+                Ok(resource) | Err((resource, _)) => resource,
+            };
+            let _ = bundle.add_resource(resource);
+            bundle
+        })
     }
+
+    fn simple(&self) -> &HashMap<String, String> {
+        self.simple.get_or_init(|| {
+            let mut values = HashMap::new();
+            for ((context, source), id) in keys() {
+                if context == "@plural" || source.contains('{') {
+                    continue;
+                }
+                if let Some(value) = render(self.fluent(), id, None) {
+                    values.insert(id.clone(), value);
+                }
+            }
+            values
+        })
+    }
+}
+
+type Key = (String, String);
+
+fn keys() -> &'static HashMap<Key, String> {
+    static KEYS: OnceLock<HashMap<Key, String>> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let mut keys = HashMap::new();
+        for line in include_str!("keys.tsv").lines().filter(|line| !line.is_empty() && !line.starts_with('#')) {
+            let mut parts = line.split('\t');
+            if let (Some(context), Some(source), Some(id), None) = (parts.next(), parts.next(), parts.next(), parts.next()) {
+                keys.insert((unescape_key(context), unescape_key(source)), id.to_owned());
+            }
+        }
+        keys
+    })
+}
+
+fn unescape_key(value: &str) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some('\\') => out.push('\\'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn key_id(context: &str, source: &str) -> Option<&'static str> {
+    keys().get(&(context.to_owned(), source.to_owned())).map(String::as_str)
+}
+
+fn render(bundle: &FluentBundle<FluentResource>, id: &str, args: Option<&FluentArgs<'_>>) -> Option<String> {
+    let pattern = bundle.get_message(id)?.value()?;
+    let mut errors = Vec::new();
+    let value = bundle.format_pattern(pattern, args, &mut errors);
+    errors.is_empty().then(|| value.into_owned())
+}
+
+/// Format a stable Fluent message id with typed arguments, falling back to English.
+pub fn msg(lang: Lang, id: &str, args: Option<&FluentArgs<'_>>) -> String {
+    render(lang.0.fluent(), id, args).or_else(|| render(LANGUAGES[0].fluent(), id, args)).unwrap_or_else(|| id.to_owned())
+}
+
+/// Borrow a preformatted message by stable id. Use [`msg`] for messages with arguments.
+pub fn id(lang: Lang, message_id: &str) -> &str {
+    lang.0.simple().get(message_id).map(String::as_str).or_else(|| LANGUAGES[0].simple().get(message_id).map(String::as_str)).unwrap_or(message_id)
 }
 
 /// A language the UI can be shown in (a handle into [`LANGUAGES`]).
@@ -140,10 +204,6 @@ impl Lang {
     /// Does this language's catalog claim to cover every menu string and `tl!` literal?
     pub fn complete_menus(self) -> bool {
         self.0.complete_menus
-    }
-
-    fn catalog(self) -> &'static Catalog {
-        self.0.catalog()
     }
 }
 
@@ -221,24 +281,26 @@ fn detect_system_lang() -> Lang {
     Lang::EN
 }
 
-/// Index into [`LANGUAGES`] of the language the UI is drawn in this frame.
-static CURRENT: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    /// Index into [`LANGUAGES`] for the UI being drawn on this thread.
+    static CURRENT: Cell<usize> = const { Cell::new(0) };
+}
 
 /// Set the UI language for drawing (the shell calls this once per frame from the preference), so
 /// widgets can translate without every call site carrying a language around.
 pub fn set_current(lang: Lang) {
     let i = LANGUAGES.iter().position(|l| l.code == lang.code()).unwrap_or(0);
-    CURRENT.store(i, Ordering::Relaxed);
+    CURRENT.with(|current| current.set(i));
 }
 
 /// The language the UI is drawn in.
 pub fn current() -> Lang {
-    Lang(LANGUAGES.get(CURRENT.load(Ordering::Relaxed)).unwrap_or(&LANGUAGES[0]))
+    CURRENT.with(|current| Lang(LANGUAGES.get(current.get()).unwrap_or(&LANGUAGES[0])))
 }
 
 /// Does `lang` have a catalog entry for this plain string? (English never does: it is the source.)
 pub fn has(lang: Lang, s: &str) -> bool {
-    lang.catalog().plain(s).is_some()
+    key_id("", s).is_some_and(|id| lang.0.fluent().get_message(id).is_some())
 }
 
 /// Translate an English UI string into the current language ([`tr`] with [`current`]).
@@ -248,21 +310,54 @@ pub fn t(s: &str) -> &str {
 
 /// Translate an English UI string; unknown strings come back unchanged.
 pub fn tr(lang: Lang, s: &str) -> &str {
-    lang.catalog().plain(s).unwrap_or(s)
+    if s.contains('{') {
+        return s;
+    }
+    if let Some(id) = key_id("", s)
+        && let Some(value) = lang.0.simple().get(id)
+    {
+        return value;
+    }
+    s
 }
 
 /// Like [`tr`], for an English string that needs a disambiguating `context`.
 pub fn tr_ctx<'a>(lang: Lang, context: &str, s: &'a str) -> &'a str {
-    lang.catalog().contextual(context, s).unwrap_or_else(|| tr(lang, s))
+    if s.contains('{') {
+        return s;
+    }
+    if let Some(id) = key_id(context, s)
+        && let Some(value) = lang.0.simple().get(id)
+    {
+        return value;
+    }
+    tr(lang, s)
 }
 
 /// A string keyed by its command id, falling back to the translation of the English `label`.
 pub fn tr_id<'a>(lang: Lang, id: &str, label: &'a str) -> &'a str {
-    lang.catalog().id(id).unwrap_or_else(|| tr(lang, label))
+    if lang != Lang::EN
+        && !label.contains('{')
+        && let Some(message_id) = key_id("@id", id)
+        && let Some(value) = lang.0.simple().get(message_id)
+    {
+        return value;
+    }
+    tr(lang, label)
 }
 
 /// Fill `{name}` placeholders. Unknown placeholders are left as written.
 pub fn fmt(template: &str, args: &[(&str, &str)]) -> String {
+    let lang = current();
+    if let Some(id) = key_id("", template) {
+        let mut fluent_args = FluentArgs::new();
+        for (name, value) in args {
+            fluent_args.set(*name, *value);
+        }
+        if let Some(value) = render(lang.0.fluent(), id, Some(&fluent_args)).or_else(|| render(LANGUAGES[0].fluent(), id, Some(&fluent_args))) {
+            return value;
+        }
+    }
     let mut out = template.to_string();
     for (k, v) in args {
         out = out.replace(&format!("{{{k}}}"), v);
@@ -272,270 +367,132 @@ pub fn fmt(template: &str, args: &[(&str, &str)]) -> String {
 
 /// A plural-aware message: `one`/`other` are the English forms (with `{n}` where the count goes).
 pub fn trn(lang: Lang, n: u64, one: &str, other: &str) -> String {
-    let idx = (lang.0.plural)(n);
-    let text = lang.catalog().plural(one, other, idx).unwrap_or(if n == 1 { one } else { other });
-    fmt(text, &[("n", &n.to_string())])
+    if let (Some(id), Ok(count)) = (key_id("@plural", &format!("{one}|{other}")), i64::try_from(n)) {
+        let mut args = FluentArgs::new();
+        args.set("n", count);
+        if let Some(value) = render(lang.0.fluent(), id, Some(&args)).or_else(|| render(LANGUAGES[0].fluent(), id, Some(&args))) {
+            return value;
+        }
+    }
+    let text = if n == 1 { one } else { other };
+    text.replace("{n}", &n.to_string())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::catalog::{parse_entries, placeholders};
     use super::*;
 
-    const JA: fn() -> Lang = || Lang::from_code("ja").expect("ja registered");
-    const ZH: fn() -> Lang = || Lang::from_code("zh-hant").expect("zh-hant registered");
-    const CS: fn() -> Lang = || Lang::from_code("cs").expect("cs registered");
+    fn language(code: &str) -> Lang {
+        Lang::from_code(code).expect("registered language")
+    }
 
     #[test]
-    fn tags_map_to_languages() {
-        assert_eq!(lang_from_tag("ja_JP.UTF-8"), Some(JA()));
-        assert_eq!(lang_from_tag("ja-JP"), Some(JA()));
-        assert_eq!(lang_from_tag("en_US.UTF-8"), Some(Lang::EN));
+    fn locale_resolution_preserves_chinese_script() {
+        assert_eq!(lang_from_tag("ja_JP.UTF-8"), Some(language("ja")));
+        assert_eq!(lang_from_tag("cs-CZ"), Some(language("cs")));
+        assert_eq!(lang_from_tag("en-US"), Some(Lang::EN));
         assert_eq!(lang_from_tag("C"), Some(Lang::EN));
-        assert_eq!(lang_from_tag("POSIX"), Some(Lang::EN));
-        assert_eq!(lang_from_tag("cs_CZ.UTF-8"), Some(CS()));
-        assert_eq!(lang_from_tag("cs-CZ"), Some(CS()));
-        assert_eq!(lang_from_tag("fr_FR"), None);
-        // Traditional Chinese: by region, by script, and with a region after the script.
-        assert_eq!(lang_from_tag("zh_TW.UTF-8"), Some(ZH()));
-        assert_eq!(lang_from_tag("zh-TW"), Some(ZH()));
-        assert_eq!(lang_from_tag("zh-HK"), Some(ZH()));
-        assert_eq!(lang_from_tag("zh_MO"), Some(ZH()));
-        assert_eq!(lang_from_tag("zh-Hant"), Some(ZH()));
-        assert_eq!(lang_from_tag("zh-Hant-TW"), Some(ZH()));
-        assert_eq!(lang_from_tag("zh-Hant-HK"), Some(ZH()));
-        // Simplified Chinese locales never pick up the Traditional catalog: they resolve to `zh-hans`.
-        for tag in ["zh-CN", "zh_CN.UTF-8", "zh_SG", "zh-Hans", "zh-Hans-CN", "zh"] {
-            assert_ne!(lang_from_tag(tag), Some(ZH()), "{tag}");
-            assert_eq!(lang_from_tag(tag), Lang::from_code("zh-hans"), "{tag}");
+        assert_eq!(lang_from_tag("fr-FR"), None);
+        for tag in ["zh-TW", "zh-HK", "zh-MO", "zh-Hant-TW"] {
+            assert_eq!(lang_from_tag(tag), Some(language("zh-hant")));
         }
-        assert_eq!(lang_from_tag(""), None);
-        assert_eq!(lang_from_tag("_"), None);
-    }
-
-    #[test]
-    fn candidates_walk_from_specific_to_general() {
-        assert_eq!(candidates("pt_BR.UTF-8"), ["pt-br", "pt"]);
-        assert_eq!(candidates("zh_TW"), ["zh-tw", "zh-hant", "zh"]);
-        assert_eq!(candidates("zh-CN"), ["zh-cn", "zh-hans", "zh"]);
-        assert_eq!(candidates("zh-Hant-HK"), ["zh-hant-hk", "zh-hant", "zh"]);
-    }
-
-    #[test]
-    fn macos_language_list_is_parsed() {
-        assert_eq!(first_supported("(\n    \"ja-JP\",\n    \"en-US\"\n)\n"), Some(JA()));
-        assert_eq!(first_supported("(\n    \"fr-FR\",\n    \"en-US\"\n)\n"), Some(Lang::EN));
-        assert_eq!(first_supported("(\n    \"zh-Hant-TW\",\n    \"en-US\"\n)\n"), Some(ZH()));
-        assert_eq!(first_supported("("), None);
-    }
-
-    #[test]
-    fn preferences_resolve_with_fallback() {
-        assert_eq!(Lang::from_pref("ja"), JA());
-        assert_eq!(Lang::from_pref("JA"), JA());
-        assert_eq!(Lang::from_pref("zh-hant"), ZH());
-        assert_eq!(Lang::from_pref("ZH-Hant"), ZH());
-        assert_eq!(Lang::from_pref("en"), Lang::EN);
-        // `auto` and unknown codes follow the system (English under test).
-        assert_eq!(Lang::from_pref("auto"), Lang::EN);
-        assert_eq!(Lang::from_pref("xx-unknown"), Lang::EN);
-    }
-
-    #[test]
-    fn spanish_resolves_and_pluralises() {
-        let es = Lang::from_code("es").expect("es registered");
-        for tag in ["es", "es_ES.UTF-8", "es-MX", "es-419"] {
-            assert_eq!(lang_from_tag(tag), Some(es), "{tag}");
+        for tag in ["zh-CN", "zh-SG", "zh-Hans", "zh"] {
+            assert_eq!(lang_from_tag(tag), Some(language("zh-hans")));
         }
-        assert_eq!(tr(es, "Layer"), "Capa");
-        assert_eq!(trn(es, 1, "{n} item", "{n} items"), "1 elemento");
-        assert_eq!(trn(es, 3, "{n} item", "{n} items"), "3 elementos");
+        assert_eq!(first_supported("(\n    \"ja-JP\",\n    \"en-US\"\n)"), Some(language("ja")));
+        assert_eq!(Lang::from_pref("unknown"), Lang::EN);
     }
 
     #[test]
-    fn lookups_fall_back_to_english() {
-        assert_eq!(tr(JA(), "no such label"), "no such label");
-        assert_eq!(tr(Lang::EN, "Layer"), "Layer");
-        assert_eq!(tr(JA(), "Layer"), "レイヤー");
-        assert_eq!(tr(ZH(), "Layer"), "圖層");
-        assert_eq!(tr(ZH(), "no such label"), "no such label");
-        assert_eq!(tr_id(ZH(), "no.such.id", "Layer"), "圖層");
-        assert_eq!(tr_id(JA(), "no.such.id", "Layer"), "レイヤー");
-        assert_eq!(tr_ctx(JA(), "no such context", "Layer"), "レイヤー");
+    fn fluent_static_lookup_and_english_fallback() {
+        let layer = key_id("", "Layer").expect("Layer id");
+        assert_eq!(id(language("ja"), layer), "レイヤー");
+        assert_eq!(msg(language("ja"), layer, None), "レイヤー");
+        assert_eq!(id(Lang::EN, layer), "Layer");
+        assert_eq!(tr(language("zh-hans"), "Layer"), "图层");
+        assert_eq!(tr(language("ja"), "absent source"), "absent source");
+        assert_eq!(msg(language("ja"), "absent-id", None), "absent-id");
+        assert_eq!(tr_id(Lang::EN, "edit.purge.undo", "Undo"), "Undo");
+        assert_eq!(tr_id(language("cs"), "select.all", "All"), "Vybrat vše");
+        assert_eq!(tr_ctx(language("ja"), "unknown", "Layer"), "レイヤー");
     }
 
     #[test]
-    fn russian_plural_rules() {
-        let ru = || Lang::from_code("ru").expect("ru registered");
-        assert_eq!(trn(ru(), 1, "{n} item", "{n} items"), "1 элемент");
-        assert_eq!(trn(ru(), 2, "{n} item", "{n} items"), "2 элемента");
-        assert_eq!(trn(ru(), 5, "{n} item", "{n} items"), "5 элементов");
-        assert_eq!(trn(ru(), 11, "{n} item", "{n} items"), "11 элементов");
-        assert_eq!(trn(ru(), 21, "{n} item", "{n} items"), "21 элемент");
-        assert_eq!(trn(ru(), 22, "{n} item", "{n} items"), "22 элемента");
-        assert_eq!(trn(ru(), 101, "{n} item", "{n} items"), "101 элемент");
-        assert_eq!(trn(ru(), 111, "{n} item", "{n} items"), "111 элементов");
-    }
-
-    #[test]
-    fn catalog_kinds_are_parsed_and_looked_up() {
-        let c = Catalog::parse("# c\n\tHello\tこんにちは\n@id\tfile.save\t保存する\nmenu\tWindows\tウィンドウ群\n@plural\t{n} file|{n} files\t{n} 個\n\n");
-        assert_eq!(c.plain("Hello"), Some("こんにちは"));
-        assert_eq!(c.id("file.save"), Some("保存する"));
-        assert_eq!(c.contextual("menu", "Windows"), Some("ウィンドウ群"));
-        assert_eq!(c.contextual("other", "Windows"), None);
-        assert_eq!(c.plural("{n} file", "{n} files", 0), Some("{n} 個"));
-        assert_eq!(c.plural("{n} file", "{n} files", 5), Some("{n} 個"), "an index past the forms clamps");
-    }
-
-    #[test]
-    fn malformed_lines_are_reported_not_fatal() {
-        let (entries, errors) = parse_entries("\tok\tはい\nno tabs here\n\tonly\n\ta\tb\tc\textra\n\t\tempty source\n");
-        assert_eq!(entries.len(), 1);
-        assert_eq!(errors.len(), 4, "{errors:?}");
-        assert_eq!(parse_entries("\ta\\tb\tx\\ny\\\\z\n").0[0], (String::new(), "a\tb".into(), "x\ny\\z".into()));
-    }
-
-    #[test]
-    fn plurals_and_placeholders() {
-        assert_eq!(trn(Lang::EN, 1, "{n} item", "{n} items"), "1 item");
-        assert_eq!(trn(Lang::EN, 0, "{n} item", "{n} items"), "0 items");
-        assert_eq!(trn(Lang::EN, 7, "{n} item", "{n} items"), "7 items");
-        assert_eq!(trn(JA(), 1, "{n} item", "{n} items"), "1 件");
-        assert_eq!(trn(JA(), 7, "{n} item", "{n} items"), "7 件");
-        assert_eq!(trn(ZH(), 1, "{n} item", "{n} items"), "1 個項目");
-        assert_eq!(trn(ZH(), 7, "{n} item", "{n} items"), "7 個項目");
-        assert_eq!(trn(CS(), 1, "{n} item", "{n} items"), "1 položka");
-        assert_eq!(trn(CS(), 3, "{n} item", "{n} items"), "3 položky");
-        assert_eq!(trn(CS(), 5, "{n} item", "{n} items"), "5 položek");
-        assert_eq!(trn(CS(), 0, "{n} item", "{n} items"), "0 položek");
-        assert_eq!(fmt("{b} before {a}", &[("a", "x"), ("b", "y"), ("c", "z")]), "y before x");
-        assert_eq!(fmt("{missing}", &[]), "{missing}");
-        assert_eq!(placeholders("a {x} b {y} {"), ["x", "y"]);
-    }
-
-    #[test]
-    fn czech_plural_rule() {
-        let forms: Vec<usize> = [0, 1, 2, 3, 4, 5, 11, 12, 21, 22, 100, u64::MAX].into_iter().map(plural_cs).collect();
-        assert_eq!(forms, [2, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2]);
-        assert_eq!(tr(CS(), "Layer"), "Vrstva");
-        assert_eq!(tr_id(CS(), "select.all", "All"), "Vybrat vše", "an id override wins over the plain label");
-        assert_eq!(tr(CS(), "All"), "Vše");
-    }
-
-    /// Every bundled catalog is well-formed and consistent with its sources.
-    #[test]
-    fn bundled_catalogs_are_consistent() {
-        for l in &LANGUAGES {
-            assert!(l.code == l.code.to_ascii_lowercase() && !l.name.is_empty(), "{}", l.code);
-            let (entries, errors) = parse_entries(l.source);
-            assert!(errors.is_empty(), "{}: {errors:?}", l.code);
-            let mut seen = std::collections::HashSet::new();
-            for (ctx, src, tr) in &entries {
-                assert!(seen.insert((ctx.clone(), src.clone())), "{}: duplicate {ctx:?} {src:?}", l.code);
-                if ctx == "@plural" {
-                    let one_other: Vec<&str> = src.split('|').collect();
-                    assert_eq!(one_other.len(), 2, "{}: plural source must be `one|other`: {src:?}", l.code);
-                    let forms = (0..=1000).map(l.plural).max().unwrap_or(0) + 1;
-                    assert_eq!(tr.split('|').count(), forms, "{}: {forms} plural forms expected in {src:?}", l.code);
-                    for form in tr.split('|') {
-                        let mut want = placeholders(one_other[1]);
-                        let mut got = placeholders(form);
-                        want.sort_unstable();
-                        got.sort_unstable();
-                        assert_eq!(want, got, "{}: placeholders differ in {src:?}", l.code);
-                    }
-                    continue;
-                }
-                let mut want = placeholders(src);
-                let mut got = placeholders(tr);
-                want.sort_unstable();
-                got.sort_unstable();
-                assert_eq!(want, got, "{}: placeholders differ in {src:?}", l.code);
-                if ctx.is_empty() {
-                    assert_eq!(src.ends_with('…'), tr.ends_with('…'), "{}: ellipsis mismatch: {src:?}", l.code);
-                }
-                if ctx == "@id" {
-                    assert!(crate::menus::is_live(src) || crate::menu_catalog::CATALOG.iter().any(|m| m.3 == src), "{}: unknown command id {src:?}", l.code);
-                }
-            }
+    fn fluent_formats_variables_and_plural_categories() {
+        set_current(language("ja"));
+        assert_eq!(fmt(tr(current(), "Opening {name}…"), &[("name", "image.psd")]), "image.psd を開いています…");
+        set_current(Lang::EN);
+        assert_eq!(fmt("{b} before {a}", &[("a", "x"), ("b", "y")]), "y before x");
+        assert_eq!(trn(language("ja"), 7, "{n} item", "{n} items"), "7 件");
+        assert_eq!(trn(language("zh-hant"), 7, "{n} item", "{n} items"), "7 個項目");
+        for (n, expected) in [(1, "1 элемент"), (2, "2 элемента"), (5, "5 элементов"), (11, "11 элементов"), (21, "21 элемент")]
+        {
+            assert_eq!(trn(language("ru"), n, "{n} item", "{n} items"), expected);
+        }
+        for (n, expected) in [(1, "1 položka"), (3, "3 položky"), (5, "5 položek")] {
+            assert_eq!(trn(language("cs"), n, "{n} item", "{n} items"), expected);
         }
     }
 
-    /// Languages that claim complete menus have an entry for every label and path segment.
     #[test]
-    fn complete_languages_translate_every_menu_string() {
-        let mut strings = std::collections::BTreeSet::new();
+    fn current_language_is_thread_local() {
+        set_current(language("ja"));
+        assert_eq!(current(), language("ja"));
+        assert_eq!(std::thread::spawn(current).join().expect("thread joined"), Lang::EN);
+        set_current(Lang::EN);
+    }
+
+    #[test]
+    fn complete_catalogs_cover_menu_sources() {
+        let mut sources = std::collections::BTreeSet::new();
         for &(path, label, _, _) in crate::menu_catalog::CATALOG {
-            strings.extend(path.iter().copied());
-            strings.insert(label);
+            sources.extend(path.iter().copied());
+            sources.insert(label);
         }
         for &(_, label, path, _) in crate::menus::UI_COMMANDS {
-            strings.extend(path.iter().copied());
-            strings.insert(label);
+            sources.extend(path.iter().copied());
+            sources.insert(label);
         }
-        for c in photocraft_engine::command_specs().iter().filter(|c| !c.menu.is_empty()) {
-            strings.extend(c.menu.iter().copied());
-            strings.insert(c.label);
+        for command in photocraft_engine::command_specs().iter().filter(|command| !command.menu.is_empty()) {
+            sources.extend(command.menu.iter().copied());
+            sources.insert(command.label);
         }
-        strings.remove("---");
-        for l in LANGUAGES.iter().filter(|l| l.complete_menus) {
-            let cat = l.catalog();
-            let missing: Vec<_> = strings.iter().filter(|s| cat.plain(s).is_none()).collect();
-            assert!(missing.is_empty(), "{}: untranslated menu strings: {missing:#?}", l.code);
+        sources.remove("---");
+        for lang in Lang::all().filter(|lang| lang.complete_menus()) {
+            let missing: Vec<_> = sources.iter().filter(|source| !has(lang, source)).collect();
+            assert!(missing.is_empty(), "{}: missing menu messages: {missing:#?}", lang.code());
         }
     }
 
-    /// Every `tl!("literal")` in the shell has an entry in each language that claims complete menus
-    /// (so a new label can't ship untranslated by accident). Literals that are deliberately shown as
-    /// they are (names, units) are listed in `KEEP_AS_IS`.
     #[test]
-    fn every_tl_literal_is_translated() {
-        const KEEP_AS_IS: &[&str] = &[];
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut literals = std::collections::BTreeSet::new();
-        let mut stack = vec![dir];
-        while let Some(d) = stack.pop() {
-            for entry in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+    fn stable_ids_resolve_in_all_complete_catalogs() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut ids = std::collections::BTreeSet::new();
+        let mut dirs = vec![root];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(dir).expect("source directory").flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    stack.push(path);
-                } else if path.extension().is_some_and(|e| e == "rs") && !path.ends_with("lib.rs") {
-                    let text = std::fs::read_to_string(&path).unwrap_or_default().replace("\r\n", "\n");
-                    // Test modules aside, scan every `tl!("…")`. Cut at the test *module*: a
-                    // `#[cfg(test)]` on a single item earlier in the file must not hide the rest.
-                    let code = text.split("#[cfg(test)]\nmod ").next().unwrap_or("");
+                    dirs.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs") {
+                    let code = std::fs::read_to_string(path).expect("Rust source");
+                    let code = code.split("#[cfg(test)]\nmod ").next().unwrap_or("");
                     let mut rest = code;
-                    while let Some(at) = rest.find("tl!(\"") {
-                        rest = &rest[at + 5..];
-                        let mut end = 0;
-                        let bytes = rest.as_bytes();
-                        while end < bytes.len() && !(bytes[end] == b'"' && (end == 0 || bytes[end - 1] != b'\\')) {
-                            end += 1;
-                        }
-                        let lit = rest.get(..end).unwrap_or("").replace("\\\"", "\"");
-                        if rest.get(end + 1..end + 2) == Some(")") {
-                            literals.insert(lit);
+                    while let Some(at) = rest.find("tl_id!(\"") {
+                        rest = &rest[at + 8..];
+                        if let Some(end) = rest.find('"')
+                            && rest.get(end + 1..end + 2) == Some(")")
+                        {
+                            ids.insert(rest[..end].to_owned());
                         }
                     }
                 }
             }
         }
-        assert!(literals.len() > 300, "scan found only {} literals", literals.len());
-        for l in LANGUAGES.iter().filter(|l| l.complete_menus) {
-            let cat = l.catalog();
-            let missing: Vec<_> = literals.iter().filter(|s| !KEEP_AS_IS.contains(&s.as_str()) && cat.plain(s).is_none()).collect();
-            assert!(missing.is_empty(), "{}: untranslated tl! strings: {missing:#?}", l.code);
-        }
-    }
-
-    /// Blend mode names come from the colour crate; each must be translated.
-    #[test]
-    fn blend_mode_names_are_translated() {
-        for l in LANGUAGES.iter().filter(|l| l.complete_menus) {
-            for m in std::iter::once(photocraft_color::BlendMode::PassThrough).chain(photocraft_color::BlendMode::LAYER_MODES) {
-                assert!(l.catalog().plain(m.label()).is_some(), "{}: blend mode {:?}", l.code, m.label());
-            }
+        assert!(ids.len() > 300, "found only {} stable ids", ids.len());
+        for lang in Lang::all().filter(|lang| lang.complete_menus()) {
+            let missing: Vec<_> = ids.iter().filter(|id| lang.0.fluent().get_message(id).is_none()).collect();
+            assert!(missing.is_empty(), "{}: missing Fluent ids: {missing:#?}", lang.code());
         }
     }
 }

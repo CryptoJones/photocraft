@@ -425,12 +425,12 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, tool: Tool) -> bo
             readout(ui, "L1:", g("l1").map(|v| v * f));
             readout(ui, "L2:", g("l2").map(|v| v * f));
             crate::widgets::vline(ui, 22.0);
-            crate::widgets::checkbox(ui, &mut app.ui.analysis.use_measurement_scale, tl!("Use Measurement Scale"));
+            crate::widgets::checkbox(ui, &mut app.ui.analysis.use_measurement_scale, tl_id!("ui-use-measurement-scale-a911247354998ef0"));
             let has = doc.measurement.ruler.is_some();
-            if ui.add_enabled_ui(has, |ui| crate::widgets::secondary_button(ui, tl!("Straighten Layer"), 0.0)).inner.clicked() {
+            if ui.add_enabled_ui(has, |ui| crate::widgets::secondary_button(ui, tl_id!("ui-straighten-layer-9d2e02f17a097e23"), 0.0)).inner.clicked() {
                 let _ = app.run("image.analysis.straightenLayer", json!({}));
             }
-            if ui.add_enabled_ui(has, |ui| crate::widgets::secondary_button(ui, tl!("Clear"), 0.0)).inner.clicked() {
+            if ui.add_enabled_ui(has, |ui| crate::widgets::secondary_button(ui, tl_id!("ui-clear-f10f4b1b4d6dc250"), 0.0)).inner.clicked() {
                 let _ = app.run("image.analysis.rulerTool", json!({"clear": true}));
             }
             true
@@ -448,29 +448,29 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, tool: Tool) -> bo
                 }
                 let g = &m.count_groups[gi];
                 let eye = if g.visible { "eye" } else { "eye-off" };
-                if crate::icons::button(ui, eye, 22.0, false, tl!("Toggle count group visibility")).clicked() {
+                if crate::icons::button(ui, eye, 22.0, false, tl_id!("ui-toggle-count-group-visibility-a8b8977f8cce2fd1")).clicked() {
                     let _ = app.run("count.setGroup", json!({"group": gi, "visible": !g.visible}));
                 }
                 let mut rgb = g.color.to_rgb();
                 if ui.color_edit_button_rgb(&mut rgb).changed() {
                     let _ = app.run("count.setGroup", json!({"group": gi, "color": [rgb[0], rgb[1], rgb[2]], "coalesce": "count-color"}));
                 }
-                if crate::icons::button(ui, "trash", 22.0, false, tl!("Delete count group")).clicked() {
+                if crate::icons::button(ui, "trash", 22.0, false, tl_id!("ui-delete-count-group-550126fd78faba88")).clicked() {
                     let _ = app.run("count.deleteGroup", json!({"group": gi}));
                 }
             }
-            if crate::icons::button(ui, "folder-plus", 22.0, false, tl!("Create a new count group")).clicked() {
+            if crate::icons::button(ui, "folder-plus", 22.0, false, tl_id!("ui-create-a-new-count-group-56482ca0de5c2936")).clicked() {
                 let _ = app.run("count.newGroup", json!({}));
             }
-            if crate::widgets::secondary_button(ui, tl!("Clear"), 0.0).clicked() && m.count_total() > 0 {
+            if crate::widgets::secondary_button(ui, tl_id!("ui-clear-f10f4b1b4d6dc250"), 0.0).clicked() && m.count_total() > 0 {
                 let _ = app.run("count.clear", json!({}));
             }
             if let Some(g) = m.count_groups.get(m.active_count_group) {
                 crate::widgets::vline(ui, 22.0);
                 let (mut ms, mut ls) = (g.marker_size as f32, g.label_size as f32);
-                ui.label(RichText::new(tl!("Marker Size")).color(t.text_dim).size(11.0));
+                ui.label(RichText::new(tl_id!("ui-marker-size-8f675849e467761e")).color(t.text_dim).size(11.0));
                 let a = crate::widgets::value_field(ui, &mut ms, 1.0..=10.0, "", 40.0).changed();
-                ui.label(RichText::new(tl!("Label Size")).color(t.text_dim).size(11.0));
+                ui.label(RichText::new(tl_id!("ui-label-size-a5ac0d57c6913f3c")).color(t.text_dim).size(11.0));
                 let b = crate::widgets::value_field(ui, &mut ls, 8.0..=72.0, "", 44.0).changed();
                 if a || b {
                     let _ = app.run("count.setGroup", json!({"markerSize": ms.round(), "labelSize": ls.round()}));
@@ -480,15 +480,16 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, tool: Tool) -> bo
         }
         Tool::Note => {
             let t = Tokens::get(ui.ctx());
-            ui.label(RichText::new(tl!("Author:")).color(t.text_dim).size(11.0));
+            ui.label(RichText::new(tl_id!("ui-author-42ef8539c63daafe")).color(t.text_dim).size(11.0));
             ui.add(egui::TextEdit::singleline(&mut app.ui.analysis.note_author).desired_width(120.0));
-            ui.label(RichText::new(tl!("Color:")).color(t.text_dim).size(11.0));
+            ui.label(RichText::new(tl_id!("ui-color-73a9475ddd11219c")).color(t.text_dim).size(11.0));
             ui.color_edit_button_rgb(&mut app.ui.analysis.note_color);
-            if ui.add_enabled_ui(!doc.notes.is_empty(), |ui| crate::widgets::secondary_button(ui, tl!("Clear All"), 0.0)).inner.clicked() {
+            if ui.add_enabled_ui(!doc.notes.is_empty(), |ui| crate::widgets::secondary_button(ui, tl_id!("ui-clear-all-f619a8dd211a7463"), 0.0)).inner.clicked()
+            {
                 let _ = app.run("notes.delete", json!({"all": true}));
                 app.ui.analysis.note_selected = None;
             }
-            if crate::icons::button(ui, "message-square", 22.0, app.ui.analysis.notes, tl!("Show or hide the Notes panel")).clicked() {
+            if crate::icons::button(ui, "message-square", 22.0, app.ui.analysis.notes, tl_id!("ui-show-or-hide-the-notes-panel-bcab173de052593d")).clicked() {
                 app.ui.analysis.notes = !app.ui.analysis.notes;
             }
             true
@@ -515,7 +516,7 @@ pub(crate) fn title_row(ui: &mut egui::Ui, title: &str) -> bool {
     ui.horizontal(|ui| {
         ui.label(RichText::new(tl!(&title)).color(t.text).size(12.0).strong());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if crate::icons::button(ui, "x", 20.0, false, tl!("Close")).clicked() {
+            if crate::icons::button(ui, "x", 20.0, false, tl_id!("ui-close-bac64c1b2e060ee5")).clicked() {
                 close = true;
             }
         });
@@ -553,23 +554,23 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let rows = app.session.analysis.log.clone();
         let mut sel = app.ui.analysis.log_selected.clone();
         let t = Tokens::get(ctx);
-        panel_window(app, ctx, "measurement-log", tl!("Measurement Log"), vec2(-300.0, 470.0), 620.0, |ui| {
-            close = title_row(ui, tl!("Measurement Log"));
+        panel_window(app, ctx, "measurement-log", tl_id!("ui-measurement-log-388b93225f5f0fbf"), vec2(-300.0, 470.0), 620.0, |ui| {
+            close = title_row(ui, tl_id!("ui-measurement-log-388b93225f5f0fbf"));
             ui.horizontal(|ui| {
-                if crate::widgets::secondary_button(ui, tl!("Record Measurements"), 0.0).clicked() {
+                if crate::widgets::secondary_button(ui, tl_id!("ui-record-measurements-27204f02e302fdf7"), 0.0).clicked() {
                     act = Some(("record", Value::Null));
                 }
-                if crate::widgets::secondary_button(ui, tl!("Select All"), 0.0).clicked() {
+                if crate::widgets::secondary_button(ui, tl_id!("ui-select-all-707ff6825939c50c"), 0.0).clicked() {
                     sel = rows.iter().map(|r| r.id).collect();
                 }
-                if crate::widgets::secondary_button(ui, tl!("Deselect All"), 0.0).clicked() {
+                if crate::widgets::secondary_button(ui, tl_id!("ui-deselect-all-23357f9b97e063c7"), 0.0).clicked() {
                     sel.clear();
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if crate::icons::button(ui, "trash", 22.0, false, tl!("Delete selected measurements")).clicked() && !sel.is_empty() {
+                    if crate::icons::button(ui, "trash", 22.0, false, tl_id!("ui-delete-selected-measurements-3898f3ae862d69ea")).clicked() && !sel.is_empty() {
                         act = Some(("measurementLog.delete", json!({"rows": sel.clone()})));
                     }
-                    if crate::icons::button(ui, "file", 22.0, false, tl!("Export selected measurements (CSV)")).clicked() {
+                    if crate::icons::button(ui, "file", 22.0, false, tl_id!("ui-export-selected-measurements-csv-0eb0251cb8ea2998")).clicked() {
                         act = Some(("export", json!(sel.clone())));
                     }
                 });
@@ -645,15 +646,19 @@ fn notes_panel(app: &mut PhotocraftApp, ctx: &egui::Context) {
     let mut edit: Option<Value> = None;
     let mut delete = false;
     let t = Tokens::get(ctx);
-    panel_window(app, ctx, "notes-panel", tl!("Notes"), vec2(-40.0, 300.0), 260.0, |ui| {
-        close = title_row(ui, tl!("Notes"));
+    panel_window(app, ctx, "notes-panel", tl_id!("ui-notes-c54c5e311372a994"), vec2(-40.0, 300.0), 260.0, |ui| {
+        close = title_row(ui, tl_id!("ui-notes-c54c5e311372a994"));
         match sel {
             None => {
-                ui.label(RichText::new(tl!("Click with the Note tool to add a note.")).color(t.text_dim).size(11.0));
+                ui.label(RichText::new(tl_id!("ui-click-with-the-note-tool-to-add-a-note-32cd19503d720141")).color(t.text_dim).size(11.0));
             }
             Some(i) => {
                 let note = &notes[i];
-                ui.label(RichText::new(if note.author.is_empty() { tl!("No author").to_string() } else { note.author.clone() }).color(t.text_dim).size(11.0));
+                ui.label(
+                    RichText::new(if note.author.is_empty() { tl_id!("ui-no-author-1d186379ce0b85e7").to_string() } else { note.author.clone() })
+                        .color(t.text_dim)
+                        .size(11.0),
+                );
                 let mut text = note.text.clone();
                 if ui.add(egui::TextEdit::multiline(&mut text).desired_rows(6).desired_width(f32::INFINITY)).changed() {
                     edit = Some(json!({"index": i, "text": text, "coalesce": format!("note-{i}")}));
@@ -662,15 +667,23 @@ fn notes_panel(app: &mut PhotocraftApp, ctx: &egui::Context) {
         }
         crate::widgets::hairline(ui);
         ui.horizontal(|ui| {
-            if ui.add_enabled_ui(n > 1, |ui| crate::icons::button(ui, "chevrons-left", 22.0, false, tl!("Previous note"))).inner.clicked() {
+            if ui
+                .add_enabled_ui(n > 1, |ui| crate::icons::button(ui, "chevrons-left", 22.0, false, tl_id!("ui-previous-note-0b4c0cb5fbafd022")))
+                .inner
+                .clicked()
+            {
                 sel = sel.map(|i| (i + n - 1) % n);
             }
-            if ui.add_enabled_ui(n > 1, |ui| crate::icons::button(ui, "chevrons-right", 22.0, false, tl!("Next note"))).inner.clicked() {
+            if ui.add_enabled_ui(n > 1, |ui| crate::icons::button(ui, "chevrons-right", 22.0, false, tl_id!("ui-next-note-33b1edb6ad62bca6"))).inner.clicked() {
                 sel = sel.map(|i| (i + 1) % n);
             }
             ui.label(RichText::new(sel.map_or("0 of 0".into(), |i| format!("{} of {n}", i + 1))).color(t.text_dim).size(11.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add_enabled_ui(sel.is_some(), |ui| crate::icons::button(ui, "trash", 22.0, false, tl!("Delete note"))).inner.clicked() {
+                if ui
+                    .add_enabled_ui(sel.is_some(), |ui| crate::icons::button(ui, "trash", 22.0, false, tl_id!("ui-delete-note-784852a973c28420")))
+                    .inner
+                    .clicked()
+                {
                     delete = true;
                 }
             });
@@ -757,13 +770,22 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
             ui.add_space(6.0);
             match kind.as_str() {
                 "scale" => {
-                    choice(ui, &mut f, "preset", tl!("Presets:"), &[("custom", tl!("Custom")), ("default", tl!("Default"))]);
+                    choice(
+                        ui,
+                        &mut f,
+                        "preset",
+                        tl_id!("ui-presets-2140dbc6686ea0c1"),
+                        &[("custom", tl_id!("ui-custom-1a236fdd7e5ff32c")), ("default", tl_id!("ui-default-ab2a3d4ef1c9d1a8"))],
+                    );
                     let custom = f.get("preset").and_then(Value::as_str) != Some("default");
                     ui.add_enabled_ui(custom, |ui| {
-                        num_field(ui, &mut f, "pixelLength", tl!("Pixel Length:"), 0.001..=1e7, "");
-                        num_field(ui, &mut f, "logicalLength", tl!("Logical Length:"), 0.0001..=1e7, "");
+                        num_field(ui, &mut f, "pixelLength", tl_id!("ui-pixel-length-07ad0a3e8e75b1ef"), 0.001..=1e7, "");
+                        num_field(ui, &mut f, "logicalLength", tl_id!("ui-logical-length-f05e3f0023320bcc"), 0.0001..=1e7, "");
                         ui.horizontal(|ui| {
-                            ui.add_sized(vec2(110.0, 18.0), egui::Label::new(RichText::new(tl!("Logical Units:")).color(t.text_dim).size(11.0)));
+                            ui.add_sized(
+                                vec2(110.0, 18.0),
+                                egui::Label::new(RichText::new(tl_id!("ui-logical-units-a90a35bd4ebdf1a5")).color(t.text_dim).size(11.0)),
+                            );
                             let mut u = f.get("units").and_then(Value::as_str).unwrap_or("pixels").to_string();
                             if ui.add(egui::TextEdit::singleline(&mut u).desired_width(80.0)).changed() {
                                 f.insert("units".into(), json!(u));
@@ -777,7 +799,11 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 }
                 "dataPoints" => {
                     ui.horizontal_top(|ui| {
-                        for (source, label) in [("selection", tl!("Selections")), ("ruler", tl!("Ruler Tool")), ("count", tl!("Count Tool"))] {
+                        for (source, label) in [
+                            ("selection", tl_id!("ui-selections-4e4591229b07e4a8")),
+                            ("ruler", tl_id!("ui-ruler-tool-5ffeee07041b5b45")),
+                            ("count", tl_id!("ui-count-tool-641794e37049aa5c")),
+                        ] {
                             ui.vertical(|ui| {
                                 ui.label(RichText::new(tl!(&label)).color(t.text).size(11.0).strong());
                                 let mut list: Vec<String> = f
@@ -807,23 +833,35 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 }
                 _ => {
                     let units = f.get("units").and_then(Value::as_str).unwrap_or("pixels").to_string();
-                    num_field(ui, &mut f, "length", tl!("Length:"), 0.0001..=1e7, &units);
-                    num_field(ui, &mut f, "fontSize", tl!("Font Size:"), 1.0..=1000.0, "pt");
+                    num_field(ui, &mut f, "length", tl_id!("ui-length-309b13d6e0ac1a0f"), 0.0001..=1e7, &units);
+                    num_field(ui, &mut f, "fontSize", tl_id!("ui-font-size-0e89b2d6970679b3"), 1.0..=1000.0, "pt");
                     let mut show = f.get("displayText").and_then(Value::as_bool).unwrap_or(true);
-                    if crate::widgets::checkbox(ui, &mut show, tl!("Display Text")).changed() {
+                    if crate::widgets::checkbox(ui, &mut show, tl_id!("ui-display-text-4b0c27f14737ae9e")).changed() {
                         f.insert("displayText".into(), json!(show));
                     }
-                    choice(ui, &mut f, "textPosition", tl!("Text Position:"), &[("bottom", tl!("Bottom")), ("top", tl!("Top"))]);
-                    choice(ui, &mut f, "color", tl!("Color:"), &[("black", tl!("Black")), ("white", tl!("White"))]);
+                    choice(
+                        ui,
+                        &mut f,
+                        "textPosition",
+                        tl_id!("ui-text-position-d3407dc8a20acd63"),
+                        &[("bottom", tl_id!("ui-bottom-bada204837504c00")), ("top", tl_id!("ui-top-7622187e02308d3e"))],
+                    );
+                    choice(
+                        ui,
+                        &mut f,
+                        "color",
+                        tl_id!("ui-color-73a9475ddd11219c"),
+                        &[("black", tl_id!("ui-black-49e5cb1e3f075426")), ("white", tl_id!("ui-white-bed13266c4c1f028"))],
+                    );
                 }
             }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if crate::widgets::primary_button(ui, tl!("OK"), 70.0).clicked() {
+                    if crate::widgets::primary_button(ui, tl_id!("ui-ok-d840e3186b2b9581"), 70.0).clicked() {
                         result = Some(true);
                     }
-                    if crate::widgets::secondary_button(ui, tl!("Cancel"), 70.0).clicked() {
+                    if crate::widgets::secondary_button(ui, tl_id!("ui-cancel-f09e4b5c35aa14b9"), 70.0).clicked() {
                         result = Some(false);
                     }
                 });

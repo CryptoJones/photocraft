@@ -979,7 +979,7 @@ fn tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     ui.painter().rect_filled(xr, 4.0, t.hover);
                 }
                 crate::icons::paint(ui, xr, "x", 11.0, if xresp.hovered() { t.text } else { t.text_faint });
-                if xresp.on_hover_text(tl!("Cancel opening")).clicked() {
+                if xresp.on_hover_text(tl_id!("ui-cancel-opening-cc1f5260eb02da91")).clicked() {
                     cancel_open = Some(job);
                 } else if resp.clicked() {
                     focus_open = Some(job);
@@ -1028,7 +1028,7 @@ fn pro_tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         let active_layer = st.active_layer.and_then(|id| st.doc.layer(id)).filter(|l| !(l.name == "Background" && l.locks.transparency));
         let is_active_doc = app.session.active_index() == Some(i);
         let mask = is_active_doc && app.ui.mask_target && active_layer.is_some_and(|l| l.mask.is_some());
-        let model = if mask { tl!("Layer Mask").to_string() } else { mode_label(&st.doc).to_string() };
+        let model = if mask { tl_id!("ui-layer-mask-43beb7a47c311688").to_string() } else { mode_label(&st.doc).to_string() };
         let layer = active_layer.map(|l| format!("{}, ", l.name)).unwrap_or_default();
         let title = format!("{} @ {}% ({layer}{model}/{}){}", st.doc.name, fmt_zoom(zoom), st.doc.depth.bits(), if st.is_dirty() { "*" } else { "" });
         let g = ui.painter().layout_no_wrap(title, egui::FontId::proportional(11.5), t.text);
@@ -1071,7 +1071,7 @@ fn pro_tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         let xresp = ui.interact(xr, ui.id().with(("ptabjobx", job.0)), Sense::click());
         crate::icons::paint(ui, xr, "x", 10.0, if xresp.hovered() { t.text } else { t.text_faint });
         ui.painter().galley_with_override_text_color(egui::pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, if sel { t.text } else { t.text_faint });
-        if xresp.on_hover_text(tl!("Cancel opening")).clicked() {
+        if xresp.on_hover_text(tl_id!("ui-cancel-opening-cc1f5260eb02da91")).clicked() {
             cancel_open = Some(job);
         } else if resp.clicked() {
             focus_open = Some(job);
@@ -1150,7 +1150,7 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.scope_builder(egui::UiBuilder::new().max_rect(card), |ui| {
         ui.vertical_centered(|ui| {
             ui.horizontal(|ui| {
-                let title = ui.painter().layout_no_wrap(tl!("PhotoCraft").into(), crate::theme::semibold(38.0), t.text);
+                let title = ui.painter().layout_no_wrap(tl_id!("ui-photocraft-ec9e120a564d0a1d").into(), crate::theme::semibold(38.0), t.text);
                 let by = ui.painter().layout_no_wrap("open source".into(), egui::FontId::proportional(13.0), t.text_faint);
                 let total = title.size().x + by.size().x + 10.0;
                 ui.add_space(((card.width() - total) / 2.0).max(0.0));
@@ -1160,7 +1160,7 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 ui.painter().galley(egui::pos2(r2.left() + 10.0, r.bottom() - by.size().y - 8.0), by, t.text_faint);
             });
             ui.add_space(6.0);
-            ui.label(egui::RichText::new(tl!("Create a new document or open an existing file.")).color(t.text_dim).size(14.0));
+            ui.label(egui::RichText::new(tl_id!("ui-create-a-new-document-or-open-an-existin-600129e06bf37224")).color(t.text_dim).size(14.0));
             ui.add_space(22.0);
             ui.horizontal(|ui| {
                 ui.add_space(((card.width() - 2.0 * 190.0 - 12.0) / 2.0).max(0.0));
@@ -1174,7 +1174,7 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             });
             ui.add_space(22.0);
             ui.horizontal(|ui| {
-                let msg = tl!("Drop an image or PSD anywhere to open it.");
+                let msg = tl_id!("ui-drop-an-image-or-psd-anywhere-to-open-it-075c8229425c5805");
                 let g = ui.painter().layout_no_wrap(msg.into(), egui::FontId::proportional(12.5), t.text_faint);
                 ui.add_space(((card.width() - g.size().x - 24.0) / 2.0).max(0.0));
                 let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), Sense::hover());
@@ -1205,7 +1205,7 @@ fn home_recent(app: &mut PhotocraftApp, ui: &mut egui::Ui, recent: &[String]) {
     ui.horizontal(|ui| {
         // Line the heading up with the file icons.
         ui.add_space(((ui.available_width() - width) / 2.0).max(0.0) + 8.0);
-        ui.label(egui::RichText::new(tl!("Recent")).font(crate::theme::semibold(12.5)).color(t.text_dim));
+        ui.label(egui::RichText::new(tl_id!("ui-recent-44914fdf8a0da00c")).font(crate::theme::semibold(12.5)).color(t.text_dim));
     });
     ui.add_space(4.0);
     let mut open = None;

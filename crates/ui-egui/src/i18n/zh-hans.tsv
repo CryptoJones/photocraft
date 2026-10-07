@@ -1898,3 +1898,136 @@
 	Erase	擦除
 	Right click with painting tools	使用绘画工具时右键单击
 	Aspect Ratio	宽高比
+	Add a mask  (from the selection; {key} inverts)	添加蒙版（基于选区；{key} 反转）
+	Add to selection  ({key})	添加到选区（{key}）
+	Add vector mask	添加矢量蒙版
+	Align with layer	与图层对齐
+	Anti-aliasing method	抗锯齿方式
+	Applies at next launch.	下次启动时生效。
+	Apply the pen's tilt and rotation to the tip shape	将画笔倾斜和旋转应用于笔尖形状
+	Brush Projection	画笔投影
+	Brush Settings…  (F5): every option of this brush	画笔设置…（F5）：此画笔的全部选项
+	Brush name	画笔名称
+	CPU (no GPU acceleration)	CPU（不使用 GPU 加速）
+	Cancel opening	取消打开
+	Cancelled opening {name}	已取消打开 {name}
+	Cancelled {label}	已取消{label}
+	Centre the gradient (offset 0, 0)	将渐变居中（偏移 0, 0）
+	Click the first point or press {key} to close · Esc cancels	单击起点或按 {key} 闭合 · Esc 取消
+	Click to add a point · drag off or {key}-click or Delete to remove	单击添加点 · 拖离、按 {key} 单击或按 Delete 删除
+	Click to apply, {key}-click to clear overrides, double-click for Style Options	单击应用，按 {key} 单击清除覆盖设置，双击打开样式选项
+	Click to sample the foreground colour  ·  {key}-click for background	单击取样前景色 · 按 {key} 单击取样背景色
+	Click to zoom in  ·  {key}-click to zoom out  ·  drag right/left to zoom in/out	单击放大 · 按 {key} 单击缩小 · 向右/左拖动以放大/缩小
+	Click: corner · Drag: smooth · Click first point: close · {key} finish · Esc cancel	单击：角点 · 拖动：平滑点 · 单击起点：闭合 · 按 {key} 完成 · Esc 取消
+	Clone source {n} ({key}-click with Clone Stamp to set)	仿制源 {n}（使用仿制图章时按 {key} 单击设置）
+	Collapse group  ({key}-click: all groups)	折叠组（按 {key} 单击：所有组）
+	Commit Perspective Warp ({key})	确认透视变形（{key}）
+	Commit Puppet Warp ({key})	确认操控变形（{key}）
+	Commit any current edits ({key})	确认当前所有编辑（{key}）
+	Commit current crop operation  ({key})	确认当前裁剪操作（{key}）
+	Commit transform ({key})	确认变换（{key}）
+	Commit warp ({key})	确认变形（{key}）
+	Create Warped Text	创建变形文字
+	Create a new layer	创建新图层
+	Create new brush preset from the current settings	根据当前设置创建画笔预设
+	Create new path	创建新路径
+	Delete Brush	删除画笔
+	Delete path	删除路径
+	Delete vector mask	删除矢量蒙版
+	Diameter:	直径：
+	DirectX 12	DirectX 12
+	Esc to cancel	按 Esc 取消
+	Expand group  ({key}-click: all groups)	展开组（按 {key} 单击：所有组）
+	Fill Layer	填充图层
+	Fill path with foreground color	使用前景色填充路径
+	GPU backend	GPU 后端
+	Gradient	渐变
+	Gradient Options	渐变选项
+	Graphics	图形
+	Grid view	网格视图
+	Group Layer	组图层
+	Group name	组名称
+	Hardness:	硬度：
+	Hide the layer's effects  ({key}-click: all layers)	隐藏图层效果（按 {key} 单击：所有图层）
+	Horizontal type	横排文字
+	Intersect with selection  ({key})	与选区交叉（{key}）
+	Link the mask to the layer	将蒙版链接到图层
+	List view	列表视图
+	Load path as a selection	将路径载入为选区
+	Lock: keep these settings when picking another preset	锁定：选择其他预设时保留这些设置
+	Make work path from selection	从选区创建工作路径
+	Metal	Metal
+	Mix	混合
+	Mix Jitter	混合抖动
+	Mixer Brush	混合器画笔
+	More panels	更多面板
+	New document…	新建文档…
+	No brush presets	没有画笔预设
+	No path to make a selection from: draw one with the Pen tool or select one in the Paths panel.	没有可用于创建选区的路径：请使用钢笔工具绘制路径，或在路径面板中选择路径。
+	Off: the speed of the pointer sets the spacing	关闭：指针速度决定间距
+	OpenGL	OpenGL
+	Opening {name}	正在打开 {name}
+	Opening {name}…	正在打开 {name}…
+	Opening…	正在打开…
+	Pixel Layer	像素图层
+	Rasterize Fill Content	栅格化填充内容
+	Rasterize Smart Object	栅格化智能对象
+	Reading…	正在读取…
+	Rename Brush…	重命名画笔…
+	Reset Alignment	重置对齐方式
+	Reset GPU Backend	重置 GPU 后端
+	Search commands	搜索命令
+	Select a type layer to edit its character and paragraph settings.	选择文字图层以编辑字符和段落设置。
+	Shape Layer	形状图层
+	Show Guides	显示参考线
+	Show the layer mask as an overlay	以叠加方式显示图层蒙版
+	Show the layer's effects  ({key}-click: all layers)	显示图层效果（按 {key} 单击：所有图层）
+	Smart Object Layer	智能对象图层
+	Source: not set ({key}-click with Clone Stamp)	源：未设置（使用仿制图章时按 {key} 单击）
+	Stroke path with brush	使用画笔描边路径
+	Subtract from selection  ({key})	从选区减去（{key}）
+	System Info	系统信息
+	System Info…	系统信息…
+	Text color	文字颜色
+	The current gradient (pick one in Window › Gradients)	当前渐变（在“窗口 › 渐变”中选择）
+	These settings aren't available in PhotoCraft yet.	这些设置在 PhotoCraft 中尚不可用。
+	Tilt Scale	倾斜缩放
+	Toggle the Brush Settings panel  (F5)	切换画笔设置面板（F5）
+	Toggle visibility	切换可见性
+	Type Layer	文字图层
+	Type Options	文字选项
+	Unlink the mask from the layer	取消蒙版与图层的链接
+	Unlock: picking a preset replaces these settings	解锁：选择预设时将替换这些设置
+	Use tablet pressure	使用数位板压力
+	Vertical type	直排文字
+	Vulkan	Vulkan
+	Wet	湿润度
+	Wetness Jitter	湿润度抖动
+	Working…	处理中…
+	{key} to subtract	按 {key} 减去
+	{key}-click to set the source	按 {key} 单击设置源
+	↑↓ navigate   {key} run   esc close	↑↓ 导航   按 {key} 运行   esc 关闭
+@plural	{n} layer|{n} layers	{n} 个图层
+@id	edit.purge.undo	清除撤销记录
+@id	edit.stroke	描边
+@id	edit.transform.scale	缩放
+@id	select.all	全选
+	HDTV 1080p	HDTV 1080p
+	A4	A4
+	A3	A3
+	A5	A5
+	Square 1:1	正方形 1:1
+	Portrait 4:5	纵向 4:5
+	Story 9:16	故事 9:16
+	MacBook Pro 16"	MacBook Pro 16"
+	iMac 24"	iMac 24"
+	iPhone 16	iPhone 16
+	iPhone 16 Pro Max	iPhone 16 Pro Max
+	iPad Pro 13"	iPad Pro 13"
+	Full HD Portrait	全高清纵向
+	QHD 1440p	QHD 1440p
+	UHD 4K Portrait	超高清 4K 纵向
+	HDTV 720p	HDTV 720p
+	UHD 4K	UHD 4K
+	DCI 4K	DCI 4K
+	UHD 8K	UHD 8K

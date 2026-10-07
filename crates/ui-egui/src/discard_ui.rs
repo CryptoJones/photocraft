@@ -71,7 +71,7 @@ pub fn intercept(app: &mut PhotocraftApp, id: &str, params: &Value) -> bool {
         // Repeated quit requests (the X pressed again) keep the prompt, and the answers so far.
         Some(open) if open.id == id => {}
         Some(_) => {
-            app.ui.status = tl!("Answer the unsaved-changes prompt first").into();
+            app.ui.status = tl_id!("ui-answer-the-unsaved-changes-prompt-first-d6486f462d80e830").into();
             app.ui.status_error = true;
         }
     }
@@ -147,7 +147,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         } else {
             tl!("Do you want to save the changes you made to “{name}” before closing?")
         };
-        (tl!("Unsaved changes"), crate::i18n::fmt(template, &[("name", &name)]))
+        (tl_id!("ui-unsaved-changes-d532ec89f9f9f566"), crate::i18n::fmt(template, &[("name", &name)]))
     };
     let (mut save_it, mut discard_it, mut cancel) = (false, false, false);
     let modal = egui::Modal::new(egui::Id::new("discard-prompt")).show(ctx, |ui| {
@@ -161,12 +161,12 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
             if reverts {
-                discard_it = crate::widgets::primary_button(ui, tl!("Revert"), 84.0).clicked();
-                cancel = crate::widgets::secondary_button(ui, tl!("Cancel"), 84.0).clicked();
+                discard_it = crate::widgets::primary_button(ui, tl_id!("ui-revert-a6ca2131e3611c19"), 84.0).clicked();
+                cancel = crate::widgets::secondary_button(ui, tl_id!("ui-cancel-f09e4b5c35aa14b9"), 84.0).clicked();
             } else {
-                save_it = crate::widgets::primary_button(ui, tl!("Save"), 84.0).clicked();
-                cancel = crate::widgets::secondary_button(ui, tl!("Cancel"), 84.0).clicked();
-                discard_it = crate::widgets::secondary_button(ui, tl!("Don't Save"), 100.0).clicked();
+                save_it = crate::widgets::primary_button(ui, tl_id!("ui-save-ce00c3235e535eaa"), 84.0).clicked();
+                cancel = crate::widgets::secondary_button(ui, tl_id!("ui-cancel-f09e4b5c35aa14b9"), 84.0).clicked();
+                discard_it = crate::widgets::secondary_button(ui, tl_id!("ui-don-t-save-f65079b9d9723570"), 100.0).clicked();
             }
         });
     });

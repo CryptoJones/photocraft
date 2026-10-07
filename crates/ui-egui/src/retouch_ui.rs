@@ -28,9 +28,9 @@ pub fn finish_stroke(app: &mut PhotocraftApp, tool: Tool, points: &[[f64; 3]], m
                 (None, None) => {
                     // Photoshop says Option-click on the Mac and Alt-click on Windows.
                     app.ui.status = if cfg!(target_os = "macos") {
-                        tl!("Option-click to define a source point to clone from")
+                        tl_id!("ui-option-click-to-define-a-source-point-to-5b5ee481f271b16b")
                     } else {
-                        tl!("Alt-click to define a source point to clone from")
+                        tl_id!("ui-alt-click-to-define-a-source-point-to-cl-2228e77de216e323")
                     }
                     .into();
                     app.ui.status_error = true;
@@ -143,23 +143,27 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, tool: Tool) -> bo
     let o = &mut app.ui.tool_options;
     match tool {
         Tool::SpotHealing => {
-            opt(ui, tl!("Type:"));
-            for (k, l) in [("contentAware", tl!("Content-Aware")), ("createTexture", tl!("Create Texture")), ("proximityMatch", tl!("Proximity Match"))] {
+            opt(ui, tl_id!("ui-type-6d0bcbc7dddc55e7"));
+            for (k, l) in [
+                ("contentAware", tl_id!("ui-content-aware-7333f7e07556580f")),
+                ("createTexture", tl_id!("ui-create-texture-6370025c65a11dd4")),
+                ("proximityMatch", tl_id!("ui-proximity-match-f0257a471ff21229")),
+            ] {
                 let mut on = o.spot_type == k;
                 if crate::widgets::checkbox(ui, &mut on, l).clicked() {
                     o.spot_type = k.into();
                 }
             }
             crate::widgets::vline(ui, 22.0);
-            crate::widgets::checkbox(ui, &mut o.sample_all_layers, tl!("Sample All Layers"));
+            crate::widgets::checkbox(ui, &mut o.sample_all_layers, tl_id!("ui-sample-all-layers-fd67756ff1544318"));
         }
         Tool::Healing | Tool::CloneStamp => {
-            crate::widgets::checkbox(ui, &mut o.clone_aligned, tl!("Aligned"));
-            opt(ui, tl!("Sample:"));
+            crate::widgets::checkbox(ui, &mut o.clone_aligned, tl_id!("ui-aligned-a0137ff31d0a4295"));
+            opt(ui, tl_id!("ui-sample-bd8090f687415b75"));
             let opts = [
-                ("current".to_string(), tl!("Current Layer")),
-                ("currentAndBelow".to_string(), tl!("Current & Below")),
-                ("all".to_string(), tl!("All Layers")),
+                ("current".to_string(), tl_id!("ui-current-layer-530d0a7523724bb5")),
+                ("currentAndBelow".to_string(), tl_id!("ui-current-below-1799f701288bc2cb")),
+                ("all".to_string(), tl_id!("ui-all-layers-bf480d822a927800")),
             ];
             crate::widgets::dropdown(ui, "clone-sample", &mut o.clone_sample, &opts, 130.0);
             if app.ui.clone_source.is_none() {
@@ -168,43 +172,47 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, tool: Tool) -> bo
             }
         }
         Tool::Dodge | Tool::Burn => {
-            opt(ui, tl!("Range:"));
-            let opts = [("shadows".to_string(), tl!("Shadows")), ("midtones".to_string(), tl!("Midtones")), ("highlights".to_string(), tl!("Highlights"))];
+            opt(ui, tl_id!("ui-range-f96c3afe844b376a"));
+            let opts = [
+                ("shadows".to_string(), tl_id!("ui-shadows-d96716d0107dc7bc")),
+                ("midtones".to_string(), tl_id!("ui-midtones-072137379417d47c")),
+                ("highlights".to_string(), tl_id!("ui-highlights-8f08df786c69be0a")),
+            ];
             crate::widgets::dropdown(ui, "tone-range", &mut o.tone_range, &opts, 100.0);
-            pct(ui, tl!("Exposure:"), &mut o.exposure);
-            crate::widgets::checkbox(ui, &mut o.protect_tones, tl!("Protect Tones"));
+            pct(ui, tl_id!("ui-exposure-c802a835ac58dc1c"), &mut o.exposure);
+            crate::widgets::checkbox(ui, &mut o.protect_tones, tl_id!("ui-protect-tones-abdf4fdccb171b63"));
         }
         Tool::Sponge => {
-            opt(ui, tl!("Mode:"));
-            let opts = [("desaturate".to_string(), tl!("Desaturate")), ("saturate".to_string(), tl!("Saturate"))];
+            opt(ui, tl_id!("ui-mode-46f1486db9b6a7a6"));
+            let opts = [("desaturate".to_string(), tl_id!("ui-desaturate-bbca078397df6b65")), ("saturate".to_string(), tl_id!("ui-saturate-2551e0c2f7db1c5e"))];
             crate::widgets::dropdown(ui, "sponge-mode", &mut o.sponge_mode, &opts, 110.0);
-            crate::widgets::checkbox(ui, &mut o.vibrance, tl!("Vibrance"));
+            crate::widgets::checkbox(ui, &mut o.vibrance, tl_id!("ui-vibrance-3ff37da63ba389ed"));
         }
         Tool::Blur | Tool::Sharpen | Tool::Smudge => {
-            pct(ui, tl!("Strength:"), &mut o.strength);
-            crate::widgets::checkbox(ui, &mut o.sample_all_layers, tl!("Sample All Layers"));
+            pct(ui, tl_id!("ui-strength-576d3c1f8c34c670"), &mut o.strength);
+            crate::widgets::checkbox(ui, &mut o.sample_all_layers, tl_id!("ui-sample-all-layers-fd67756ff1544318"));
             if tool == Tool::Sharpen {
-                crate::widgets::checkbox(ui, &mut o.protect_detail, tl!("Protect Detail"));
+                crate::widgets::checkbox(ui, &mut o.protect_detail, tl_id!("ui-protect-detail-79ac280140fb90db"));
             }
             if tool == Tool::Smudge {
-                crate::widgets::checkbox(ui, &mut o.finger_painting, tl!("Finger Painting"));
+                crate::widgets::checkbox(ui, &mut o.finger_painting, tl_id!("ui-finger-painting-4cf24cf68f092daa"));
             }
         }
         Tool::HistoryBrush => opt(ui, "Paints from the document's opening state"),
         Tool::QuickSelection => {
-            crate::widgets::checkbox(ui, &mut o.sample_all_layers, tl!("Sample All Layers"));
-            crate::widgets::checkbox(ui, &mut o.enhance_edge, tl!("Enhance Edge"));
+            crate::widgets::checkbox(ui, &mut o.sample_all_layers, tl_id!("ui-sample-all-layers-fd67756ff1544318"));
+            crate::widgets::checkbox(ui, &mut o.enhance_edge, tl_id!("ui-enhance-edge-04e4bf80167f06e0"));
             opt(ui, &crate::i18n::fmt(tl!("{key} to subtract"), &[("key", &crate::shortcuts::pretty("Alt"))]));
             crate::widgets::vline(ui, 22.0);
-            if crate::widgets::secondary_button(ui, tl!("Select Subject"), 0.0).clicked() {
+            if crate::widgets::secondary_button(ui, tl_id!("ui-select-subject-1dd3504bf72b6c67"), 0.0).clicked() {
                 let _ = app.run("select.subject", json!({}));
             }
         }
         Tool::ObjectSelection => {
-            crate::widgets::checkbox(ui, &mut o.sample_all_layers, tl!("Sample All Layers"));
-            opt(ui, tl!("Drag a rectangle around the object"));
+            crate::widgets::checkbox(ui, &mut o.sample_all_layers, tl_id!("ui-sample-all-layers-fd67756ff1544318"));
+            opt(ui, tl_id!("ui-drag-a-rectangle-around-the-object-697b9c2e08d6e422"));
             crate::widgets::vline(ui, 22.0);
-            if crate::widgets::secondary_button(ui, tl!("Select Subject"), 0.0).clicked() {
+            if crate::widgets::secondary_button(ui, tl_id!("ui-select-subject-1dd3504bf72b6c67"), 0.0).clicked() {
                 let _ = app.run("select.subject", json!({}));
             }
         }

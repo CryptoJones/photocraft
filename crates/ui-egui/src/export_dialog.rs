@@ -117,9 +117,9 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
         // Left: settings.
         ui.vertical(|ui| {
             ui.set_width(220.0);
-            ui.label(egui::RichText::new(tl!("File Settings")).font(crate::theme::semibold(12.0)).color(t.text));
+            ui.label(egui::RichText::new(tl_id!("ui-file-settings-5bef965ee33cea2e")).font(crate::theme::semibold(12.0)).color(t.text));
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tl!("Format")).color(t.text_dim));
+                ui.label(egui::RichText::new(tl_id!("ui-format-1ebc977984499408")).color(t.text_dim));
                 let mut fmt = s_fmt(f);
                 let opts: Vec<(String, &str)> = FORMATS.iter().map(|(k, l)| (k.to_string(), *l)).collect();
                 if crate::widgets::dropdown(ui, "export-format", &mut fmt, &opts, 130.0) {
@@ -129,18 +129,18 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             let fmt = s_fmt(f);
             if fmt == "jpg" {
                 let mut q = n(f, "quality", 85.0) as f32;
-                crate::widgets::slider_row(ui, tl!("Quality"), &mut q, 1.0..=100.0, "%", None);
+                crate::widgets::slider_row(ui, tl_id!("ui-quality-cb47a544b364dec4"), &mut q, 1.0..=100.0, "%", None);
                 f.insert("quality".into(), json!(q.round()));
             } else {
                 let mut tr = f.get("transparency").and_then(Value::as_bool).unwrap_or(true);
-                crate::widgets::checkbox(ui, &mut tr, tl!("Transparency"));
+                crate::widgets::checkbox(ui, &mut tr, tl_id!("ui-transparency-eb207d2209c87129"));
                 f.insert("transparency".into(), json!(tr));
             }
             ui.add_space(8.0);
-            ui.label(egui::RichText::new(tl!("Image Size")).font(crate::theme::semibold(12.0)).color(t.text));
+            ui.label(egui::RichText::new(tl_id!("ui-image-size-0a84cc4d71b452c5")).font(crate::theme::semibold(12.0)).color(t.text));
             let mut sc = n(f, "scale", 100.0) as f32;
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tl!("Scale")).color(t.text_dim));
+                ui.label(egui::RichText::new(tl_id!("ui-scale-5453592a5af14dff")).color(t.text_dim));
                 crate::widgets::value_field(ui, &mut sc, 1.0..=1000.0, "%", 70.0);
             });
             f.insert("scale".into(), json!(sc.round()));

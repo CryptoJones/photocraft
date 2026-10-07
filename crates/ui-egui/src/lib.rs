@@ -14,6 +14,13 @@ macro_rules! tl {
     };
 }
 
+/// Translate a stable Fluent message id without arguments.
+macro_rules! tl_id {
+    ($id:literal) => {
+        $crate::i18n::id($crate::i18n::current(), $id)
+    };
+}
+
 pub mod actions;
 pub mod adjust_dialog;
 pub mod adjust_editors;

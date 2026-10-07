@@ -356,7 +356,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let title = ERect::from_min_size(full.min, vec2(full.width(), 30.0));
         painter.rect_filled(title, 0.0, t.dock);
         painter.line_segment([title.left_bottom(), title.right_bottom()], Stroke::new(1.0, t.separator));
-        let pct = if d.zoom > 0.0 { format!("{:.0}%", d.zoom * 100.0) } else { tl!("Fit").into() };
+        let pct = if d.zoom > 0.0 { format!("{:.0}%", d.zoom * 100.0) } else { tl_id!("ui-fit-ed694a7e452fc686").into() };
         let name = d.effects.get(d.selected).map_or("", |e| e.filter.name());
         painter.text(title.center(), Align2::CENTER_CENTER, format!("{name} ({}, {pct})", d.layer_name), FontId::proportional(13.0), t.text);
         let body = ERect::from_min_max(pos2(full.left(), title.bottom()), full.max);
@@ -383,10 +383,10 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         painter.rect_filled(zoom_bar, 0.0, t.dock);
         let mut zb = ui.new_child(egui::UiBuilder::new().max_rect(zoom_bar.shrink2(vec2(10.0, 3.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
         let steps = [0.0f32, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0];
-        if crate::icons::button(&mut zb, "minus", 22.0, false, tl!("Zoom out")).clicked() {
+        if crate::icons::button(&mut zb, "minus", 22.0, false, tl_id!("ui-zoom-out-cc64f05e5e298084")).clicked() {
             d.zoom = steps.iter().rev().copied().find(|&s| s > 0.0 && s < d.zoom.max(0.0) - 1e-3).unwrap_or(0.0);
         }
-        if crate::icons::button(&mut zb, "plus", 22.0, false, tl!("Zoom in")).clicked() {
+        if crate::icons::button(&mut zb, "plus", 22.0, false, tl_id!("ui-zoom-in-eefb1cbd2084c65f")).clicked() {
             d.zoom = steps.iter().copied().find(|&s| s > d.zoom + 1e-3).unwrap_or(4.0);
         }
         let mut z = d.zoom;
@@ -457,10 +457,10 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let mut ru = ui.new_child(egui::UiBuilder::new().max_rect(inner));
         ru.spacing_mut().item_spacing.y = 6.0;
         ru.horizontal(|ui| {
-            if widgets::primary_button(ui, tl!("OK"), 120.0).clicked() {
+            if widgets::primary_button(ui, tl_id!("ui-ok-d840e3186b2b9581"), 120.0).clicked() {
                 action = Some("ok");
             }
-            if widgets::secondary_button(ui, tl!("Cancel"), 120.0).clicked() {
+            if widgets::secondary_button(ui, tl_id!("ui-cancel-f09e4b5c35aa14b9"), 120.0).clicked() {
                 action = Some("cancel");
             }
         });
@@ -509,7 +509,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                         let neon = photocraft_algo::GalleryEffect::new(GalleryFilter::NeonGlow).color;
                         let mut rgb = c.map_or([neon[0], neon[1], neon[2]], |v| [v[0], v[1], v[2]]);
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(tl!("Glow Color")).color(t.text_dim));
+                            ui.label(egui::RichText::new(tl_id!("ui-glow-color-772e4e38cbf4d5a1")).color(t.text_dim));
                             ui.color_edit_button_rgb(&mut rgb);
                         });
                         e.params.insert("glowColor".into(), json!([rgb[0], rgb[1], rgb[2], 1.0]));
@@ -518,7 +518,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 }
             }
             if e.filter.uses_colours() {
-                ui.label(egui::RichText::new(tl!("Uses the foreground and background colours.")).color(t.text_faint).size(11.0));
+                ui.label(egui::RichText::new(tl_id!("ui-uses-the-foreground-and-background-colou-0293c569938dd825")).color(t.text_faint).size(11.0));
             }
         });
         // Effect layers (top of the list = applied last).
@@ -556,19 +556,19 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             }
         });
         lu.horizontal(|ui| {
-            if crate::icons::button(ui, "chevron-up", 24.0, false, tl!("Move effect layer up")).clicked() {
+            if crate::icons::button(ui, "chevron-up", 24.0, false, tl_id!("ui-move-effect-layer-up-cfd1d9fbe7ccf3d7")).clicked() {
                 let s = d.selected;
                 d.move_to(s, (s + 1).min(d.effects.len() - 1));
             }
-            if crate::icons::button(ui, "chevron-down", 24.0, false, tl!("Move effect layer down")).clicked() {
+            if crate::icons::button(ui, "chevron-down", 24.0, false, tl_id!("ui-move-effect-layer-down-535b52fa05db4392")).clicked() {
                 let s = d.selected;
                 d.move_to(s, s.saturating_sub(1));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if crate::icons::button(ui, "trash", 24.0, false, tl!("Delete effect layer")).clicked() {
+                if crate::icons::button(ui, "trash", 24.0, false, tl_id!("ui-delete-effect-layer-de823016e551d4c8")).clicked() {
                     d.delete();
                 }
-                if crate::icons::button(ui, "file-plus", 24.0, false, tl!("New effect layer")).clicked() {
+                if crate::icons::button(ui, "file-plus", 24.0, false, tl_id!("ui-new-effect-layer-73b4e2246b94c621")).clicked() {
                     d.add();
                 }
             });

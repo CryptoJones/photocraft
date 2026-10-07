@@ -164,6 +164,12 @@ fn get_s(f: &Map<String, Value>, k: &str, d: &str) -> String {
     f.get(k).and_then(Value::as_str).unwrap_or(d).to_string()
 }
 
+/// Show the localised default name without changing the value sent to `file.new` unless the
+/// user edits the field. Existing automation and document naming keep their English default.
+fn display_document_name(name: &str) -> String {
+    if name == "Untitled-1" { tl_id!("ui-untitled-1-97df4df5570d0580").to_string() } else { name.to_string() }
+}
+
 fn small_label(ui: &mut egui::Ui, s: &str) {
     let t = Tokens::get(ui.ctx());
     ui.label(RichText::new(s).size(11.5).color(t.text_dim));
@@ -251,16 +257,16 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
         // Right: Preset Details.
         ui.vertical(|ui| {
             ui.set_width(260.0);
-            ui.label(RichText::new(tl!("PRESET DETAILS")).size(11.0).color(t.text_faint));
+            ui.label(RichText::new(tl_id!("ui-preset-details-fe13485ede717ede")).size(11.0).color(t.text_faint));
             ui.add_space(4.0);
-            let mut name = get_s(f, "name", tl!("Untitled-1"));
+            let mut name = display_document_name(&get_s(f, "name", "Untitled-1"));
             if ui.add(egui::TextEdit::singleline(&mut name).desired_width(250.0).font(egui::FontId::proportional(15.0))).changed() {
                 f.insert("name".into(), json!(name));
             }
             ui.add_space(8.0);
             let ppi = get_f(f, "resolution", 72.0);
             let mut unit = get_s(f, "__unit", "px");
-            small_label(ui, tl!("Width"));
+            small_label(ui, tl_id!("ui-width-8a3f14717826d8d1"));
             ui.horizontal(|ui| {
                 let mut w = to_unit(get_f(f, "width", 1920.0), &unit, ppi);
                 if widgets::value_field(ui, &mut w, 0.01..=300_000.0, "", 110.0).changed() {
@@ -274,7 +280,7 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                     f.insert("__unit".into(), json!(unit));
                 }
             });
-            small_label(ui, tl!("Height"));
+            small_label(ui, tl_id!("ui-height-82338e1bfdd91f20"));
             ui.horizontal(|ui| {
                 let mut h = to_unit(get_f(f, "height", 1080.0), &unit, ppi);
                 if widgets::value_field(ui, &mut h, 0.01..=300_000.0, "", 110.0).changed() {
@@ -283,7 +289,7 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                     f.insert("__aspect".into(), json!("custom"));
                 }
                 ui.add_space(6.0);
-                small_label(ui, tl!("Orientation"));
+                small_label(ui, tl_id!("ui-orientation-e96167209fb98b23"));
                 let (w, h) = (get_f(f, "width", 1920.0), get_f(f, "height", 1080.0));
                 for (icon, portrait) in [("rectangle-vertical", true), ("rectangle-horizontal", false)] {
                     if icons::button(ui, icon, 24.0, (h > w) == portrait, if portrait { "Portrait" } else { "Landscape" }).clicked() && (h > w) != portrait {
@@ -295,15 +301,17 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                 }
             });
             ui.add_space(4.0);
-            small_label(ui, tl!("Aspect Ratio"));
+            small_label(ui, tl_id!("ui-aspect-ratio-232a5ce014982758"));
             let mut aspect = get_s(f, "__aspect", "custom");
-            let ratios: Vec<(String, &str)> =
-                ASPECT_RATIOS.iter().map(|(key, label, _, _)| (key.to_string(), if *key == "custom" { tl!("Custom") } else { *label })).collect();
+            let ratios: Vec<(String, &str)> = ASPECT_RATIOS
+                .iter()
+                .map(|(key, label, _, _)| (key.to_string(), if *key == "custom" { tl_id!("ui-custom-1a236fdd7e5ff32c") } else { *label }))
+                .collect();
             if widgets::dropdown(ui, "nd-aspect", &mut aspect, &ratios, 240.0) {
                 set_aspect_ratio(f, &aspect);
             }
             ui.add_space(4.0);
-            small_label(ui, tl!("Resolution"));
+            small_label(ui, tl_id!("ui-resolution-4ce3c6592b7c1bcd"));
             ui.horizontal(|ui| {
                 let per_cm = get_s(f, "__resUnit", "in") == "cm";
                 let mut r = if per_cm { ppi / 2.54 } else { ppi };
@@ -311,8 +319,13 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                     set_resolution(f, if per_cm { r * 2.54 } else { r });
                 }
                 let mut ru = get_s(f, "__resUnit", "in");
-                if widgets::dropdown(ui, "nd-resunit", &mut ru, &[("in".to_string(), tl!("Pixels/Inch")), ("cm".to_string(), tl!("Pixels/Centimeter"))], 120.0)
-                {
+                if widgets::dropdown(
+                    ui,
+                    "nd-resunit",
+                    &mut ru,
+                    &[("in".to_string(), tl_id!("ui-pixels-inch-ac461b795c6d03ff")), ("cm".to_string(), tl_id!("ui-pixels-centimeter-0b7e839bb1c12129"))],
+                    120.0,
+                ) {
                     f.insert("__resUnit".into(), json!(ru));
                 }
             });
@@ -322,14 +335,14 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                 ui,
                 "nd-common-ppi",
                 &mut ppi_choice,
-                &[(0, tl!("Custom")), (72, "72 PPI"), (96, "96 PPI"), (150, "150 PPI"), (300, "300 PPI"), (600, "600 PPI")],
+                &[(0, tl_id!("ui-custom-1a236fdd7e5ff32c")), (72, "72 PPI"), (96, "96 PPI"), (150, "150 PPI"), (300, "300 PPI"), (600, "600 PPI")],
                 240.0,
             ) && ppi_choice > 0
             {
                 set_resolution(f, ppi_choice as f32);
             }
             ui.add_space(4.0);
-            small_label(ui, tl!("Color Mode"));
+            small_label(ui, tl_id!("ui-color-mode-2e64700b23e29151"));
             ui.horizontal(|ui| {
                 let mut mode = get_s(f, "mode", "rgb");
                 if widgets::dropdown(
@@ -337,10 +350,10 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                     "nd-mode",
                     &mut mode,
                     &[
-                        ("gray".to_string(), tl!("Grayscale")),
-                        ("rgb".to_string(), tl!("RGB Color")),
-                        ("cmyk".to_string(), tl!("CMYK Color")),
-                        ("lab".to_string(), tl!("Lab Color")),
+                        ("gray".to_string(), tl_id!("ui-grayscale-de3ea92f97efbda6")),
+                        ("rgb".to_string(), tl_id!("ui-rgb-color-5cff99abbb0e1e75")),
+                        ("cmyk".to_string(), tl_id!("ui-cmyk-color-6474848b58934068")),
+                        ("lab".to_string(), tl_id!("ui-lab-color-b643e9a33eb1e45d")),
                     ],
                     110.0,
                 ) {
@@ -352,13 +365,13 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                 }
             });
             ui.add_space(4.0);
-            small_label(ui, tl!("Background Contents"));
+            small_label(ui, tl_id!("ui-background-contents-2aed1964d46cc287"));
             let mut bg = get_s(f, "background", "white");
             let opts = [
-                ("white".to_string(), tl!("White")),
-                ("black".to_string(), tl!("Black")),
-                ("backgroundColor".to_string(), tl!("Background Color")),
-                ("transparent".to_string(), tl!("Transparent")),
+                ("white".to_string(), tl_id!("ui-white-bed13266c4c1f028")),
+                ("black".to_string(), tl_id!("ui-black-49e5cb1e3f075426")),
+                ("backgroundColor".to_string(), tl_id!("ui-background-color-49e94602b77fb64c")),
+                ("transparent".to_string(), tl_id!("ui-transparent-a757aaf321914e7b")),
             ];
             if widgets::dropdown(ui, "nd-bg", &mut bg, &opts, 240.0) {
                 f.insert("background".into(), json!(bg));
@@ -377,6 +390,16 @@ mod tests {
         assert_eq!(from_unit(7.0, "in", 300.0), 2100.0);
         assert_eq!(from_unit(2.54, "cm", 300.0), 300.0);
         assert_eq!(to_unit(640.0, "px", 72.0), 640.0);
+    }
+
+    #[test]
+    fn default_name_is_localised_only_for_display() {
+        crate::i18n::set_current(crate::i18n::Lang::from_code("zh-hans").expect("zh-hans registered"));
+        let f = crate::state::UiState::new_document_fields();
+        assert_eq!(display_document_name(f.get("name").and_then(Value::as_str).unwrap_or("")), "未标题-1");
+        assert_eq!(command_params(&f)["name"], "Untitled-1", "the engine default stays stable");
+        assert_eq!(display_document_name("My Photo"), "My Photo", "custom names are user data");
+        crate::i18n::set_current(crate::i18n::Lang::EN);
     }
 
     #[test]

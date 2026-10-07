@@ -99,7 +99,7 @@ pub fn properties(app: &mut PhotocraftApp, ui: &mut egui::Ui, layer: &Layer) {
     let mut run: Vec<(String, Value)> = Vec::new();
     if let Some(s) = layer.surface() {
         let b = app.cached_bounds(layer.id.0, s);
-        if section(ui, "transform", tl!("Transform")) {
+        if section(ui, "transform", tl_id!("ui-transform-88aea4357cbf84a1")) {
             let link_key = egui::Id::new("layer-props-link");
             let linked = ui.data(|d| d.get_temp::<bool>(link_key)).unwrap_or(true);
             let bb = [b.x0, b.y0, b.x1, b.y1];
@@ -110,7 +110,9 @@ pub fn properties(app: &mut PhotocraftApp, ui: &mut egui::Ui, layer: &Layer) {
                 if let Some(v) = field(ui, "w", "W", b.width() as f32, w) {
                     run.extend(transform_params(layer.id.0, bb, Some(v), None, linked).map(|p| ("edit.transform".to_string(), p)));
                 }
-                if crate::icons::button(ui, if linked { "link" } else { "unlink" }, LINK_W, linked, tl!("Link width and height")).clicked() {
+                if crate::icons::button(ui, if linked { "link" } else { "unlink" }, LINK_W, linked, tl_id!("ui-link-width-and-height-4f6db69f8fed488d"))
+                    .clicked()
+                {
                     ui.data_mut(|d| d.insert_temp(link_key, !linked));
                 }
                 if let Some(v) = field(ui, "h", "H", b.height() as f32, w) {
@@ -135,7 +137,7 @@ pub fn properties(app: &mut PhotocraftApp, ui: &mut egui::Ui, layer: &Layer) {
     if matches!(layer.content, LayerContent::Fill(photocraft_doc::Fill::Gradient { .. })) {
         crate::gradient_ui::properties(app, ui, layer);
     }
-    if section(ui, "align", tl!("Align and Distribute")) {
+    if section(ui, "align", tl_id!("ui-align-and-distribute-6eded25cb149c77c")) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             for (i, kind) in ["leftEdges", "horizontalCenters", "rightEdges", "topEdges", "verticalCenters", "bottomEdges"].into_iter().enumerate() {

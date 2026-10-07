@@ -362,16 +362,16 @@ pub fn shortcut_text(key: egui::Key, m: egui::Modifiers) -> Option<String> {
     }
     let mut parts = Vec::new();
     if m.command || m.mac_cmd {
-        parts.push(tl!("Cmd").to_string());
+        parts.push(tl_id!("ui-cmd-0a21e77e563ab64d").to_string());
     }
     if m.ctrl && !m.command {
-        parts.push(tl!("Ctrl").into());
+        parts.push(tl_id!("ui-ctrl-991b9dac0a8b588e").into());
     }
     if m.alt {
-        parts.push(tl!("Alt").into());
+        parts.push(tl_id!("ui-alt-18c9177e5dc52d62").into());
     }
     if m.shift {
-        parts.push(tl!("Shift").into());
+        parts.push(tl_id!("ui-shift-cc9fb6543c9236b5").into());
     }
     let name = match key {
         egui::Key::Equals => "=",
@@ -573,7 +573,7 @@ pub fn open_shortcuts(app: &mut PhotocraftApp, tab: u64) -> u64 {
         "capture": false,
         "message": "",
     });
-    open_kind(app, "shortcuts", tl!("Keyboard Shortcuts and Menus"), fields)
+    open_kind(app, "shortcuts", tl_id!("ui-keyboard-shortcuts-and-menus-dcc10360cc30a6b4"), fields)
 }
 
 /// Open the Embedded Profile Mismatch prompt for the active document.
@@ -595,7 +595,7 @@ pub fn open_mismatch(app: &mut PhotocraftApp, report: &Value) -> u64 {
     open_kind(
         app,
         "mismatch",
-        tl!("Embedded Profile Mismatch"),
+        tl_id!("ui-embedded-profile-mismatch-4db32743c6add27c"),
         json!({"message": msg, "action": action, "applied": action, "missing": report.get("missing").is_some()}),
     )
 }
@@ -703,7 +703,7 @@ fn prefs_body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                     f.get("__order").and_then(|o| o.get(&section)).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
                 if !has_visible_fields(&values, &section) {
                     ui.add_space(4.0);
-                    ui.label(RichText::new(tl!("These settings aren't available in PhotoCraft yet.")).color(t.text_faint));
+                    ui.label(RichText::new(tl_id!("ui-these-settings-aren-t-available-in-photo-62584644c52c9f5a")).color(t.text_faint));
                 } else if let Some(obj) = values.get_mut(&section).and_then(Value::as_object_mut) {
                     section_fields(ui, &section, obj, &order, lang);
                     if section == "performance" {
@@ -712,7 +712,7 @@ fn prefs_body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                     ui.add_space(8.0);
                 }
                 if has_visible_fields(&values, &section)
-                    && crate::widgets::secondary_button(ui, tl!("Reset Section"), 110.0).clicked()
+                    && crate::widgets::secondary_button(ui, tl_id!("ui-reset-section-1555592178eaa045"), 110.0).clicked()
                     && let Some(def) = prefs::Preferences::default().get(&section)
                 {
                     values[&section] = def;
@@ -729,17 +729,17 @@ fn prefs_body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
 fn gpu_status_rows(ui: &mut egui::Ui, info: Option<&Value>, obj: &mut Map<String, Value>) {
     let t = Tokens::get(ui.ctx());
     ui.add_space(10.0);
-    ui.label(RichText::new(tl!("Graphics")).font(crate::theme::semibold(12.5)).color(t.text));
+    ui.label(RichText::new(tl_id!("ui-graphics-80dc330668f4642a")).font(crate::theme::semibold(12.5)).color(t.text));
     for line in info.and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
         ui.label(RichText::new(line).color(t.text_dim));
     }
     let auto = obj.get("gpuBackend").and_then(Value::as_str) == Some("auto");
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        if ui.add_enabled(!auto, egui::Button::new(tl!("Reset GPU Backend"))).clicked() {
+        if ui.add_enabled(!auto, egui::Button::new(tl_id!("ui-reset-gpu-backend-c242574510e63df8"))).clicked() {
             obj.insert("gpuBackend".into(), json!("auto"));
         }
-        ui.label(RichText::new(tl!("Applies at next launch.")).color(t.text_faint));
+        ui.label(RichText::new(tl_id!("ui-applies-at-next-launch-d3533a97eceb1f8c")).color(t.text_faint));
     });
 }
 
@@ -820,7 +820,7 @@ fn section_fields(ui: &mut egui::Ui, section: &str, obj: &mut Map<String, Value>
                     }
                 }
                 Value::Array(items) if k == "disks" => {
-                    ui.label(RichText::new(tl!("Scratch disks")).color(t.text_dim));
+                    ui.label(RichText::new(tl_id!("ui-scratch-disks-7e9e89e4a230fe21")).color(t.text_dim));
                     let mut items = items.clone();
                     ui.vertical(|ui| {
                         for d in &mut items {
@@ -832,7 +832,7 @@ fn section_fields(ui: &mut egui::Ui, section: &str, obj: &mut Map<String, Value>
                                 *d = json!({"enabled": on, "path": path});
                             });
                         }
-                        if ui.small_button(tl!("Add disk")).clicked() {
+                        if ui.small_button(tl_id!("ui-add-disk-49c2a85823729ddb")).clicked() {
                             items.push(json!({"enabled": true, "path": ""}));
                         }
                     });
@@ -841,7 +841,7 @@ fn section_fields(ui: &mut egui::Ui, section: &str, obj: &mut Map<String, Value>
                 Value::Array(items) => {
                     ui.label(RichText::new(tl!(&label)).color(t.text_dim));
                     ui.label(RichText::new(crate::i18n::trn(lang, items.len() as u64, "{n} item", "{n} items")).color(t.text_faint));
-                    if !items.is_empty() && ui.small_button(tl!("Clear")).clicked() {
+                    if !items.is_empty() && ui.small_button(tl_id!("ui-clear-f10f4b1b4d6dc250")).clicked() {
                         obj.insert(k, json!([]));
                     }
                 }
@@ -858,7 +858,9 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
     let t = Tokens::get(ui.ctx());
     let mut tab = f.get("tab").and_then(Value::as_u64).unwrap_or(0);
     ui.horizontal(|ui| {
-        for (i, name) in [tl!("Keyboard Shortcuts"), tl!("Menus"), tl!("Toolbar")].iter().enumerate() {
+        for (i, name) in
+            [tl_id!("ui-keyboard-shortcuts-146b196f5c9d2fd5"), tl_id!("ui-menus-d3594737e87b2859"), tl_id!("ui-toolbar-dafc8fbbdcafabd6")].iter().enumerate()
+        {
             if crate::widgets::pill_tab(ui, name, tab == i as u64).clicked() {
                 tab = i as u64;
                 f.insert("capture".into(), json!(false));
@@ -873,8 +875,8 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
     }
     let mut filter = f.get("filter").and_then(Value::as_str).unwrap_or("").to_string();
     ui.horizontal(|ui| {
-        ui.label(RichText::new(tl!("Search")).color(t.text_dim));
-        ui.add(egui::TextEdit::singleline(&mut filter).desired_width(260.0).hint_text(tl!("command or shortcut")));
+        ui.label(RichText::new(tl_id!("ui-search-b9de9d249705516f")).color(t.text_dim));
+        ui.add(egui::TextEdit::singleline(&mut filter).desired_width(260.0).hint_text(tl_id!("ui-command-or-shortcut-fcc08c926901cc39")));
     });
     f.insert("filter".into(), json!(filter));
     let mut overrides: BTreeMap<String, String> = f.get("overrides").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
@@ -908,7 +910,7 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
             } else if matches!(key, egui::Key::Backspace | egui::Key::Delete) && m.is_none() {
                 overrides.insert(selected.clone(), String::new());
                 capture = false;
-                message = tl!("Shortcut removed.").into();
+                message = tl_id!("ui-shortcut-removed-a5b3eba0b2a2a6f9").into();
             } else if let Some(sc) = shortcut_text(key, m) {
                 let clash: Vec<String> = items
                     .iter()
@@ -938,7 +940,7 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
                 if tab == 0 && path.is_empty() && def.is_none() && cur.is_none() {
                     continue;
                 }
-                let top = path.first().cloned().unwrap_or_else(|| tl!("Other").into());
+                let top = path.first().cloned().unwrap_or_else(|| tl_id!("ui-other-66741785e8efeb5b").into());
                 if top != last_top {
                     ui.label(RichText::new(&top).font(crate::theme::semibold(12.5)).color(t.text));
                     ui.label("");
@@ -952,7 +954,11 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
                     selected = id.clone();
                 }
                 if tab == 0 {
-                    let text = if sel && capture { tl!("Press keys…").to_string() } else { cur.as_deref().map(crate::shortcuts::pretty).unwrap_or_default() };
+                    let text = if sel && capture {
+                        tl_id!("ui-press-keys-b9ced9dc70c76c1e").to_string()
+                    } else {
+                        cur.as_deref().map(crate::shortcuts::pretty).unwrap_or_default()
+                    };
                     let changed = overrides.contains_key(id);
                     let r = ui.add(
                         egui::Button::new(RichText::new(tl!(&text)).size(12.0).color(if changed { t.accent_text } else { t.text })).min_size(vec2(120.0, 18.0)),
@@ -962,10 +968,10 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
                         capture = true;
                         message.clear();
                     }
-                    ui.label(if changed { RichText::new(tl!("modified")).color(t.text_faint).size(10.5) } else { RichText::new("") });
+                    ui.label(if changed { RichText::new(tl_id!("ui-modified-63f55ef89a7bfa7c")).color(t.text_faint).size(10.5) } else { RichText::new("") });
                 } else {
                     let mut visible = !hidden.contains(id);
-                    crate::widgets::checkbox(ui, &mut visible, tl!("Visible"));
+                    crate::widgets::checkbox(ui, &mut visible, tl_id!("ui-visible-6c7c9b94e39ddda3"));
                     if visible {
                         hidden.retain(|h| h != id);
                     } else if !hidden.contains(id) {
@@ -989,20 +995,20 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
     if tab == 0 {
         ui.horizontal(|ui| {
             let has_sel = !selected.is_empty();
-            if ui.add_enabled(has_sel, egui::Button::new(tl!("Use Default"))).clicked() {
+            if ui.add_enabled(has_sel, egui::Button::new(tl_id!("ui-use-default-2576facc5f89bb0f"))).clicked() {
                 overrides.remove(&selected);
-                message = tl!("Default restored.").into();
+                message = tl_id!("ui-default-restored-5dba279bbf11e35c").into();
             }
-            if ui.add_enabled(has_sel, egui::Button::new(tl!("Delete Shortcut"))).clicked() {
+            if ui.add_enabled(has_sel, egui::Button::new(tl_id!("ui-delete-shortcut-442a6d5adb064c76"))).clicked() {
                 overrides.insert(selected.clone(), String::new());
-                message = tl!("Shortcut removed.").into();
+                message = tl_id!("ui-shortcut-removed-a5b3eba0b2a2a6f9").into();
             }
-            if ui.button(tl!("Reset All to Defaults")).clicked() {
+            if ui.button(tl_id!("ui-reset-all-to-defaults-2110599c03774b8c")).clicked() {
                 overrides.clear();
-                message = tl!("All shortcuts reset to Photoshop defaults.").into();
+                message = tl_id!("ui-all-shortcuts-reset-to-photoshop-default-a3203301431072bf").into();
             }
         });
-    } else if ui.button(tl!("Show All Menu Items")).clicked() {
+    } else if ui.button(tl_id!("ui-show-all-menu-items-64708651eb731914")).clicked() {
         hidden.clear();
         colors.clear();
     }
@@ -1036,7 +1042,7 @@ fn toolbar_tab(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
             }
         });
     });
-    if ui.button(tl!("Restore Defaults")).clicked() {
+    if ui.button(tl_id!("ui-restore-defaults-95ae0f5224baf9f7")).clicked() {
         hidden.clear();
     }
     f.insert("toolbarHidden".into(), json!(hidden));
@@ -1046,8 +1052,12 @@ fn presets_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, 
     let t = Tokens::get(ui.ctx());
     let mut kind = f.get("kind").and_then(Value::as_str).unwrap_or("brushes").to_string();
     ui.horizontal(|ui| {
-        ui.label(RichText::new(tl!("Preset Type")).color(t.text_dim));
-        let opts = [("brushes".to_string(), tl!("Brushes")), ("customShapes".to_string(), tl!("Custom Shapes")), ("patterns".to_string(), tl!("Patterns"))];
+        ui.label(RichText::new(tl_id!("ui-preset-type-32c84557b4de0f10")).color(t.text_dim));
+        let opts = [
+            ("brushes".to_string(), tl_id!("ui-brushes-4f3c0629bfac6281")),
+            ("customShapes".to_string(), tl_id!("ui-custom-shapes-fa4c5ff9762b42be")),
+            ("patterns".to_string(), tl_id!("ui-patterns-1d6dc3afda393884")),
+        ];
         crate::widgets::dropdown(ui, "preset-kind", &mut kind, &opts, 180.0);
     });
     let list = app
@@ -1066,20 +1076,22 @@ fn presets_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, 
             }
         }
         if list.is_empty() {
-            ui.label(RichText::new(tl!("No presets of this type.")).color(t.text_faint));
+            ui.label(RichText::new(tl_id!("ui-no-presets-of-this-type-e63b6fe12705a975")).color(t.text_faint));
         }
     });
     let mut new_name = f.get("newName").and_then(Value::as_str).unwrap_or("").to_string();
     ui.horizontal(|ui| {
         ui.add(egui::TextEdit::singleline(&mut new_name).desired_width(200.0));
-        if ui.add_enabled(selected < list.len() && !new_name.trim().is_empty(), egui::Button::new(tl!("Rename"))).clicked() {
+        if ui.add_enabled(selected < list.len() && !new_name.trim().is_empty(), egui::Button::new(tl_id!("ui-rename-d7b51cfc5837e755"))).clicked() {
             let _ = app.run("edit.presets.presetManager", json!({"action": "rename", "kind": kind, "index": selected, "newName": new_name}));
         }
-        if ui.add_enabled(selected < list.len(), egui::Button::new(tl!("Delete"))).clicked() {
+        if ui.add_enabled(selected < list.len(), egui::Button::new(tl_id!("ui-delete-af3196ad6b727abc"))).clicked() {
             let _ = app.run("edit.presets.presetManager", json!({"action": "delete", "kind": kind, "index": selected}));
         }
         // Load Photoshop brushes (.abr) into the library.
-        if kind == "brushes" && ui.button(tl!("Load…")).on_hover_text(tl!("Import Photoshop brushes (.abr)")).clicked() {
+        if kind == "brushes"
+            && ui.button(tl_id!("ui-load-c094e04a17906be1")).on_hover_text(tl_id!("ui-import-photoshop-brushes-abr-f8af2cca0d2a4db2")).clicked()
+        {
             app.open_dialog_file();
         }
     });
@@ -1092,16 +1104,16 @@ fn presets_io_body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
     let t = Tokens::get(ui.ctx());
     let mut action = f.get("action").and_then(Value::as_str).unwrap_or("export").to_string();
     ui.horizontal(|ui| {
-        ui.label(RichText::new(tl!("Action")).color(t.text_dim));
+        ui.label(RichText::new(tl_id!("ui-action-9a6e97866e0a5fc5")).color(t.text_dim));
         crate::widgets::dropdown(
             ui,
             "presets-io",
             &mut action,
-            &[("export".to_string(), tl!("Export Presets")), ("import".to_string(), tl!("Import Presets"))],
+            &[("export".to_string(), tl_id!("ui-export-presets-6169cc0549331909")), ("import".to_string(), tl_id!("ui-import-presets-09d2999d476d4eb6"))],
             180.0,
         );
     });
-    for (k, label) in [("brushes", tl!("Brushes")), ("customShapes", tl!("Custom Shapes"))] {
+    for (k, label) in [("brushes", tl_id!("ui-brushes-4f3c0629bfac6281")), ("customShapes", tl_id!("ui-custom-shapes-fa4c5ff9762b42be"))] {
         let mut on = f.get(k).and_then(Value::as_bool).unwrap_or(true);
         crate::widgets::checkbox(ui, &mut on, label);
         f.insert(k.into(), json!(on));
@@ -1116,12 +1128,12 @@ fn mismatch_body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
     let mut action = f.get("action").and_then(Value::as_str).unwrap_or("preserve").to_string();
     let missing = f.get("missing").and_then(Value::as_bool).unwrap_or(false);
     let opts: &[(&str, &str)] = if missing {
-        &[("preserve", tl!("Leave as is (don't color manage)")), ("assignWorking", tl!("Assign working space"))]
+        &[("preserve", tl_id!("ui-leave-as-is-don-t-color-manage-494de7dd19a75985")), ("assignWorking", tl_id!("ui-assign-working-space-802072ca534b688f"))]
     } else {
         &[
-            ("preserve", tl!("Use the embedded profile (instead of the working space)")),
-            ("convert", tl!("Convert document's colors to the working space")),
-            ("discard", tl!("Discard the embedded profile (don't color manage)")),
+            ("preserve", tl_id!("ui-use-the-embedded-profile-instead-of-the-w-b02d078da80fffa8")),
+            ("convert", tl_id!("ui-convert-document-s-colors-to-the-working-24e27318813840de")),
+            ("discard", tl_id!("ui-discard-the-embedded-profile-don-t-color-a56145704ff2595e")),
         ]
     };
     for (v, label) in opts {

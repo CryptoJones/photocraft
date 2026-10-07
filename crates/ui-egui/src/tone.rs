@@ -223,7 +223,7 @@ fn channel_picker(ui: &mut egui::Ui, id: egui::Id, label: &str) -> usize {
 pub fn histogram_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else {
-        ui.label(egui::RichText::new(tl!("No document")).color(t.text_faint));
+        ui.label(egui::RichText::new(tl_id!("ui-no-document-6ab533559b7cf7fd")).color(t.text_faint));
         return;
     };
     let (doc_id, rev) = (st.doc.id, st.revision);
@@ -275,11 +275,11 @@ pub fn histogram_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.add_space(4.0);
     egui::Grid::new("hist-stats").num_columns(2).spacing(vec2(12.0, 2.0)).show(ui, |ui| {
         for (k, v) in [
-            (tl!("Mean:"), format!("{mean:.2}")),
-            (tl!("Std Dev:"), format!("{:.2}", var.sqrt())),
-            (tl!("Median:"), median.unwrap_or(0).to_string()),
-            (tl!("Pixels:"), (size.width as u64 * size.height as u64).to_string()),
-            (tl!("Cache Level:"), level.to_string()),
+            (tl_id!("ui-mean-de633737ef683828"), format!("{mean:.2}")),
+            (tl_id!("ui-std-dev-f5ff3db502261233"), format!("{:.2}", var.sqrt())),
+            (tl_id!("ui-median-8a4a432f80729ec5"), median.unwrap_or(0).to_string()),
+            (tl_id!("ui-pixels-a74233070118a648"), (size.width as u64 * size.height as u64).to_string()),
+            (tl_id!("ui-cache-level-b5a2c6cca5aafb01"), level.to_string()),
         ] {
             ui.label(egui::RichText::new(k).color(t.text_dim).size(11.5));
             ui.label(egui::RichText::new(v).font(crate::theme::mono(11.5)).color(t.text));

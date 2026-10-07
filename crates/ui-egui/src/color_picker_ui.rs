@@ -222,7 +222,7 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
         ui.add_space(14.0);
         ui.vertical(|ui| {
             // new / current swatches.
-            ui.label(egui::RichText::new(tl!("new")).size(11.0).color(t.text_dim));
+            ui.label(egui::RichText::new(tl_id!("ui-new-be4f217ebbcb229f")).size(11.0).color(t.text_dim));
             let (sw, _) = ui.allocate_exact_size(vec2(64.0, 72.0), Sense::hover());
             let orig = f.get("__orig").and_then(Value::as_str).and_then(parse_hex).unwrap_or(rgb);
             ui.painter().rect_filled(Rect::from_min_size(sw.min, vec2(64.0, 36.0)), 0.0, c32(rgb));
@@ -230,13 +230,13 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
             ui.painter().rect_filled(cur, 0.0, c32(orig));
             ui.painter().rect_stroke(sw, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
             let click_cur = ui.interact(cur, ui.id().with("cp-current"), Sense::click());
-            if click_cur.on_hover_text(tl!("Click to restore the current colour")).clicked() {
+            if click_cur.on_hover_text(tl_id!("ui-click-to-restore-the-current-colour-a3089de9e10e7d4e")).clicked() {
                 set_rgb(f, orig, None);
             }
-            ui.label(egui::RichText::new(tl!("current")).size(11.0).color(t.text_dim));
+            ui.label(egui::RichText::new(tl_id!("ui-current-3a9c9b05372393f0")).size(11.0).color(t.text_dim));
             ui.add_space(10.0);
             let mut web = f.get("__webOnly").and_then(Value::as_bool).unwrap_or(false);
-            if widgets::checkbox(ui, &mut web, tl!("Only Web Colors")).changed() {
+            if widgets::checkbox(ui, &mut web, tl_id!("ui-only-web-colors-db01f2d578449625")).changed() {
                 f.insert("__webOnly".into(), json!(web));
                 set_rgb(f, rgb, None);
             }

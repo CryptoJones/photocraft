@@ -352,10 +352,11 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
         // Left: effect list.
         ui.vertical(|ui| {
             ui.set_width(190.0);
-            ui.label(RichText::new(tl!("Styles")).color(t.text_faint));
+            ui.label(RichText::new(tl_id!("ui-styles-86fe8972a2bb4389")).color(t.text_faint));
             // Blending Options page (layer blend mode, opacity and fill opacity).
             let bo = ui.add(
-                egui::Label::new(RichText::new(tl!("Blending Options")).color(if selected == BLENDING { t.text } else { t.text_dim })).sense(Sense::click()),
+                egui::Label::new(RichText::new(tl_id!("ui-blending-options-598a933392b032a0")).color(if selected == BLENDING { t.text } else { t.text_dim }))
+                    .sense(Sense::click()),
             );
             if bo.clicked() {
                 f.insert("selected".into(), json!(BLENDING));

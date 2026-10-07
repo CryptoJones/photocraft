@@ -23,19 +23,19 @@ pub fn add_mask_command(has_selection: bool, alt: bool) -> &'static str {
 pub fn entries(l: &Layer, multi: bool, has_selection: bool) -> Vec<Entry> {
     let mut v: Vec<Entry> = vec![Some((tl!("Blending Options…"), "layer.layerStyle.blendingOptions"))];
     v.push(None);
-    v.push(Some((if multi { tl!("Duplicate Layers…") } else { tl!("Duplicate Layer…") }, "layer.duplicate")));
-    v.push(Some((if multi { tl!("Delete Layers") } else { tl!("Delete Layer") }, "layer.delete")));
+    v.push(Some((if multi { tl_id!("ui-duplicate-layers-5a7a27c703148b52") } else { tl_id!("ui-duplicate-layer-14af5c3fa0d3f69b") }, "layer.duplicate")));
+    v.push(Some((if multi { tl_id!("ui-delete-layers-c8252a79bc1e0b16") } else { tl_id!("ui-delete-layer-58b835e7900721e1") }, "layer.delete")));
     if !multi {
-        v.push(Some((tl!("Group from Layers…"), "layer.groupLayers")));
+        v.push(Some((tl_id!("ui-group-from-layers-09ee0a05b31f9e60"), "layer.groupLayers")));
     }
     v.push(None);
-    v.push(Some((tl!("Quick Export As PNG"), "layer.quickExportAsPng")));
-    v.push(Some((tl!("Export As…"), "layer.exportAs")));
+    v.push(Some((tl_id!("ui-quick-export-as-png-1b9ab63313d7e58b"), "layer.quickExportAsPng")));
+    v.push(Some((tl_id!("ui-export-as-e134d6c030fdf97d"), "layer.exportAs")));
     v.push(None);
-    v.push(Some((tl!("Artboard from Layers…"), "layer.new.artboardFromLayers")));
-    v.push(Some((tl!("Frame from Layers…"), "layer.new.frameFromLayers")));
+    v.push(Some((tl_id!("ui-artboard-from-layers-c8c4d5e273dc9a46"), "layer.new.artboardFromLayers")));
+    v.push(Some((tl_id!("ui-frame-from-layers-03291d8005885e2e"), "layer.new.frameFromLayers")));
     v.push(None);
-    v.push(Some((tl!("Convert to Smart Object"), "layer.smartObjects.convertToSmartObject")));
+    v.push(Some((tl_id!("ui-convert-to-smart-object-e3cae5800f8ef641"), "layer.smartObjects.convertToSmartObject")));
     match &l.content {
         LayerContent::Text(_) => v.push(Some(("Rasterize Type", "layer.rasterize.type"))),
         LayerContent::Shape(_) => v.push(Some(("Rasterize Layer", "layer.rasterize.shape"))),
@@ -45,31 +45,31 @@ pub fn entries(l: &Layer, multi: bool, has_selection: bool) -> Vec<Entry> {
     }
     v.push(None);
     if l.mask.is_some() {
-        v.push(Some((tl!("Disable Layer Mask"), "layer.layerMask.enabled")));
-        v.push(Some((tl!("Apply Layer Mask"), "layer.layerMask.apply")));
-        v.push(Some((tl!("Delete Layer Mask"), "layer.layerMask.delete")));
+        v.push(Some((tl_id!("ui-disable-layer-mask-3b0148ac5d668494"), "layer.layerMask.enabled")));
+        v.push(Some((tl_id!("ui-apply-layer-mask-f52f96ef823c3c34"), "layer.layerMask.apply")));
+        v.push(Some((tl_id!("ui-delete-layer-mask-0f007ecddce73047"), "layer.layerMask.delete")));
     } else {
-        v.push(Some((tl!("Add Layer Mask"), add_mask_command(has_selection, false))));
+        v.push(Some((tl_id!("ui-add-layer-mask-b657b676905bb6f5"), add_mask_command(has_selection, false))));
     }
     v.push(Some((
-        if l.clipped { tl!("Release Clipping Mask") } else { tl!("Create Clipping Mask") },
+        if l.clipped { tl_id!("ui-release-clipping-mask-d9511a1a14a1c766") } else { tl_id!("ui-create-clipping-mask-dab2a1401549f8a1") },
         if l.clipped { "layer.releaseClippingMask" } else { "layer.createClippingMask" },
     )));
     v.push(None);
-    v.push(Some((tl!("Link Layers"), "layer.linkLayers")));
-    v.push(Some((tl!("Select Linked Layers"), "layer.selectLinkedLayers")));
+    v.push(Some((tl_id!("ui-link-layers-9c332d93a2dd3153"), "layer.linkLayers")));
+    v.push(Some((tl_id!("ui-select-linked-layers-1372c4229a2852ea"), "layer.selectLinkedLayers")));
     v.push(None);
-    v.push(Some((tl!("Copy Layer Style"), "layer.layerStyle.copyLayerStyle")));
-    v.push(Some((tl!("Paste Layer Style"), "layer.layerStyle.pasteLayerStyle")));
-    v.push(Some((tl!("Clear Layer Style"), "layer.layerStyle.clear")));
+    v.push(Some((tl_id!("ui-copy-layer-style-e68cff0a57a03ef6"), "layer.layerStyle.copyLayerStyle")));
+    v.push(Some((tl_id!("ui-paste-layer-style-156525152f887c82"), "layer.layerStyle.pasteLayerStyle")));
+    v.push(Some((tl_id!("ui-clear-layer-style-2e46522acfabe670"), "layer.layerStyle.clear")));
     v.push(None);
     if multi {
-        v.push(Some((tl!("Merge Layers"), "layer.mergeLayers")));
+        v.push(Some((tl_id!("ui-merge-layers-5abfd499e10d5fa9"), "layer.mergeLayers")));
     } else {
-        v.push(Some((tl!("Merge Down"), "layer.mergeDown")));
+        v.push(Some((tl_id!("ui-merge-down-d6cf94561a2ce0db"), "layer.mergeDown")));
     }
-    v.push(Some((tl!("Merge Visible"), "layer.mergeVisible")));
-    v.push(Some((tl!("Flatten Image"), "layer.flattenImage")));
+    v.push(Some((tl_id!("ui-merge-visible-4c4ec6fdf576bb73"), "layer.mergeVisible")));
+    v.push(Some((tl_id!("ui-flatten-image-f50ab81b0b01d49a"), "layer.flattenImage")));
     v
 }
 
@@ -109,7 +109,7 @@ pub fn show(app: &crate::PhotocraftApp, ui: &mut egui::Ui, l: &Layer, on_set: bo
         }
     }
     ui.separator();
-    if ui.button(tl!("Rename Layer…")).clicked() {
+    if ui.button(tl_id!("ui-rename-layer-878203cf79b1de3c")).clicked() {
         rename = true;
         ui.close();
     }

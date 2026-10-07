@@ -23,7 +23,10 @@ fn default_dir(app: &PhotocraftApp) -> String {
 }
 
 fn doc_stem(app: &PhotocraftApp) -> String {
-    app.session.active().map(|d| d.doc.name.rsplit_once('.').map_or(d.doc.name.clone(), |(a, _)| a.to_string())).unwrap_or_else(|| tl!("Untitled").into())
+    app.session
+        .active()
+        .map(|d| d.doc.name.rsplit_once('.').map_or(d.doc.name.clone(), |(a, _)| a.to_string()))
+        .unwrap_or_else(|| tl_id!("ui-untitled-49657903b7b9a626").into())
 }
 
 /// A generic form dialog for `command` (rendered by `view_cmds::form_body`).
@@ -63,7 +66,7 @@ pub fn invoke(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &V
         "file.automate.contactSheetII" => form(
             app,
             id,
-            tl!("Contact Sheet II"),
+            tl_id!("ui-contact-sheet-ii-df7664d53a4420b0"),
             json!({"input": dir, "units": "inches", "width": 8.0, "height": 10.0, "resolution": 300.0, "mode": "rgb", "depth": 8, "columns": 5, "rows": 6, "placeAcrossFirst": true, "autoSpacing": true, "rotateForBestFit": false, "caption": true, "font": photocraft_text::fonts::DEFAULT_FAMILY, "fontSize": 12.0, "flatten": false}),
             json!({"units": ["inches", "cm", "pixels"], "mode": ["rgb", "gray", "cmyk", "lab"]}),
         ),
@@ -78,7 +81,7 @@ pub fn invoke(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &V
             form(
                 app,
                 id,
-                tl!("Create Droplet"),
+                tl_id!("ui-create-droplet-e92b2d5d40c22071"),
                 json!({"path": format!("{dir}/{name}.pcdroplet"), "name": name, "steps": steps, "output": format!("{dir}/droplet-output"), "format": "same"}),
                 json!({"format": ["same", "png", "jpg", "psd", "tiff"]}),
             )
@@ -141,9 +144,9 @@ pub fn dialog_width(f: &Map<String, Value>) -> Option<f32> {
 
 pub fn ok_label(f: &Map<String, Value>) -> Option<&'static str> {
     if f.contains_key("__web") {
-        Some(tl!("Save…"))
+        Some(tl_id!("ui-save-8c0b18e9eda618aa"))
     } else if f.contains_key("__print") {
-        Some(tl!("Print"))
+        Some(tl_id!("ui-print-949cb11bf15c2a06"))
     } else {
         None
     }
@@ -344,7 +347,9 @@ fn web_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
     let Some(doc) = app.session.active().map(|d| d.doc.clone()) else { return };
     ui.horizontal(|ui| {
         let mut view = s(f, "__view", "2up");
-        for (k, l) in [("original", tl!("Original")), ("optimized", tl!("Optimized")), ("2up", "2-Up"), ("4up", "4-Up")] {
+        for (k, l) in
+            [("original", tl_id!("ui-original-914c1ec56a7f7614")), ("optimized", tl_id!("ui-optimized-3d9f3c714736fc8c")), ("2up", "2-Up"), ("4up", "4-Up")]
+        {
             if ui.selectable_label(view == k, tl!(&l)).clicked() {
                 view = k.into();
             }
@@ -386,7 +391,7 @@ fn web_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
         // Settings.
         ui.vertical(|ui| {
             ui.set_width(250.0);
-            ui.label(egui::RichText::new(tl!("Preset")).color(t.text_dim));
+            ui.label(egui::RichText::new(tl_id!("ui-preset-8682ad9e3f8afd88")).color(t.text_dim));
             let mut preset = s(f, "__preset", "");
             let mut opts: Vec<(String, &str)> = vec![("".into(), "[Unnamed]")];
             opts.extend(web_cmds::PRESETS.iter().map(|p| (p.to_string(), *p)));
@@ -408,33 +413,38 @@ fn web_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                         f,
                         "palette",
                         &[
-                            ("perceptual", tl!("Perceptual")),
-                            ("selective", tl!("Selective")),
-                            ("adaptive", tl!("Adaptive")),
-                            ("restrictive", tl!("Restrictive (Web)")),
-                            ("exact", tl!("Exact")),
+                            ("perceptual", tl_id!("ui-perceptual-604774d02dd759c0")),
+                            ("selective", tl_id!("ui-selective-895f78d8a6086d4b")),
+                            ("adaptive", tl_id!("ui-adaptive-4a328293e1b0dbd9")),
+                            ("restrictive", tl_id!("ui-restrictive-web-40bf9cb3013caff6")),
+                            ("exact", tl_id!("ui-exact-895c90d47d2a44ce")),
                         ],
                         150.0,
                     );
-                    number(ui, f, "colors", tl!("Colors"), 2.0..=256.0, "", 128.0);
+                    number(ui, f, "colors", tl_id!("ui-colors-73a9105ddd10c427"), 2.0..=256.0, "", 128.0);
                     dropdown_str(
                         ui,
                         "web-dither",
                         f,
                         "dither",
-                        &[("none", tl!("No Dither")), ("diffusion", tl!("Diffusion")), ("pattern", tl!("Pattern")), ("noise", tl!("Noise"))],
+                        &[
+                            ("none", tl_id!("ui-no-dither-97fea7fcdad5545c")),
+                            ("diffusion", tl_id!("ui-diffusion-e0403dd330732b46")),
+                            ("pattern", tl_id!("ui-pattern-a83ea4fbb23afb1f")),
+                            ("noise", tl_id!("ui-noise-abd7cd31052e10cb")),
+                        ],
                         150.0,
                     );
-                    number(ui, f, "ditherAmount", tl!("Dither"), 0.0..=100.0, "%", 88.0);
-                    check(ui, f, "transparency", tl!("Transparency"), true);
-                    check(ui, f, "interlaced", tl!("Interlaced"), false);
-                    number(ui, f, "webSnap", tl!("Web Snap"), 0.0..=100.0, "%", 0.0);
+                    number(ui, f, "ditherAmount", tl_id!("ui-dither-7b21c9863aa04d13"), 0.0..=100.0, "%", 88.0);
+                    check(ui, f, "transparency", tl_id!("ui-transparency-eb207d2209c87129"), true);
+                    check(ui, f, "interlaced", tl_id!("ui-interlaced-ee56469366b6ffc0"), false);
+                    number(ui, f, "webSnap", tl_id!("ui-web-snap-884fd96266ae5e55"), 0.0..=100.0, "%", 0.0);
                 }
                 "jpeg" => {
-                    number(ui, f, "quality", tl!("Quality"), 0.0..=100.0, "", 60.0);
-                    check(ui, f, "progressive", tl!("Progressive"), false);
-                    check(ui, f, "optimized", tl!("Optimized"), true);
-                    check(ui, f, "embedIcc", tl!("Embed Color Profile"), false);
+                    number(ui, f, "quality", tl_id!("ui-quality-cb47a544b364dec4"), 0.0..=100.0, "", 60.0);
+                    check(ui, f, "progressive", tl_id!("ui-progressive-1665c86903a26866"), false);
+                    check(ui, f, "optimized", tl_id!("ui-optimized-3d9f3c714736fc8c"), true);
+                    check(ui, f, "embedIcc", tl_id!("ui-embed-color-profile-2f60eb25ad778356"), false);
                 }
                 "wbmp" => {
                     dropdown_str(
@@ -442,18 +452,22 @@ fn web_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                         "web-dither",
                         f,
                         "dither",
-                        &[("none", tl!("No Dither")), ("diffusion", tl!("Diffusion")), ("pattern", tl!("Pattern"))],
+                        &[
+                            ("none", tl_id!("ui-no-dither-97fea7fcdad5545c")),
+                            ("diffusion", tl_id!("ui-diffusion-e0403dd330732b46")),
+                            ("pattern", tl_id!("ui-pattern-a83ea4fbb23afb1f")),
+                        ],
                         150.0,
                     );
                 }
                 _ => {
-                    check(ui, f, "transparency", tl!("Transparency"), true);
-                    check(ui, f, "interlaced", tl!("Interlaced"), false);
+                    check(ui, f, "transparency", tl_id!("ui-transparency-eb207d2209c87129"), true);
+                    check(ui, f, "interlaced", tl_id!("ui-interlaced-ee56469366b6ffc0"), false);
                 }
             }
             if fmt != "png24" || !b(f, "transparency", true) {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(tl!("Matte")).color(t.text_dim));
+                    ui.label(egui::RichText::new(tl_id!("ui-matte-0bc82f5b5cbe5380")).color(t.text_dim));
                     let mut m = s(f, "matte", "#ffffff");
                     if ui.add(egui::TextEdit::singleline(&mut m).desired_width(80.0)).changed() {
                         f.insert("matte".into(), json!(m));
@@ -461,21 +475,26 @@ fn web_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                 });
             }
             ui.add_space(6.0);
-            check(ui, f, "convertToSrgb", tl!("Convert to sRGB"), true);
+            check(ui, f, "convertToSrgb", tl_id!("ui-convert-to-srgb-9d06915d917f9ab1"), true);
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tl!("Metadata")).color(t.text_dim));
+                ui.label(egui::RichText::new(tl_id!("ui-metadata-eac3236c52a59642")).color(t.text_dim));
                 dropdown_str(
                     ui,
                     "web-meta",
                     f,
                     "metadata",
-                    &[("none", tl!("None")), ("copyright", tl!("Copyright")), ("copyrightAndContact", tl!("Copyright and Contact Info")), ("all", tl!("All"))],
+                    &[
+                        ("none", tl_id!("ui-none-3390d94d34f06461")),
+                        ("copyright", tl_id!("ui-copyright-946a7c4f2e90dc84")),
+                        ("copyrightAndContact", tl_id!("ui-copyright-and-contact-info-8a3f42a79ad22177")),
+                        ("all", tl_id!("ui-all-18c90f7e5dc51fca")),
+                    ],
                     160.0,
                 );
             });
             ui.add_space(8.0);
-            ui.label(egui::RichText::new(tl!("Image Size")).font(crate::theme::semibold(12.0)).color(t.text));
-            number(ui, f, "percent", tl!("Percent"), 1.0..=1000.0, "%", 100.0);
+            ui.label(egui::RichText::new(tl_id!("ui-image-size-0a84cc4d71b452c5")).font(crate::theme::semibold(12.0)).color(t.text));
+            number(ui, f, "percent", tl_id!("ui-percent-8d9b78a65d3fded4"), 1.0..=1000.0, "%", 100.0);
             let pct = n(f, "percent", 100.0) / 100.0;
             ui.label(
                 egui::RichText::new(format!("W: {} px   H: {} px", (f64::from(doc.size.width) * pct).round(), (f64::from(doc.size.height) * pct).round()))
@@ -486,8 +505,15 @@ fn web_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             if !doc.slices.is_empty() {
                 ui.add_space(6.0);
                 ui.label(egui::RichText::new(format!("{nslices} slices")).color(t.text_dim));
-                check(ui, f, "html", tl!("Save HTML and Images"), true);
-                dropdown_str(ui, "web-slices", f, "slices", &[("all", tl!("All Slices")), ("user", tl!("All User Slices"))], 150.0);
+                check(ui, f, "html", tl_id!("ui-save-html-and-images-ebc25f558d34fce8"), true);
+                dropdown_str(
+                    ui,
+                    "web-slices",
+                    f,
+                    "slices",
+                    &[("all", tl_id!("ui-all-slices-c7482a9e09ce788d")), ("user", tl_id!("ui-all-user-slices-b2feb6daf80bbf88"))],
+                    150.0,
+                );
             }
         });
     });
@@ -621,30 +647,37 @@ fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new(s).font(crate::theme::semibold(12.0)).color(t.text));
             };
-            head(ui, tl!("Printer Setup"));
+            head(ui, tl_id!("ui-printer-setup-eaf8a7d1e09f4104"));
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tl!("Printer")).color(t.text_dim));
+                ui.label(egui::RichText::new(tl_id!("ui-printer-58688b36b61eb171")).color(t.text_dim));
                 let mut pr = s(f, "printer", "");
-                if ui.add(egui::TextEdit::singleline(&mut pr).hint_text(tl!("Default printer")).desired_width(180.0)).changed() {
+                if ui.add(egui::TextEdit::singleline(&mut pr).hint_text(tl_id!("ui-default-printer-4c55958efe32b804")).desired_width(180.0)).changed() {
                     f.insert("printer".into(), json!(pr));
                 }
             });
-            number(ui, f, "copies", tl!("Copies"), 1.0..=999.0, "", 1.0);
+            number(ui, f, "copies", tl_id!("ui-copies-51a486808d1b93b6"), 1.0..=999.0, "", 1.0);
             ui.horizontal(|ui| {
                 let papers: Vec<(&str, &str)> = photocraft_engine::print_cmds::PAPERS.iter().map(|p| (p.0, p.0)).collect();
                 dropdown_str(ui, "print-paper", f, "paper", &papers, 110.0);
-                dropdown_str(ui, "print-orient", f, "orientation", &[("portrait", tl!("Portrait")), ("landscape", tl!("Landscape"))], 110.0);
+                dropdown_str(
+                    ui,
+                    "print-orient",
+                    f,
+                    "orientation",
+                    &[("portrait", tl_id!("ui-portrait-5446d2b70dce3db8")), ("landscape", tl_id!("ui-landscape-d719e0dd6775c304"))],
+                    110.0,
+                );
             });
-            head(ui, tl!("Color Management"));
+            head(ui, tl_id!("ui-color-management-8124f1b0d9810b81"));
             dropdown_str(
                 ui,
                 "print-color",
                 f,
                 "colorHandling",
                 &[
-                    ("printerManages", tl!("Printer Manages Colors")),
-                    ("photocraftManages", tl!("PhotoCraft Manages Colors")),
-                    ("noColorManagement", tl!("No Color Management")),
+                    ("printerManages", tl_id!("ui-printer-manages-colors-9e15ce26ab782207")),
+                    ("photocraftManages", tl_id!("ui-photocraft-manages-colors-e891a0a8bfedc573")),
+                    ("noColorManagement", tl_id!("ui-no-color-management-72797e84b8a8f49a")),
                 ],
                 240.0,
             );
@@ -655,11 +688,11 @@ fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
                     f,
                     "printerProfile",
                     &[
-                        ("coated-cmyk", tl!("Coated CMYK")),
+                        ("coated-cmyk", tl_id!("ui-coated-cmyk-de8df338b2eec31f")),
                         ("srgb", "sRGB IEC61966-2.1"),
-                        ("adobe-rgb-compat", tl!("Adobe RGB (1998) compatible")),
-                        ("display-p3", tl!("Display P3")),
-                        ("gray-gamma-2.2", tl!("Gray Gamma 2.2")),
+                        ("adobe-rgb-compat", tl_id!("ui-adobe-rgb-1998-compatible-c35d5c585ff35f91")),
+                        ("display-p3", tl_id!("ui-display-p3-ffc2ae2aee0e84f4")),
+                        ("gray-gamma-2.2", tl_id!("ui-gray-gamma-2-2-b18f731b42b5fddb")),
                     ],
                     240.0,
                 );
@@ -670,41 +703,41 @@ fn print_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
                         f,
                         "intent",
                         &[
-                            ("perceptual", tl!("Perceptual")),
-                            ("relative", tl!("Relative Colorimetric")),
-                            ("saturation", tl!("Saturation")),
-                            ("absolute", tl!("Absolute Colorimetric")),
+                            ("perceptual", tl_id!("ui-perceptual-604774d02dd759c0")),
+                            ("relative", tl_id!("ui-relative-colorimetric-e01d0c90a2be5727")),
+                            ("saturation", tl_id!("ui-saturation-d71c9cb7228f3ccb")),
+                            ("absolute", tl_id!("ui-absolute-colorimetric-00912dc5ebcebc34")),
                         ],
                         170.0,
                     );
-                    check(ui, f, "bpc", tl!("Black Point Compensation"), true);
+                    check(ui, f, "bpc", tl_id!("ui-black-point-compensation-0384ce18be7270ee"), true);
                 });
             }
-            head(ui, tl!("Position and Size"));
-            check(ui, f, "center", tl!("Center"), true);
+            head(ui, tl_id!("ui-position-and-size-3a4fef83da41da46"));
+            check(ui, f, "center", tl_id!("ui-center-fd116aa3e2e5bd32"), true);
             if !b(f, "center", true) {
                 ui.horizontal(|ui| {
-                    number(ui, f, "top", tl!("Top"), 0.0..=100.0, "in", 0.0);
-                    number(ui, f, "left", tl!("Left"), 0.0..=100.0, "in", 0.0);
+                    number(ui, f, "top", tl_id!("ui-top-7622187e02308d3e"), 0.0..=100.0, "in", 0.0);
+                    number(ui, f, "left", tl_id!("ui-left-6aaaae5efe8dc776"), 0.0..=100.0, "in", 0.0);
                 });
             }
-            check(ui, f, "scaleToFit", tl!("Scale to Fit Media"), false);
+            check(ui, f, "scaleToFit", tl_id!("ui-scale-to-fit-media-8d19640c9604eb6f"), false);
             if !b(f, "scaleToFit", false) {
-                number(ui, f, "scale", tl!("Scale"), 1.0..=1000.0, "%", 100.0);
+                number(ui, f, "scale", tl_id!("ui-scale-5453592a5af14dff"), 1.0..=1000.0, "%", 100.0);
             }
-            head(ui, tl!("Printing Marks"));
+            head(ui, tl_id!("ui-printing-marks-54df936ec9a74e94"));
             ui.horizontal(|ui| {
-                check(ui, f, "cornerCropMarks", tl!("Corner Crop Marks"), false);
-                check(ui, f, "centerCropMarks", tl!("Center Crop Marks"), false);
+                check(ui, f, "cornerCropMarks", tl_id!("ui-corner-crop-marks-0bf86b15940411ea"), false);
+                check(ui, f, "centerCropMarks", tl_id!("ui-center-crop-marks-383374e900158fce"), false);
             });
             ui.horizontal(|ui| {
-                check(ui, f, "registrationMarks", tl!("Registration Marks"), false);
-                check(ui, f, "description", tl!("Description"), false);
-                check(ui, f, "labels", tl!("Labels"), false);
+                check(ui, f, "registrationMarks", tl_id!("ui-registration-marks-3a37216f2ea991e4"), false);
+                check(ui, f, "description", tl_id!("ui-description-7da8ea3426ca11d3"), false);
+                check(ui, f, "labels", tl_id!("ui-labels-94644b6cd11dcd5c"), false);
             });
-            head(ui, tl!("Save as PDF"));
+            head(ui, tl_id!("ui-save-as-pdf-8b7cebd91ca4ac34"));
             let mut out = s(f, "output", "");
-            if ui.add(egui::TextEdit::singleline(&mut out).hint_text(tl!("(print to the printer)")).desired_width(300.0)).changed() {
+            if ui.add(egui::TextEdit::singleline(&mut out).hint_text(tl_id!("ui-print-to-the-printer-6f2f84952fccebdd")).desired_width(300.0)).changed() {
                 f.insert("output".into(), json!(out));
             }
         });

@@ -413,21 +413,24 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui, shown: &[Group], mut bod
                 crate::layer_row_ui::panel_menu(app, ui);
                 ui.separator();
             }
-            if ui.button(if collapsed { tl!("Expand Panel Group") } else { tl!("Collapse Panel Group") }).clicked() {
+            if ui
+                .button(if collapsed { tl_id!("ui-expand-panel-group-04adb68dc05803ee") } else { tl_id!("ui-collapse-panel-group-0b3e67928f0a3581") })
+                .clicked()
+            {
                 actions.push(Action::ToggleCollapse(g));
                 ui.close();
             }
             let pos = order.iter().position(|x| *x == g).unwrap_or(0);
-            if ui.add_enabled(!locked && pos > 0, egui::Button::new(tl!("Move Group Up"))).clicked() {
+            if ui.add_enabled(!locked && pos > 0, egui::Button::new(tl_id!("ui-move-group-up-772bffcfbad5405a"))).clicked() {
                 actions.push(Action::Move(g, order.get(pos.saturating_sub(1)).copied()));
                 ui.close();
             }
-            if ui.add_enabled(!locked && pos + 1 < order.len(), egui::Button::new(tl!("Move Group Down"))).clicked() {
+            if ui.add_enabled(!locked && pos + 1 < order.len(), egui::Button::new(tl_id!("ui-move-group-down-57ecab1d688a85fb"))).clicked() {
                 actions.push(Action::Move(g, order.get(pos + 2).copied()));
                 ui.close();
             }
             ui.separator();
-            if ui.button(tl!("Close Tab Group")).clicked() {
+            if ui.button(tl_id!("ui-close-tab-group-6bb3935d8c45ed55")).clicked() {
                 actions.push(Action::Close(g));
                 ui.close();
             }
