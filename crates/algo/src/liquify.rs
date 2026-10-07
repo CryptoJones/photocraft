@@ -48,7 +48,7 @@ pub enum LiquifyTool {
 }
 
 impl LiquifyTool {
-    pub const ALL: [LiquifyTool; 10] = [
+    pub const ALL: [LiquifyTool; 11] = [
         LiquifyTool::ForwardWarp,
         LiquifyTool::Reconstruct,
         LiquifyTool::Smooth,
@@ -59,6 +59,7 @@ impl LiquifyTool {
         LiquifyTool::PushLeft,
         LiquifyTool::Freeze,
         LiquifyTool::Thaw,
+        LiquifyTool::LassoMask,
     ];
 
     pub fn label(self) -> &'static str {
@@ -246,11 +247,13 @@ impl LiquifyField {
         dirty
     }
 
-    /// Lasso: sets the freeze mask to `amount` (1.0 when none) at every field node inside the
-    /// closed polygon in `s.points`. Returns the document rectangle the mask changed in.
+    /// Lasso: sets the freeze mask to `amount` (1.0 when none; 0.0 thaws) at every field node
+    /// inside the closed polygon in `s.points` (even-odd rule; non-finite points are skipped).
+    /// A scanline fill: each node row costs one pass over the edges, then only the nodes inside
+    /// are written. Returns the document rectangle the mask changed in.
     fn apply_lasso(&mut self, s: &LiquifyStroke) -> Rect {
-        let poly: Vec<[f64; 2]> = s.points.iter().filter(|p| p.len() >= 2).map(|p| [p[0], p[1]]).collect();
-        if poly.len() < 3 {
+        let poly: Vec<[f64; 2]> = s.points.iter().filter_map(|p| Some([*p.first()?, *p.get(1)?])).filter(|p| p[0].is_finite() && p[1].is_finite()).collect();
+        if poly.len() < 3 || self.w == 0 || self.h == 0 {
             return Rect::EMPTY;
         }
         let (mut px0, mut py0, mut px1, mut py1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
@@ -260,22 +263,38 @@ impl LiquifyField {
             px1 = px1.max(p[0]);
             py1 = py1.max(p[1]);
         }
-        let (gx0, gy0) = self.to_grid(px0, py0);
-        let (gx1, gy1) = self.to_grid(px1, py1);
-        let (w, h) = (self.w as isize, self.h as isize);
-        let i0 = (gx0.floor() as isize).max(0);
-        let j0 = (gy0.floor() as isize).max(0);
-        let i1 = (gx1.floor() as isize).min(w - 1);
-        let j1 = (gy1.floor() as isize).min(h - 1);
-        if i1 < i0 || j1 < j0 {
+        let (_, gy0) = self.to_grid(px0, py0);
+        let (_, gy1) = self.to_grid(px1, py1);
+        let last_row = self.h.saturating_sub(1) as f64;
+        let last_col = self.w.saturating_sub(1) as f64;
+        let (j0, j1) = (gy0.ceil().max(0.0), gy1.floor().min(last_row));
+        if j1 < j0 {
             return Rect::EMPTY;
         }
         let v = if s.amount.unwrap_or(1.0) > 0.5 { 1.0f32 } else { 0.0 };
-        for j in j0..=j1 {
-            for i in i0..=i1 {
-                let p = self.node_pos(i as usize, j as usize);
-                if point_in_polygon(p, &poly) {
-                    self.freeze[(j * w + i) as usize] = v;
+        let mut xs: Vec<f64> = Vec::new();
+        for j in (j0 as usize)..=(j1 as usize) {
+            let y = self.node_pos(0, j)[1];
+            xs.clear();
+            let Some(mut prev) = poly.last().copied() else { return Rect::EMPTY };
+            for &a in &poly {
+                if (a[1] > y) != (prev[1] > y) {
+                    xs.push(a[0] + (y - a[1]) * (prev[0] - a[0]) / (prev[1] - a[1]));
+                }
+                prev = a;
+            }
+            xs.sort_by(f64::total_cmp);
+            // Even-odd: nodes with xs[2k] <= x < xs[2k + 1] are inside.
+            for &[xa, xb] in xs.as_chunks::<2>().0 {
+                let (ga, _) = self.to_grid(xa, y);
+                let (gb, _) = self.to_grid(xb, y);
+                let (i0, i1) = (ga.ceil().max(0.0), (gb.ceil() - 1.0).min(last_col));
+                if i1 < i0 {
+                    continue;
+                }
+                let row = j * self.w;
+                if let Some(cells) = self.freeze.get_mut(row + i0 as usize..=row + i1 as usize) {
+                    cells.fill(v);
                 }
             }
         }
@@ -469,20 +488,6 @@ impl LiquifyField {
         let j1 = (gy1.ceil() as isize + 2).clamp(0, self.h as isize - 1) as usize;
         (j0..=j1).any(|j| self.d[j * self.w + i0..=j * self.w + i1].iter().any(|v| v[0] != 0.0 || v[1] != 0.0))
     }
-}
-
-/// Even-odd ray casting: is `p` inside `poly` (open polygon; the closing edge is implied)?
-fn point_in_polygon(p: [f64; 2], poly: &[[f64; 2]]) -> bool {
-    let mut inside = false;
-    let mut j = poly.len() - 1;
-    for (i, a) in poly.iter().enumerate() {
-        let b = poly[j];
-        if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0] {
-            inside = !inside;
-        }
-        j = i;
-    }
-    inside
 }
 
 fn bilinear(d: &[[f32; 2]], w: usize, h: usize, gx: f64, gy: f64) -> [f64; 2] {
@@ -754,6 +759,85 @@ mod tests {
 
     fn worst(a: &Surface, b: &Surface, r: Rect) -> f32 {
         a.read_region(r).iter().zip(b.read_region(r)).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max)
+    }
+
+    fn lasso(points: &[[f64; 2]], amount: Option<f64>) -> LiquifyStroke {
+        let mut s = LiquifyStroke::new(LiquifyTool::LassoMask, 1.0);
+        s.points = points.iter().map(|p| p.to_vec()).collect();
+        s.amount = amount;
+        s
+    }
+
+    /// Reference even-odd test (ray casting), to check the scanline fill against.
+    fn inside(p: [f64; 2], poly: &[[f64; 2]]) -> bool {
+        let mut inside = false;
+        let mut j = poly.len() - 1;
+        for (i, a) in poly.iter().enumerate() {
+            let b = poly[j];
+            if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0] {
+                inside = !inside;
+            }
+            j = i;
+        }
+        inside
+    }
+
+    #[test]
+    fn lasso_freezes_exactly_the_nodes_inside_a_concave_polygon() {
+        // A concave "C" with a notch, at a non-integer cell size.
+        let poly = [[10.0, 8.0], [70.0, 8.0], [70.0, 20.0], [30.0, 22.5], [33.0, 40.0], [80.0, 41.0], [60.0, 58.0], [9.0, 55.0]];
+        for cell in [1.0, 2.0, 3.5] {
+            let mut f = LiquifyField::new(bounds(), cell);
+            let dirty = f.apply_stroke(&lasso(&poly, None));
+            assert_eq!(dirty, Rect::new(9, 8, 80, 58));
+            for j in 0..f.h {
+                for i in 0..f.w {
+                    let want = if inside(f.node_pos(i, j), &poly) { 1.0 } else { 0.0 };
+                    assert_eq!(f.freeze[j * f.w + i], want, "cell {cell}: node ({i}, {j}) at {:?}", f.node_pos(i, j));
+                }
+            }
+            assert!(f.freeze.contains(&1.0));
+            // Strokes replay to the same field (undo rebuilds from the list).
+            assert_eq!(LiquifyField::from_strokes(bounds(), cell, &[lasso(&poly, None)]), f);
+        }
+    }
+
+    #[test]
+    fn lasso_thaws_with_amount_zero() {
+        let mut f = LiquifyField::new(bounds(), 2.0);
+        f.apply_stroke(&LiquifyStroke::new(LiquifyTool::FreezeAll, 1.0));
+        assert!(f.freeze.iter().all(|&v| v == 1.0));
+        let square = [[20.0, 20.0], [40.0, 20.0], [40.0, 40.0], [20.0, 40.0]];
+        f.apply_stroke(&lasso(&square, Some(0.0)));
+        assert_eq!(f.freeze_at(30.0, 30.0), 0.0, "thawed inside");
+        assert_eq!(f.freeze_at(5.0, 5.0), 1.0, "still frozen outside");
+    }
+
+    #[test]
+    fn lasso_ignores_degenerate_and_hostile_polygons() {
+        let empty = LiquifyField::new(bounds(), 2.0);
+        let cases: [&[[f64; 2]]; 6] = [
+            &[],
+            &[[10.0, 10.0], [50.0, 50.0]],
+            &[[f64::NAN, 10.0], [50.0, f64::INFINITY], [20.0, 30.0]],
+            // Entirely outside the canvas, on every side.
+            &[[-50.0, -50.0], [-10.0, -50.0], [-10.0, -10.0]],
+            &[[200.0, 10.0], [300.0, 10.0], [250.0, 50.0]],
+            &[[10.0, 1e12], [50.0, 1e12], [30.0, 2e12]],
+        ];
+        for poly in cases {
+            let mut f = empty.clone();
+            assert_eq!(f.apply_stroke(&lasso(poly, None)), Rect::EMPTY, "{poly:?}");
+            assert_eq!(f, empty, "{poly:?}");
+        }
+        // Huge coordinates around the canvas clamp to it instead of overflowing.
+        let mut f = empty.clone();
+        f.apply_stroke(&lasso(&[[-1e15, -1e15], [1e15, -1e15], [1e15, 1e15], [-1e15, 1e15]], None));
+        assert!(f.freeze.iter().all(|&v| v == 1.0));
+        // A NaN point among good ones is skipped.
+        let mut f = empty.clone();
+        f.apply_stroke(&lasso(&[[10.0, 10.0], [f64::NAN, 0.0], [50.0, 10.0], [50.0, 50.0], [10.0, 50.0]], None));
+        assert_eq!(f.freeze_at(30.0, 30.0), 1.0);
     }
 
     #[test]
