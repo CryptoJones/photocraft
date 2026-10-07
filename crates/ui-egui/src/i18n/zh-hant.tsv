@@ -2043,10 +2043,15 @@ cameraRaw	Blending	混合
 	Patch:	修補：
 	Lasso around an area, then drag the selection	用套索圈出區域，然後拖曳選取範圍
 	Edit Type	編輯文字
+	Full-resolution preview unavailable	無法使用完整解析度預覽
 	No patterns	無圖樣
 	Enable {name}	啟用{name}
 	Hold Alt while drawing for straight segments	繪製中按住 Alt 可逐點連接直線
 	Drag or click polygon points · hold Alt during lasso for straight segments · {add} add · {sub} before drawing subtracts	拖曳圈選或逐點繪製 · 圈選中按住 Alt 畫直線 · {add} 增加 · 起筆前按 {sub} 減去
+	Move	移動
+	Extend	延伸
+	Structure:	結構：
+	Content-Aware Move Tool	內容感知移動工具
 	TIFF Options	TIFF 選項
 	Including layers will increase file size.	包含圖層會增加檔案大小。
 	Discard Layers and Save a Copy	放棄圖層並儲存拷貝

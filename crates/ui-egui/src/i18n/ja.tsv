@@ -2048,10 +2048,15 @@ cameraRaw	Color	カラー
 	Patch:	パッチ:
 	Lasso around an area, then drag the selection	投げ縄で範囲を囲み、選択範囲をドラッグします
 	Edit Type	文字を編集
+	Full-resolution preview unavailable	フル解像度のプレビューを利用できません
 	No patterns	パターンなし
 	Enable {name}	{name}を有効にする
 	Hold Alt while drawing for straight segments	描画中に Alt を押すと直線セグメントになります
 	Drag or click polygon points · hold Alt during lasso for straight segments · {add} add · {sub} before drawing subtracts	ドラッグまたは多角形の点をクリック · なげなわ中に Alt で直線セグメント · {add} 追加 · 描画前の {sub} で削除
+	Move	移動
+	Extend	拡張
+	Structure:	構造:
+	Content-Aware Move Tool	コンテンツに応じた移動ツール
 	TIFF Options	TIFF オプション
 	Including layers will increase file size.	レイヤーを含めるとファイルサイズが大きくなります。
 	Discard Layers and Save a Copy	レイヤーを破棄してコピーを保存

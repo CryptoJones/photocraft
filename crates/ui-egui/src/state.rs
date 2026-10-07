@@ -44,6 +44,22 @@ pub struct CameraRawScopeState {
     pub floating_rect: Option<[f32; 4]>,
 }
 
+/// Camera Raw navigation, separate from filter settings. Reset for each opened image.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CameraRawPreviewState {
+    /// None fits the image; Some is physical display pixels per source pixel.
+    pub zoom: Option<f32>,
+    pub center: [f32; 2],
+    pub hand: bool,
+}
+
+impl Default for CameraRawPreviewState {
+    fn default() -> Self {
+        Self { zoom: None, center: [0.5, 0.5], hand: false }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Tool {
     Move,
@@ -71,6 +87,7 @@ pub enum Tool {
     SpotHealing,
     Healing,
     Patch,
+    ContentAwareMove,
     CloneStamp,
     HistoryBrush,
     Blur,
@@ -94,7 +111,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Tool; 45] = [
+    pub const ALL: [Tool; 46] = [
         Tool::Move,
         Tool::RectMarquee,
         Tool::EllipseMarquee,
@@ -120,6 +137,7 @@ impl Tool {
         Tool::SpotHealing,
         Tool::Healing,
         Tool::Patch,
+        Tool::ContentAwareMove,
         Tool::CloneStamp,
         Tool::HistoryBrush,
         Tool::Blur,
@@ -171,6 +189,7 @@ impl Tool {
             Tool::SpotHealing => "Spot Healing Brush Tool",
             Tool::Healing => "Healing Brush Tool",
             Tool::Patch => "Patch Tool",
+            Tool::ContentAwareMove => "Content-Aware Move Tool",
             Tool::CloneStamp => "Clone Stamp Tool",
             Tool::HistoryBrush => "History Brush Tool",
             Tool::Blur => "Blur Tool",
@@ -227,7 +246,7 @@ impl Tool {
             Tool::Type => 'T',
             Tool::Hand => 'H',
             Tool::Zoom => 'Z',
-            Tool::SpotHealing | Tool::Healing | Tool::Patch => 'J',
+            Tool::SpotHealing | Tool::Healing | Tool::Patch | Tool::ContentAwareMove => 'J',
             Tool::CloneStamp => 'S',
             Tool::HistoryBrush => 'Y',
             Tool::Blur | Tool::Sharpen | Tool::Smudge => '\0',
@@ -387,6 +406,10 @@ pub struct ToolOptions {
     pub spot_type: String,
     /// Patch: source (repair the selection) | destination (repair where it is dragged).
     pub patch_mode: String,
+    /// Content-Aware Move: move | extend, Structure 1..7, Color 0..10.
+    pub cam_mode: String,
+    pub cam_structure: f32,
+    pub cam_color: f32,
     /// Dodge/Burn: shadows | midtones | highlights, exposure %, protect tones.
     pub tone_range: String,
     pub exposure: f32,
@@ -487,6 +510,9 @@ impl Default for ToolOptions {
             clone_sample: "current".into(),
             spot_type: "contentAware".into(),
             patch_mode: "source".into(),
+            cam_mode: "move".into(),
+            cam_structure: 4.0,
+            cam_color: 0.0,
             tone_range: "midtones".into(),
             exposure: 50.0,
             protect_tones: true,
@@ -772,6 +798,8 @@ pub struct UiState {
     pub chrome: crate::chrome_ui::ChromeState,
     #[serde(default)]
     pub camera_raw_scope: CameraRawScopeState,
+    #[serde(default)]
+    pub camera_raw_preview: CameraRawPreviewState,
 }
 
 impl Default for UiState {
@@ -828,6 +856,7 @@ impl Default for UiState {
             gpu_fallback_notice: None,
             chrome: Default::default(),
             camera_raw_scope: Default::default(),
+            camera_raw_preview: Default::default(),
         }
     }
 }
