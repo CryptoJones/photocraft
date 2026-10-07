@@ -31,10 +31,7 @@ pub fn window_icon() -> egui::IconData {
 pub fn use_bundle_icon() -> bool {
     #[cfg(target_os = "macos")]
     {
-        std::env::current_exe()
-            .ok()
-            .and_then(|exe| bundled_asset_path(&exe))
-            .is_some_and(|asset| asset.is_file())
+        std::env::current_exe().ok().and_then(|exe| bundled_asset_path(&exe)).is_some_and(|asset| asset.is_file())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -84,10 +81,7 @@ mod tests {
     #[test]
     fn packaged_app_uses_compiled_icon_asset() {
         let exe = std::path::Path::new("/tmp/PhotoCraft.app/Contents/MacOS/PhotoCraft");
-        assert_eq!(
-            bundled_asset_path(exe).as_deref(),
-            Some(std::path::Path::new("/tmp/PhotoCraft.app/Contents/Resources/Assets.car"))
-        );
+        assert_eq!(bundled_asset_path(exe).as_deref(), Some(std::path::Path::new("/tmp/PhotoCraft.app/Contents/Resources/Assets.car")));
         assert!(bundled_asset_path(std::path::Path::new("/tmp/photocraft")).is_none());
     }
 
