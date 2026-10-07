@@ -75,6 +75,10 @@ Linux-only tools are left out on macOS. The shell sets `LD_LIBRARY_PATH` to the 
 
 To move to a newer nixpkgs, run `nix flake update nixpkgs`. To bump craft-fonts, change its commit in `flake.nix` together with `release.yml` and `ci.yml`, then run `nix flake update craft-fonts`.
 
+## Android build experiment
+
+`nix build .#photocraft-android` builds an unsigned ARM64 NativeActivity APK on x86_64 Linux. `nix run .#photocraft-android-sign -- photocraft-test.apk` signs it outside the Nix store. This is not a supported mobile release. See [Android build](android.md) for installation, the proposed entry-point exception, and limitations including the missing file picker, accessibility, and lifecycle recovery.
+
 ## Graphics startup and device loss
 
 `--safe-gpu` starts with the CPU renderer for one launch (no GPU canvas; a software adapter for the window where the platform has one: WARP on Windows, llvmpipe over GL on Linux). Before creating the wgpu device the app writes and locks `gpu-starting.json` in the config directory; it clears it once the first frames have rendered. A launch that finds an unlocked marker knows the previous start died inside the graphics driver (#4) and uses the next safer backend (Windows: Vulkan → DX12 → CPU; Linux: Vulkan → GL → CPU; macOS: Metal → CPU), remembering it in `performance.gpuBackend` (Preferences › Performance › GPU Backend, with **Reset GPU Backend**). With `auto`, Intel adapters on Windows use DX12. Help › System Info shows the adapter, backend, driver and fallback state.

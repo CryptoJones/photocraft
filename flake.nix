@@ -11,6 +11,13 @@
       url = "github:storytold/craft-fonts/abb83316d96aa59c1cf64784289e378fe9fa5695";
       flake = false;
     };
+
+    # The Android targets' standard library for the Android build (nix/android.nix). nixpkgs'
+    # rustc only ships the host's.
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -18,6 +25,7 @@
       self,
       nixpkgs,
       craft-fonts,
+      rust-overlay,
     }:
     let
       inherit (nixpkgs) lib;
@@ -37,6 +45,37 @@
         buildSha = self.rev or self.dirtyRev or null;
         buildDate = "${lib.substring 0 4 date}-${lib.substring 4 2 date}-${lib.substring 6 2 date}";
       };
+
+      # The Android build runs on x86_64 Linux only: the NDK and build tools nixpkgs packages are
+      # x86_64 Linux binaries. Building it accepts the Android SDK licence
+      # (https://developer.android.com/studio/terms), which the SDK and NDK are distributed under.
+      androidSystems = [ "x86_64-linux" ];
+      androidPkgsFor =
+        system:
+        import nixpkgs {
+          inherit system;
+          overlays = [ rust-overlay.overlays.default ];
+          config = {
+            android_sdk.accept_license = true;
+            # The SDK's parts (nixpkgs' androidenv, all with this homepage) are unfree; allow those
+            # and nothing else.
+            allowUnfreePredicate =
+              pkg: lib.hasPrefix "https://developer.android.com/" (pkg.meta.homepage or "");
+          };
+        };
+      androidPackages =
+        system:
+        let
+          pkgs = androidPkgsFor system;
+          android = pkgs.callPackage ./nix/android.nix buildArgs;
+        in
+        lib.optionalAttrs (lib.elem system androidSystems) {
+          # Phones and tablets (arm64-v8a).
+          photocraft-android = android;
+          # The Android emulator on an x86_64 host.
+          photocraft-android-x86_64 = android.override { abis = [ "x86_64" ]; };
+          photocraft-android-sign = pkgs.callPackage ./nix/android-sign.nix { photocraft-android = android; };
+        };
     in
     {
       overlays.default = final: _prev: {
@@ -44,12 +83,14 @@
       };
 
       packages = forAllSystems (
-        system: pkgs: {
+        system: pkgs:
+        {
           photocraft = pkgs.callPackage ./nix/package.nix buildArgs;
           # Dev profile: debug assertions, overflow checks, full debug info, not stripped.
           photocraft-debug = self.packages.${system}.photocraft.override { buildType = "debug"; };
           default = self.packages.${system}.photocraft;
         }
+        // androidPackages system
       );
 
       apps = forAllSystems (
@@ -67,6 +108,13 @@
             type = "app";
             program = lib.getExe' photocraft "photocraft-cli";
             meta.description = "Headless PhotoCraft: convert, inspect, run commands, batch, MCP server";
+          };
+        }
+        // lib.optionalAttrs (lib.elem system androidSystems) {
+          photocraft-android-sign = {
+            type = "app";
+            program = lib.getExe self.packages.${system}.photocraft-android-sign;
+            meta.description = "Sign the Android APK with the debug key; --install also installs it with adb";
           };
         }
       );
@@ -97,7 +145,7 @@
           '';
 
           nixfmt = pkgs.runCommand "nixfmt-check" { nativeBuildInputs = [ pkgs.nixfmt ]; } ''
-            nixfmt --check ${./flake.nix} ${./nix/package.nix} ${./nix/devshell.nix}
+            nixfmt --check ${./flake.nix} ${./nix/package.nix} ${./nix/devshell.nix} ${./nix/android.nix} ${./nix/android-sign.nix}
             touch $out
           '';
         }
