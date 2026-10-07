@@ -54,6 +54,7 @@ pub mod dock;
 pub mod enable_rules;
 pub mod eraser_ui;
 pub mod export_dialog;
+pub mod field_tab;
 pub mod file_open;
 pub mod file_ui;
 pub mod fill_ui;
@@ -398,6 +399,9 @@ pub struct PhotocraftApp {
     pub(crate) transform_preview: Option<transform_tool::TransformPreview>,
     /// Move-tool ⇧/⌥ drag state (move_mods).
     pub(crate) move_mods: move_mods::MoveDrag,
+    /// The tool pointer events go to this frame when it isn't the selected one: the Move tool
+    /// while ⌘ is held (`hold_keys::cmd_moves`). Set by the canvas for its gestures, never saved.
+    pub(crate) tool_override: Option<state::Tool>,
     /// Live Layer Style dialog preview: (key over revision + style fields, preview or validation error).
     pub(crate) style_preview: Option<(u64, Result<std::sync::Arc<Document>, String>)>,
     /// Liquify dialog, Puppet Warp and Perspective Warp sessions (distort_ui).
@@ -523,6 +527,7 @@ impl PhotocraftApp {
             clip_read_for_paste: false,
             transform_preview: None,
             move_mods: Default::default(),
+            tool_override: None,
             style_preview: None,
             distort: Default::default(),
             gradient: Default::default(),
@@ -1338,6 +1343,12 @@ impl PhotocraftApp {
     /// Zoom of the active document's main view (screen points per document pixel).
     pub fn current_zoom(&self) -> f32 {
         self.session.active_index().and_then(|i| self.ui.views.get(i)).map_or(1.0, |v| v.zoom)
+    }
+
+    /// The tool pointer events go to: a held temporary tool when there is one (⌘ is the Move
+    /// tool, `hold_keys::cmd_moves`), else the selected tool.
+    pub fn active_tool(&self) -> state::Tool {
+        self.tool_override.unwrap_or(self.ui.tool)
     }
 }
 

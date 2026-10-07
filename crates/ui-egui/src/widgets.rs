@@ -182,10 +182,16 @@ pub fn value_field(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive
 /// rounds it would cut `5/2*2` short. `changed()` means a new value, not just a keystroke.
 fn number_edit(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, fine: bool) -> Response {
     let (id, ctx) = (ui.next_auto_id(), ui.ctx().clone());
+    // Tab in a dialog goes from one of these to the next (field_tab.rs).
+    crate::field_tab::register(&ctx, id);
     let held = id.with("arithmetic");
-    let math = ui.memory(|m| m.has_focus(id)) && ui.data(|d| d.get_temp(held)).unwrap_or(false);
+    let focused = ui.memory(|m| m.has_focus(id));
+    let math = focused && ui.data(|d| d.get_temp(held)).unwrap_or(false);
     ui.data_mut(|d| d.insert_temp(held, math));
     let before = *value;
+    // ↑ / ↓ in the field step the value by 1 (0.01 in a two-decimal field) and ⇧↑ / ⇧↓ by ten
+    // times that, as in Photoshop; the text follows and stays selected.
+    let stepped = focused && arrow_step(ui, value, &range, fine);
     let mut resp = ui.add(
         egui::DragValue::new(value)
             .range(range)
@@ -203,8 +209,44 @@ fn number_edit(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32
                 v
             }),
     );
+    if stepped {
+        let text = if fine { fmt_num2(f64::from(*value)) } else { fmt_num(f64::from(*value)) };
+        crate::field_tab::select_all(ui.ctx(), id, &text);
+    }
     resp.flags.set(egui::response::Flags::CHANGED, *value != before);
     resp
+}
+
+/// Applies this frame's ↑ / ↓ (⇧: ×10) presses to `value`, clamped to `range`. `true` when it
+/// changed. The keys are taken from the input so the field's text edit never sees them.
+fn arrow_step(ui: &mut Ui, value: &mut f32, range: &std::ops::RangeInclusive<f32>, fine: bool) -> bool {
+    // By hand, not `consume_key`: egui's unmodified pattern also matches a ⇧ press.
+    let steps = ui.input_mut(|i| {
+        let mut steps = 0.0;
+        i.events.retain(|e| match e {
+            egui::Event::Key { key: key @ (egui::Key::ArrowUp | egui::Key::ArrowDown), pressed: true, modifiers, .. }
+                if !modifiers.alt && !modifiers.ctrl && !modifiers.command && !modifiers.mac_cmd =>
+            {
+                let size = if modifiers.shift { 10.0 } else { 1.0 };
+                steps += if *key == egui::Key::ArrowUp { size } else { -size };
+                false
+            }
+            _ => true,
+        });
+        steps
+    });
+    if steps == 0.0 {
+        return false;
+    }
+    let unit = if fine { 0.01 } else { 1.0 };
+    let v = (*value + steps * unit).clamp(*range.start(), *range.end());
+    // Kill float noise so 0.1 + 0.01 shows as 0.11, not 0.10999.
+    let v = (v * 100.0).round() / 100.0;
+    if v == *value {
+        return false;
+    }
+    *value = v;
+    true
 }
 
 /// Thin-track slider with a round knob. `gradient` paints the track (e.g. hue spectrum).
