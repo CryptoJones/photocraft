@@ -219,6 +219,11 @@ pub struct Interface {
     /// Move tool drags show only the layer's outline and an arrow, leaving its pixels in place
     /// until release. Off (the default), the pixels follow the pointer live inside the outline.
     pub show_bounding_box_when_dragging_layer: bool,
+    /// Linux: while a global-menu host (Canonical AppMenu/dbusmenu registrar) serves the
+    /// menus, the in-window menu bar hides — except in full-screen modes, where the shell's
+    /// bar may be hidden too (the OS window is fullscreen). Off, PhotoCraft keeps its
+    /// in-window menu bar and exports nothing (Interface › Use Global Menu Bar).
+    pub global_menu_bar: bool,
 }
 
 impl Default for Interface {
@@ -236,6 +241,7 @@ impl Default for Interface {
             show_menu_colors: true,
             show_tooltips: true,
             show_bounding_box_when_dragging_layer: false,
+            global_menu_bar: true,
         }
     }
 }

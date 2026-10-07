@@ -2450,6 +2450,7 @@
 	32 bit (float)	32 bits (flutuante)
 	Floating point	Ponto flutuante
 	Use Global Light	Usar luz global
+	Use global menu bar	Usar a barra de menus global
 	Native file drag-and-drop is unavailable	Arrastar e soltar arquivos nativo indisponível
 	Native file drag-and-drop is not supported on Wayland yet. Use File › Open, or run PhotoCraft under XWayland with `WAYLAND_DISPLAY= photocraft`.	Arrastar e soltar arquivos nativo ainda não é compatível com Wayland. Use Arquivo › Abrir ou execute o PhotoCraft no XWayland com `WAYLAND_DISPLAY= photocraft`.
 	Use File › Open to open an image.	Use Arquivo › Abrir para abrir uma imagem.

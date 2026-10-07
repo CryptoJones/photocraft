@@ -767,7 +767,10 @@ fn humanize(key: &str) -> String {
             s.push(ch);
         }
     }
-    s.replace("Psd", "PSD").replace("Gpu", "GPU").replace("Ui ", "UI ").replace("Mb", "(MB)").replace("Exif", "EXIF").replace("Hud", "HUD")
+    s = s.replace("Psd", "PSD").replace("Gpu", "GPU").replace("Ui ", "UI ").replace("Mb", "(MB)").replace("Exif", "EXIF").replace("Hud", "HUD");
+    // Interface › Use global menu bar: the plain humanization would read like a checkbox about
+    // existing menu bars; the setting switches the *use* of the global (shell) one on or off.
+    s.replace("Global menu bar", "Use global menu bar")
 }
 
 fn choice_label(v: &str) -> String {

@@ -333,7 +333,12 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 let (mark, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
                 crate::brand::paint_mark(ui, mark);
                 ui.add_space(6.0);
-                menus_right = crate::menus::menu_bar(app, ui);
+                // While a global menu host serves the menus, the in-window titles would just
+                // duplicate it (the shell owns the menus then): skip them — except in full-screen
+                // modes, where the shell's bar may be hidden too (see `in_window_titles`).
+                if crate::appmenu::in_window_titles(app) {
+                    menus_right = crate::menus::menu_bar(app, ui);
+                }
                 // The menu bar takes the whole row, so the right-hand group gets its own rect:
                 // from the menus to the bar's end, or to the caption buttons.
                 let right_edge = if custom { full.right() - crate::titlebar::WIDTH - 4.0 } else { full.right() };
