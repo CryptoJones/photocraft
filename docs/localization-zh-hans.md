@@ -9,10 +9,11 @@ were extracted or copied. Contributions use the repository's MIT OR Apache-2.0 l
 ## Current status
 
 The Simplified Chinese catalog is registered as `zh-hans` and can be selected in
-Preferences. The current catalog covers every source, context, and command key in
-the Japanese, Traditional Chinese, Spanish, and Czech catalogs. The 133 entries
-added during the Fluent migration use original wording from PhotoCraft's English
-UI. Their terminology follows the table below; no proprietary catalog was used.
+Preferences. Its wording targets Mainland China usage. Both Chinese catalogs
+now cover every English base Fluent message ID and all four command-specific
+IDs (2,434 messages per Chinese catalog). The wording follows the table below; no proprietary
+catalog was used. The Traditional Chinese catalog targets Taiwan usage and was
+proofread separately; script conversion alone is insufficient.
 
 ## Files and integration
 
@@ -33,22 +34,22 @@ Traditional Chinese locales (`zh-TW`, `zh-HK`, `zh-MO`, `zh-Hant`) select the
 Traditional Chinese catalog. Native automatic detection uses platform locale
 settings; the web build currently needs manual selection.
 
-## Terminology
+## Regional terminology
 
-| English | Simplified Chinese |
-| --- | --- |
-| Layer / Layer Comp | 图层 / 图层复合 |
-| Mask / Clipping Mask | 蒙版 / 剪贴蒙版 |
-| Selection / Feather | 选区 / 羽化 |
-| Blend Mode / Opacity | 混合模式 / 不透明度 |
-| Adjustment Layer | 调整图层 |
-| Smart Object / Smart Filter | 智能对象 / 智能滤镜 |
-| Canvas / Artboard | 画布 / 画板 |
-| Brush / Stroke | 画笔 / 描边 |
-| Fill / Gradient | 填充 / 渐变 |
-| Path / Rasterize | 路径 / 栅格化 |
-| Preset / Swatch | 预设 / 色板 |
-| Export / Preferences | 导出 / 首选项 |
+| English | Mainland Simplified | Taiwan Traditional |
+| --- | --- | --- |
+| Layer / Layer Comp | 图层 / 图层复合 | 圖層 / 圖層構圖 |
+| Mask / Clipping Mask | 蒙版 / 剪贴蒙版 | 遮色片 / 剪裁遮色片 |
+| Selection / Feather | 选区 / 羽化 | 選取範圍 / 羽化 |
+| Blend Mode / Opacity | 混合模式 / 不透明度 | 混合模式 / 不透明度 |
+| Adjustment Layer | 调整图层 | 調整圖層 |
+| Smart Object / Smart Filter | 智能对象 / 智能滤镜 | 智慧型物件 / 智慧型濾鏡 |
+| Canvas / Artboard | 画布 / 画板 | 畫布 / 工作區域 |
+| Export / Preferences | 导出 / 首选项 | 匯出 / 偏好設定 |
+
+Terminology was cross-checked against public [Mainland selection guidance](https://helpx.adobe.com/cn/photoshop/desktop/make-selections/refine-modify-selections/refine-and-soften-selection-edges.html)
+and [Taiwan layer-mask guidance](https://helpx.adobe.com/tw/photoshop/using/editing-layer-masks.html).
+The PhotoCraft messages themselves are original translations.
 
 ## Validation and maintenance
 
@@ -77,9 +78,12 @@ check coverage.
 ## Proofreading workflow
 
 The catalogs are plain Fluent files and can be reviewed through GitHub pull
-requests today. Weblate is the recommended next step for community proofreading:
-configure its Fluent component with `en.ftl` as the source catalog and each
-language's `.ftl` as a translation, then have it submit translation pull requests.
-Keep `cargo xtask i18n check` and the UI build as merge gates. Weblate's Fluent
-editor validates syntax, but plural variants remain part of the Fluent message
-syntax rather than separate plural fields. No Weblate project is connected yet.
+requests today. For translator-friendly Fluent plural editing, evaluate Mozilla
+Pontoon first: it presents target-locale plural categories and example numbers.
+Weblate offers a GitHub pull request workflow and Fluent syntax checks, but its
+Fluent editor does not expose plural variants as separate fields. Keep
+`cargo xtask i18n check` and the UI build as merge gates with either service.
+No translation service is connected yet.
+
+References: [Pontoon's Fluent editor](https://blog.mozilla.org/l10n/2019/04/11/implementing-fluent-in-a-localization-tool/),
+[Weblate's Fluent format support](https://docs.weblate.org/en/latest/formats/fluent.html).

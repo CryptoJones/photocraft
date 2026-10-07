@@ -598,11 +598,11 @@ fn check_catalogs(dir: &Path) -> Result<(), String> {
                 }
             }
         }
-        if lang == "en" {
-            let required: BTreeSet<_> = keys.iter().filter(|(_, (ctx, _))| ctx != "@id").map(|(id, _)| id.clone()).collect();
+        if matches!(lang, "en" | "zh-hans" | "zh-hant") {
+            let required: BTreeSet<_> = keys.iter().filter(|(_, (ctx, _))| lang != "en" || ctx != "@id").map(|(id, _)| id.clone()).collect();
             let missing: Vec<_> = required.difference(&seen).take(10).collect();
             if !missing.is_empty() {
-                return Err(format!("English FTL missing IDs: {missing:?}"));
+                return Err(format!("{lang} FTL missing IDs: {missing:?}"));
             }
         }
         println!("{lang}: {} Fluent messages validated", seen.len());

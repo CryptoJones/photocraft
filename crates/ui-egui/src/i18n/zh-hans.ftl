@@ -3231,7 +3231,7 @@ ui-save-in-background-5b7c5c7e1adad12f = 后台保存
 
 ui-save-pixel-aspect-ratio-e5a86b374fc86001 = 保存像素长宽比
 
-ui-save-selection-8e7ebec6daa582b4 = 保存选区…
+ui-save-selection-8e7ebec6daa582b4 = 存储选区…
 
 ui-save-selection-as-channel-096dcaa2c6049ae3 = 将选区存储为通道
 
@@ -3959,13 +3959,13 @@ ui-watercolour-look-lighter-interior-darker-955cea9a111d11a0 = 水彩效果：�
 
 ui-wave-a4a3a3f6a37669b6 = 波浪…
 
-ui-web-5ce3857df419807f = Web
+ui-web-5ce3857df419807f = 网页
 
-ui-web-large-81e297b9ef857bdc = Web 大尺寸
+ui-web-large-81e297b9ef857bdc = 网页大尺寸
 
-ui-web-minimum-b930bf6724fea4af = Web 最小尺寸
+ui-web-minimum-b930bf6724fea4af = 网页最小尺寸
 
-ui-web-most-common-e8e8ccfd726d14cf = Web 常用尺寸
+ui-web-most-common-e8e8ccfd726d14cf = 网页常用尺寸
 
 ui-web-snap-884fd96266ae5e55 = Web 安全色吸附
 
@@ -4053,3 +4053,831 @@ ui-zoom-with-scroll-wheel-405e9e1a41be72fa = 使用滚轮缩放
 
 ui-zoom-with-trackpad-pinch-40fe5f36f9b286c4 = 使用触控板捏合缩放
 
+
+# Additional Mainland China translations.
+
+ui-10-fps-ec754e5fee173c1d = 10 帧/秒
+
+ui-15-fps-90234431c3f336ee = 15 帧/秒
+
+ui-24-fps-f05a784679b0a792 = 24 帧/秒
+
+ui-25-fps-b881f50533244195 = 25 帧/秒
+
+ui-30-fps-0e87e2ada40fc6d3 = 30 帧/秒
+
+ui-3d-d9797c186c351ec0 = 3D
+
+ui-accurate-e115127d973fc78d = 精确
+
+ui-aces-123ec7ba01eeb4ab = ACES
+
+ui-actual-color-c58799e26b36f35e = 实际颜色
+
+ui-adaptive-wide-angle-c747abce58bf5c37 = 自适应广角
+
+ui-add-pins-f25f520adfc9d2a2 = 添加图钉
+
+ui-add-to-521f6de1aa57d7f3 = 添加到
+
+ui-adjustment-2ad6aa1f697d9564 = 调整
+
+ui-adjustment-layer-834a12e7c6f16e69 = 调整图层
+
+ui-adobe-every-line-composer-7e612f64c1113c28 = Adobe 多行排版器
+
+ui-adobe-rgb-1998-093b5ad27993ab35 = Adobe RGB (1998)
+
+ui-adobe-single-line-composer-254fd5690bfa27a3 = Adobe 单行排版器
+
+ui-advanced-8b4555fb47a8a281 = 高级
+
+ui-advanced-blending-d716397c3b2ed0de = 高级混合
+
+ui-advanced-controls-80464d3462bdd445 = 高级控件
+
+ui-after-x-f271ba813b713b4c = 之后 (X)
+
+ui-alignment-40ae160a9e770aa8 = 对齐方式
+
+ui-alpha-6dfd7ced24231d81 = Alpha
+
+ui-alternates-for-current-selection-5ffc93c126db3608 = 当前所选字符的替代字形
+
+ui-alternative-5e22bc17c1d448fa = 替代
+
+ui-aperture-7cddbf632652c88b = 光圈
+
+ui-apple-rgb-b93c342181c17bc6 = Apple RGB
+
+ui-apply-layer-comp-6aef8fe2a37a397b = 应用图层复合
+
+ui-arc-189a327e5d9dea81 = 弧形
+
+ui-arch-6beeb5b9135629eb = 拱形
+
+ui-art-history-brush-e952e985ff84aee4 = 艺术历史记录画笔
+
+ui-artist-db6afff8cbb64a68 = 艺术家
+
+ui-ask-before-saving-saved-embedded-8247206155b5612e = 保存已存储的嵌入内容前询问
+
+ui-ask-when-pasting-2ad4c16bef1c9384 = 粘贴时询问
+
+ui-audio-5e1ee8b2642f9f1b = 音频
+
+ui-author-4ee0c69c163afe30 = 作者
+
+ui-auto-clean-brush-b9bd276e275519b5 = 自动清洁画笔
+
+ui-auto-erase-8a68e4bc3af7d82e = 自动擦除
+
+ui-auto-hide-5e83d809ac4f1243 = 自动隐藏
+
+ui-auto-leading-4cf311c55ab1efd3 = 自动行距
+
+ui-auto-leading-a1bdd5af972974c4 = 自动行距 %
+
+ui-automatically-create-first-snapshot-613a2404994e2d62 = 自动创建第一个快照
+
+ui-automatically-create-new-snapshot-when-s-1244c734037079e0 = 存储时自动创建新快照
+
+ui-avoid-widows-orphans-be516b31016e31f3 = 避免孤行
+
+ui-baseline-shift-337e40e4e34543b4 = 基线偏移
+
+ui-blend-6e128c1e53f35f56 = 混合
+
+ui-blend-rgb-colors-using-gamma-1-0-cf1ba612b5d349ab = 使用伽马值 1.0 混合 RGB 颜色
+
+ui-bold-italic-ab996b432667b548 = 粗斜体
+
+ui-brush-size-6fd384f2373894fe = 画笔大小
+
+ui-brush-tip-47495e0f40c5a930 = 画笔笔尖
+
+ui-bulge-56b2405505aaa3ea = 凸出
+
+ui-burn-eeb148b282fff846 = 加深
+
+ui-byline-e19ab948673e8978 = 署名
+
+ui-byline-title-5523c76157239ece = 署名职务
+
+ui-camera-calibration-05bc84d7edceb424 = 相机校准
+
+ui-camera-data-90b2af05c38e73b8 = 相机数据
+
+ui-camera-make-47c9cb51fa207e7a = 相机制造商
+
+ui-camera-model-6ca5e55ddcd82f7d = 相机型号
+
+ui-canvas-rotation-f20552b22f125f53 = 画布旋转
+
+ui-caption-3e0fd4291b37d3ef = 说明
+
+ui-caption-credits-1e7cb39d478a2d0d = 说明鸣谢
+
+ui-capture-comp-2836ead1686dd5da = 捕获图层复合
+
+ui-category-71f87b7b5851b653 = 类别
+
+ui-chalk-charcoal-870a56b8b5ae2cdf = 粉笔和炭笔
+
+ui-channel-f3238895531f739e = 通道
+
+ui-charcoal-3ac73fdeb5d7e68c = 炭笔
+
+ui-choose-235111aae73bc47a = 选择…
+
+ui-chrome-4232ba97c6ef7e41 = 铬黄
+
+ui-cie-rgb-6772b54594aeb6a5 = CIE RGB
+
+ui-city-92872bac97504f90 = 城市
+
+ui-clear-history-0de1f75d1bae3ee8 = 清除历史记录
+
+ui-clipping-path-e903dc37276719a0 = 剪切路径
+
+ui-clone-stamp-ef5a041765c4c833 = 仿制图章
+
+ui-cmyk-f773041b5a755e37 = CMYK：
+
+ui-coerce-to-srgb-eccabb69f35e69f1 = 强制转换为 sRGB
+
+ui-color-adaptation-f7d5eb50532ba5ff = 颜色适应
+
+ui-color-indicates-0829a583f2dfe472 = 颜色表示
+
+ui-color-management-policies-53602ded008d5689 = 色彩管理策略
+
+ui-color-noise-reduction-d5279c75f03cc0b5 = 减少颜色杂色
+
+ui-color-profile-997217f0823061a7 = 颜色配置文件
+
+ui-color-range-50f5b2b6eafe6017 = 色彩范围
+
+ui-color-replacement-1fd9c85a92dd0166 = 颜色替换
+
+ui-colormatch-rgb-e79a082695b37f7c = ColorMatch RGB
+
+ui-colorsync-b283752ff4b5488d = ColorSync
+
+ui-columns-3da979c5c05c263a = 列
+
+ui-compatibility-fb993b4366b6dae5 = 兼容性
+
+ui-compose-000499e63b9865f1 = 合成
+
+ui-condensed-514bf80cab6f5664 = 窄体
+
+ui-cont-crayon-5e0b4f02a6ded4fb = 孔泰蜡笔
+
+ui-content-aware-move-953a1d4c41e938cc = 内容感知移动
+
+ui-convert-frames-video-layers-639ba523c86fc695 = 将帧转换为视频图层
+
+ui-convert-to-grayscale-077b911cd42b05d4 = 转换为灰度
+
+ui-copyright-info-url-75755e32eb105bc1 = 版权信息网址
+
+ui-copyright-status-f7ba12adba0168f6 = 版权状态
+
+ui-copyrighted-788b061aa2d0b375 = 受版权保护
+
+ui-country-9e07eb5ff60fbf3f = 国家/地区
+
+ui-create-date-970138cc61843099 = 创建日期
+
+ui-create-multiple-picture-packages-333d36bb22741294 = 创建多个图片包
+
+ui-create-new-count-group-6e92595b2956ebf9 = 新建计数组
+
+ui-create-new-layer-fdc628bbf95ac7ac = 新建图层
+
+ui-create-new-set-74546a2a2de5fde1 = 新建组
+
+ui-create-plane-de99e34027780935 = 创建平面
+
+ui-create-snapshot-5fac2668f9475f0d = 创建快照
+
+ui-credit-89608979906480fe = 鸣谢
+
+ui-current-a6280b8d8bb7d590 = 当前
+
+ui-current-time-7360f73c40643189 = 当前时间
+
+ui-date-created-36f129c9e9b2366f = 创建日期
+
+ui-datetime-original-156e819149b2056d = 原始日期时间
+
+ui-defaults-restored-1af78db9c43b93f1 = 已恢复默认设置。
+
+ui-delete-layer-9c44a8871ea98f07 = 删除图层…
+
+ui-delete-path-86750fe9fc4b3e43 = 删除路径
+
+ui-delete-pins-4217b0e9d5d66350 = 删除图钉
+
+ui-delete-preset-6575e4428ebb4fa5 = 删除预设…
+
+ui-delete-smart-filters-10171a17a74fd566 = 删除智能滤镜
+
+ui-delete-snapshot-4cf5a2d000ab3820 = 删除快照
+
+ui-desaturate-monitor-colors-by-b535020b6e5b8046 = 将显示器颜色去饱和
+
+ui-detect-faces-28e65e36e8c3c20e = 检测人脸
+
+ui-digits-72180221d8a9aa81 = 数字
+
+ui-direction-of-stroke-0e65ad01cf66ef03 = 描边方向
+
+ui-do-you-want-to-save-you-made-to-name-bef-5d145da7c1a07471 = 退出前要保存对“{ $name }”所做的更改吗？
+
+ui-document-size-ec99a3bb860eb85f = 文档大小
+
+ui-dodge-a91837fc641e00f6 = 减淡
+
+ui-dodge-burn-430dff5bd3396d92 = 减淡/加深
+
+ui-drag-a-crop-box-drag-inside-to-move-edge-e566d06268582827 = 拖动绘制裁剪框 · 在框内拖动以移动 · 拖动边缘以调整大小（比例：{ $ratio }，中心：{ $centre }）· 绘制时按空格键移动 · { $commit } 确认 · Esc 取消
+
+ui-drag-lasso-or-click-points-polygonal-add-71afddda665b962c = 拖动绘制套索，或单击添加多边形节点 · { $add } 添加 · { $sub } 减去
+
+ui-drag-to-move-the-layer-25d94387be5f6a0d = 拖动以移动图层
+
+ui-duplicate-f94b553491159a80 = 复制
+
+ui-duplicate-layer-comp-800448bbc5af9c7c = 复制图层复合
+
+ui-duplicate-path-68a3014397e46207 = 复制路径
+
+ui-duplicated-selection-name-1da6988da4316d7d = 选区名称重复
+
+ui-duration-7110eeef2b77963b = 持续时间
+
+ui-dynamics-78fe326d05a35b65 = 动态
+
+ui-edit-plane-49bb7193ccfb0ca9 = 编辑平面
+
+ui-email-6ecda634d3fe08ad = 电子邮件
+
+ui-embed-profiles-b650860fa7bf761a = 嵌入配置文件
+
+ui-enable-smart-filters-7dde9c98faad6ed2 = 启用智能滤镜
+
+ui-enable-timeline-quick-config-e3ace95f14b4eea6 = 启用时间轴快速配置
+
+ui-enter-description-fae4b577c04ffd6b = 输入说明…
+
+ui-error-file-32ff0723f85f2afb = 错误文件
+
+ui-errors-2923ea7fa70533d4 = 错误
+
+ui-exif-36ce659b4ac21a75 = EXIF
+
+ui-exif-version-f5ef531100f1bcd1 = EXIF 版本
+
+ui-expand-all-groups-f86177d7bd4342dc = 展开所有组
+
+ui-exposure-program-d19eb0ad9edd275a = 曝光程序
+
+ui-extensions-3f41c5a887c301e1 = 扩展
+
+ui-extra-bold-ec95cafd5498d402 = 特粗体
+
+ui-extra-light-9e4f57ea6990fba3 = 特细体
+
+ui-f-08324207b4eaf8fb = F
+
+ui-fast-de99d08fb71b46e9 = 快速
+
+ui-file-naming-273185c0a8199c23 = 文件命名
+
+ui-fill-light-7c6733a773777d56 = 补光
+
+ui-fill-path-efc74479f9ba4931 = 填充路径
+
+ui-first-color-readout-5e29d6e7c4691ee4 = 第一个颜色读数
+
+ui-first-line-indent-ba6c308158193bcf = 首行缩进
+
+ui-fish-99baa48f903794b5 = 鱼形
+
+ui-flag-c540728fa8edcc81 = 标志
+
+ui-flash-1a26bb1c0bf06ecf = 闪光灯
+
+ui-flatten-frames-into-clips-469ac076d2065a74 = 将帧拼合为剪辑
+
+ui-flatten-frames-into-layers-25329b55f5d4337b = 将帧拼合为图层
+
+ui-focal-length35mm-0749b496cfd26d5e = 35 毫米等效焦距
+
+ui-frame-duration-3aaf94257bf41e24 = 帧持续时间
+
+ui-frame-sync-0895ca043d86e08f = 帧同步
+
+ui-general-blend-1c444e2d1a279106 = 常规混合
+
+ui-glyph-3638b606114960bf = 字形
+
+ui-glyph-scaling-ea2a94a5497ddb8a = 字形缩放
+
+ui-go-to-layer-98168259e44da003 = 转到图层
+
+ui-gps-e5810c7e40eb8e61 = GPS
+
+ui-graphic-and-web-8065b7275784c626 = 图形和网页
+
+ui-graphic-pen-4b3a1c134e78b3ba = 绘图笔
+
+ui-gray-dcd762be8e5af9a2 = 灰度：
+
+ui-grayscale-slider-712e650186f6d0af = 灰度滑块
+
+ui-group-n-layer-bb992bb3cba6e77c = 组 · { $n } 个图层
+
+ui-h-08324007b4eaf595 = H
+
+ui-halftone-pattern-15b6576b2f14f87c = 半调图案
+
+ui-hand-1e44f282b91ee156 = 抓手
+
+ui-hanging-punctuation-d8a4463e4de06e0d = 悬挂标点
+
+ui-hdtv-rec-709-d4a9b97793f8abd2 = HDTV (Rec. 709)
+
+ui-heal-auto-af3efb2a216f9104 = 自动修复
+
+ui-heal-color-7fdbce3a322cb2d6 = 修复颜色
+
+ui-heal-fa113882a42cc35d = 修复
+
+ui-heal-off-7c5c92671daf5d94 = 关闭修复
+
+ui-heal-on-9ea0c89a6cf10ce2 = 开启修复
+
+ui-healing-2694109907060b63 = 修复
+
+ui-hide-62cb3782dfb6952f = 隐藏
+
+ui-high-62d61c82dfc06ed3 = 高
+
+ui-history-brush-55a0220a103e6e51 = 历史记录画笔
+
+ui-hsb-color-578ed20fcd8fae67 = HSB 颜色
+
+ui-hsl-grayscale-5444bbfef8f1af96 = HSL/灰度
+
+ui-humidity-b776c818746f0d9a = 湿度
+
+ui-import-93f9356ee0cef73e = 导入…
+
+ui-in-d854a6186b3bd6e4 = 入点
+
+ui-include-icc-profile-f88ccf26c021eabd = 包含 ICC 配置文件
+
+ui-industry-standard-e68be8fa930df146 = 行业标准
+
+ui-inflate-ba6551601e2bc93a = 膨胀
+
+ui-info-options-ba41ac823df638bf = 信息选项…
+
+ui-initial-direction-of-stroke-5768f85fbf1bcf2b = 初始描边方向
+
+ui-interpolation-13e1625cb7207057 = 插值
+
+ui-intersect-with-d970e4cba7ff0d74 = 与以下项交叉
+
+ui-iso-d42aa67e37189ce4 = ISO
+
+ui-iso-speed-58635577504596c7 = ISO 感光度
+
+ui-justification-332d6ac62d6686b7 = 对齐方式
+
+ui-justify-f029cfac86b593d1 = 两端对齐
+
+ui-keep-proportions-4e8bfd0bbf6db74d = 保持比例
+
+ui-keep-view-in-sync-9a5cc0eea77097fd = 保持视图同步
+
+ui-keywords-077319116ce9acf3 = 关键词
+
+ui-last-modified-6f282422da29401a = 上次修改时间
+
+ui-layer-comp-f3070851149e6d07 = 图层复合
+
+ui-lens-6ac5c15efea4af77 = 镜头
+
+ui-lens-corrections-fae69d43b7714af6 = 镜头校正
+
+ui-lens-info-1f083409032cf395 = 镜头信息
+
+ui-letter-spacing-48872da180eac8d2 = 字母间距
+
+ui-libraries-9058911e19b33532 = 库
+
+ui-ligature-e7c56eefdf86845e = 连字
+
+ui-light-source-651c381dfc815f9e = 光源
+
+ui-limit-playback-c180683ddf83fd6b = 限制播放
+
+ui-load-selection-072d9465bd4fdf85 = 载入选区
+
+ui-localize-color-clusters-03daf070874e4522 = 局部化颜色簇
+
+ui-location-297949d1a95f2298 = 位置
+
+ui-log-errors-to-file-801ca395fbea425b = 将错误记录到文件
+
+ui-loop-3890be5ee2b48715 = 循环
+
+ui-low-ba5e537e2889f79f = 低
+
+ui-luminance-smoothness-c80df353d97843d4 = 亮度平滑度
+
+ui-mac-crisp-30e90b1e0384a841 = Mac 清晰
+
+ui-mac-lcd-7e949051ed693d19 = Mac LCD
+
+ui-mac-os-75e4d5ef1f23f668 = Mac OS
+
+ui-mac-sharp-733ef447d8966afe = Mac 锐利
+
+ui-mac-smooth-d3901161744398c0 = Mac 平滑
+
+ui-mac-strong-93ccbc04d27da6a9 = Mac 强劲
+
+ui-magnetic-lasso-901881eb1304c0ef = 磁性套索
+
+ui-make-0f19a759136050ed = 创建
+
+ui-make-selection-e8ebb66c40ab9f93 = 建立选区
+
+ui-make-work-path-235a14b152f6796d = 建立工作路径
+
+ui-mask-0ec79959131a2efb = 蒙版
+
+ui-masked-areas-b4d6e3ca89a842e8 = 被蒙版区域
+
+ui-measure-fc7c5bb198567ced = 测量
+
+ui-metering-mode-761302e00c1b6697 = 测光模式
+
+ui-method-6af65cb89c77c496 = 方法
+
+ui-minimalistic-7a9c4f42ae94e8f2 = 简约
+
+ui-missing-profiles-ask-when-opening-5c9b77897ec2e9fc = 缺少配置文件：打开时询问
+
+ui-mode-color-bits-bit-91d967615006031b = { $mode } 颜色 · { $bits } 位
+
+ui-model-46f11a6db9b6597c = 型号
+
+ui-modify-date-8186d827f8e867fb = 修改日期
+
+ui-mouse-controls-eaf2d918ca7194b0 = 鼠标控制
+
+ui-mouse-coordinates-d5893efae4b83639 = 鼠标坐标
+
+ui-move-20f7e9591da69ed6 = 移动
+
+ui-new-brush-5dee4a87912f9d7b = 新建画笔
+
+ui-new-channel-b0696786256acc9c = 新建通道
+
+ui-new-channel-only-12fa6e7fc054d04e = 仅新建通道
+
+ui-new-group-9049a6924e738ed4 = 新建组
+
+ui-new-layer-a7839d7af7be371e = 新建图层…
+
+ui-new-layer-comp-a839d8084e1ff239 = 新建图层复合
+
+ui-new-layer-from-brush-f04013a5129bfb4a = 从画笔新建图层
+
+ui-new-path-4653ce4a29d4fc2e = 新建路径
+
+ui-new-selection-c08152b93e9cb14d = 新建选区
+
+ui-new-snapshot-0fd65c54e36905c5 = 新建快照
+
+ui-new-style-a7c91bf676fef79e = 新建样式…
+
+ui-new-tool-preset-0d8f6b22acc3e2a6 = 新建工具预设
+
+ui-new-video-group-d04a813e88993e5f = 新建视频组
+
+ui-new-video-layer-742bbca76d53ae89 = 新建视频图层
+
+ui-newspaper-e1b0e1e6ca6fa566 = 报纸
+
+ui-no-layer-comps-fb0df74b655f7f21 = 没有图层复合
+
+ui-nonlinear-history-3545dcaaf062bd1f = 非线性历史记录
+
+ui-note-paper-545e7d9fd9e62821 = 便笺纸
+
+ui-note-tool-064a4745c0eebf4f = 注释工具
+
+ui-ntsc-1953-8f50830135401be8 = NTSC (1953)
+
+ui-object-name-title-a049198654e75c64 = 对象名称/标题
+
+ui-opacity-mask-31dde80f8ea8f674 = 不透明度蒙版
+
+ui-operation-b8ed9c5e1c28f13c = 操作
+
+ui-out-a11feb7e1a7333f1 = 出点
+
+ui-override-action-save-commands-81e65588ba62d0a8 = 覆盖动作中的“存储”命令
+
+ui-pal-secam-787a738bfba5a68c = PAL/SECAM
+
+ui-panel-options-a0c409325a94f11b = 面板选项…
+
+ui-patch-d60a1e8bcbb424c3 = 修补
+
+ui-path-d61b4e8bcbc2e986 = 路径：
+
+ui-path-to-illustrator-8f33f4b326ccb04c = 将路径导出到 Illustrator…
+
+ui-pattern-stamp-3def986c64c12dcc = 图案图章
+
+ui-pdf-presentation-b0967ad8f5e4b0af = PDF 演示文稿…
+
+ui-pen-96d7a67e142aa592 = 钢笔
+
+ui-pencil-8084544d4ac2ea36 = 铅笔
+
+ui-pencil-tool-45b01c785fc0cc2c = 铅笔工具
+
+ui-perspective-crop-d3307f4681570c23 = 透视裁剪
+
+ui-phone-766c40504e2bc6bd = 电话
+
+ui-photo-2-3-in-8a63cb48683e95ce = 照片（2 × 3 英寸）
+
+ui-photo-4-6-in-13e0d4c59c558b7b = 照片（4 × 6 英寸）
+
+ui-photo-5-7-in-5258fe91e822a565 = 照片（5 × 7 英寸）
+
+ui-photo-8-10-in-d06f49a9848a1792 = 照片（8 × 10 英寸）
+
+ui-photocopy-c2aa73f2f0081450 = 影印
+
+ui-picture-package-4ff232928cc24ff5 = 图片包…
+
+ui-pixel-3384f245579d9ba5 = 像素
+
+ui-plaster-00931dc04a16519a = 石膏
+
+ui-play-once-8b69f9041acd8292 = 播放一次
+
+ui-preserve-transparency-ec3f87e2963c04bb = 保留透明区域
+
+ui-preset-name-9c3a1de649a97273 = 预设名称：
+
+ui-profile-mismatches-ask-when-opening-77e6e642c7e897d9 = 配置文件不匹配：打开时询问
+
+ui-prophoto-411d8bc8552122fe = ProPhoto
+
+ui-prophoto-rgb-3c1d71803bd2217d = ProPhoto RGB
+
+ui-province-state-5243449acb19199b = 省/州
+
+ui-public-domain-68d8b21b80abd732 = 公有领域
+
+ui-punctuation-11ef795a1131b25d = 标点符号
+
+ui-quick-selection-5118c8caf468d640 = 快速选择
+
+ui-quick-sync-ae1bef51cb6dc645 = 快速同步
+
+ui-raw-data-6ae0e1ce5accb9bd = 原始数据
+
+ui-recent-items-b30bda9a23a456f8 = 最近使用的项目
+
+ui-recovery-7e50a417e2a3f2a4 = 恢复
+
+ui-rectangle-83c0e98d088e8bec = 矩形
+
+ui-red-eye-96b14bb055bf9143 = 红眼
+
+ui-reference-point-location-d5d0aada333a3e05 = 参考点位置
+
+ui-rename-layer-comp-c52bb894c6b6d4d7 = 重命名图层复合
+
+ui-repeat-3e38ef62b047cd38 = 重复
+
+ui-reset-28450354f52cb7ae = 重置
+
+ui-restore-last-viewed-comp-f2cf5460bb42cba2 = 恢复上次查看的图层复合
+
+ui-result-10c5e35c4da82246 = 结果
+
+ui-reticulation-aea2deae4f7a1238 = 网状化
+
+ui-rgb-879d887e0c22abf6 = RGB
+
+ui-rgb-935aba2e9ee9eba4 = RGB：
+
+ui-rise-23adcf2f8230754a = 基线偏移
+
+ui-roman-0b06cb84c9b9947c = 罗马体
+
+ui-roman-hanging-punctuation-b7c67ad951476a24 = 罗马标点悬挂
+
+ui-rotate-auto-e13ccc6806d977c3 = 自动旋转
+
+ui-rotate-fixed-0a90373e325c151e = 固定旋转
+
+ui-rotate-view-db81b0d3c1a858dd = 旋转视图
+
+ui-ruler-09c12bd133985e69 = 标尺
+
+ui-ruler-units-47917b18897be816 = 标尺单位
+
+ui-sampler-bd80d8f68741d5cd = 取样器
+
+ui-save-preset-2328ef2728084c33 = 存储预设…
+
+ui-save-selection-65137d0b89b4d128 = 存储选区
+
+ui-saved-5eaa631947aa180a = 已保存
+
+ui-saved-multichannel-b8a57129424ad016 = 已保存的多通道
+
+ui-scale-horizontally-82b9de87fb0529ca = 水平缩放
+
+ui-scale-vertically-11fa904a7fa3174c = 垂直缩放
+
+ui-scrubby-zoom-be94ebd193e23a8a = 拖动缩放
+
+ui-second-color-readout-9c7065528e78f8a0 = 第二个颜色读数
+
+ui-select-all-layers-1faac7e78f3cab66 = 选择所有图层
+
+ui-select-folder-0aac0678d7c0f94b = 选择文件夹…
+
+ui-select-plane-ed0724f38a36575d = 选择平面
+
+ui-select-similar-colors-bc2474afa6c0302a = 选择相似颜色
+
+ui-selected-areas-fd185287cecd47f4 = 选定区域
+
+ui-semi-bold-2ab4997d447a1c4c = 半粗体
+
+ui-set-new-snapshot-as-default-92ca61404557bf22 = 将新快照设为默认
+
+ui-set-start-timecode-2564227659cfcddd = 设置起始时间码…
+
+ui-settings-24158e92756cfab8 = 设置：
+
+ui-settings-ef8bc95b8e198e52 = 设置
+
+ui-sharpness-3c4bf4efd0a270aa = 锐度
+
+ui-shell-lower-9a5cf3f1252fc476 = 下方外壳
+
+ui-shell-upper-9eca01f8c0d1f003 = 上方外壳
+
+ui-shortcut-0f64c2be41c459ed = 快捷键
+
+ui-show-new-snapshot-dialog-by-default-d47b516cf56abf84 = 默认显示新建快照对话框
+
+ui-shutter-speed-22e03ade97f42a9b = 快门速度
+
+ui-single-word-justification-04a621a3f9461abf = 单词两端对齐
+
+ui-smpte-c-f8071a9ee9fc783b = SMPTE C
+
+ui-snapshot-1-8c750584b60c9adc = 快照 1
+
+ui-snapshots-31fea07601981cdc = 快照
+
+ui-software-d44afac479e39cce = 软件
+
+ui-spacing-d50ce42d5c2403c2 = 间距：
+
+ui-split-at-playhead-4a95a33c1c193c5a = 在播放指针处拆分
+
+ui-split-toning-cd30d950a18ea864 = 分离色调
+
+ui-spot-2f2f4e9694c8dac7 = 专色：
+
+ui-spot-channel-236b0b462ce58444 = 专色通道
+
+ui-spot-color-d4a83ff05ef21ad8 = 专色
+
+ui-spot-healing-bcac570ea82d0bbd = 污点修复
+
+ui-squeeze-0f5e118c9433ba15 = 挤压
+
+ui-srgb-7688602f161704c7 = sRGB
+
+ui-srgb-iec61966-2-1-0659b1eb95253d52 = sRGB IEC61966-2.1
+
+ui-stamp-5b5c5077e1a0cdce = 图章
+
+ui-status-information-22c0a472a9471caf = 状态信息
+
+ui-step-backward-c0657e07f18988aa = 后退一步
+
+ui-step-forward-b39286cbac324924 = 前进一步
+
+ui-stop-2f799723962762c7 = 停止
+
+ui-stop-for-errors-2142497b0ae1525f = 遇到错误时停止
+
+ui-stroke-path-928631a432241fae = 描边路径
+
+ui-subject-distance-1ca88071e9df0120 = 拍摄距离
+
+ui-subscript-62e307c4acd91114 = 下标
+
+ui-subtract-from-0136b3deafe79ed9 = 从以下项减去
+
+ui-superscript-99a45cb571f46c89 = 上标
+
+ui-supplemental-categories-7b3f4ffaaa384fa7 = 补充类别
+
+ui-symbols-ce309d4c47a33a6c = 符号
+
+ui-technology-previews-3072798703754006 = 技术预览
+
+ui-tilt-b985ee1d9beae9c8 = 倾斜
+
+ui-time-b98a031d9beef64e = 时间
+
+ui-timecode-99850edb120ae613 = 时间码
+
+ui-timing-15e8bbe0b7db5239 = 时序
+
+ui-toggle-reference-point-0cd01c6441e56224 = 切换参考点
+
+ui-tone-curve-3c38614e6901ed10 = 色调曲线
+
+ui-toolbars-cad3e137fe80a95f = 工具栏
+
+ui-torn-edges-0a0957dc6e1d2e44 = 撕边
+
+ui-total-ink-915d776b2e77e00f = 总墨量
+
+ui-transmission-reference-61b3f73080d99b56 = 透射参考
+
+ui-twist-db6d94b6723bdc06 = 扭曲
+
+ui-ultra-bold-0e750679c9b01556 = 超粗体
+
+ui-ultra-light-5c45c78dc6114def = 超细体
+
+ui-uncoated-cmyk-560a33ddf6798c06 = 非涂布 CMYK
+
+ui-units-4786604a4c89bd8a = 单位
+
+ui-unix-0e39b5126a1b4ed9 = Unix
+
+ui-unknown-f1645a05af505be7 = 未知
+
+ui-update-layer-comp-d936cc84e843270a = 更新图层复合
+
+ui-urgency-40f7bbb79c23dcea = 紧急程度
+
+ui-urls-ff6c3612f25809d1 = 网址
+
+ui-view-menu-4e213ac9510a7cb1 = 视图菜单
+
+ui-w-08323107b4eadc18 = W
+
+ui-wand-cff52c05b5d3f211 = 魔棒
+
+ui-water-paper-94b295607e53b2cc = 水彩纸
+
+ui-wave-cfda3b05b5bd43d6 = 波浪
+
+ui-web-color-dc206fab83b1da60 = 网页颜色
+
+ui-web-photo-gallery-d4ed61babd3cd4b7 = 网页照片画廊…
+
+ui-wide-gamut-rgb-dec618303218b809 = 宽色域 RGB
+
+ui-width-and-height-ac0eca0c803cf79f = 宽度和高度
+
+ui-word-spacing-ad80fd8a5224be2a = 单词间距
+
+ui-working-gray-plate-d62dbedd4071910d = 工作灰版
+
+ui-working-space-fb7ac6da9d23906c = 工作空间
+
+ui-working-spaces-75300479036de4ad = 工作空间
+
+ui-x-08323007b4eada65 = X
+
+ui-y-08322f07b4ead8b2 = Y
+
+ui-zoom-1cb440cd80187719 = { $zoom }%
