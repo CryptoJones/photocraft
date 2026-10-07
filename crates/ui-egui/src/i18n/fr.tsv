@@ -2520,3 +2520,4 @@ cameraRaw	Blending	Fusion
 	Variations…	Variantes…
 	Composite	Image composite
 	Prompt	Consigne
+	Couldn't place {name}: {error}	Impossible d'importer {name} : {error}

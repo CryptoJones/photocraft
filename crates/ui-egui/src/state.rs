@@ -82,6 +82,7 @@ pub enum Tool {
     Gradient,
     PaintBucket,
     Type,
+    VerticalType,
     Hand,
     Zoom,
     SpotHealing,
@@ -111,7 +112,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Tool; 46] = [
+    pub const ALL: [Tool; 47] = [
         Tool::Move,
         Tool::RectMarquee,
         Tool::EllipseMarquee,
@@ -132,6 +133,7 @@ impl Tool {
         Tool::Gradient,
         Tool::PaintBucket,
         Tool::Type,
+        Tool::VerticalType,
         Tool::Hand,
         Tool::Zoom,
         Tool::SpotHealing,
@@ -184,6 +186,7 @@ impl Tool {
             Tool::Gradient => "Gradient Tool",
             Tool::PaintBucket => "Paint Bucket Tool",
             Tool::Type => "Horizontal Type Tool",
+            Tool::VerticalType => "Vertical Type Tool",
             Tool::Hand => "Hand Tool",
             Tool::Zoom => "Zoom Tool",
             Tool::SpotHealing => "Spot Healing Brush Tool",
@@ -210,6 +213,10 @@ impl Tool {
             Tool::CustomShape => "Custom Shape Tool",
         }
     }
+    pub fn is_type(self) -> bool {
+        matches!(self, Self::Type | Self::VerticalType)
+    }
+
     /// Retouching and painting tools that stroke with the brush (share the brush cursor and chip).
     pub fn is_brushlike(self) -> bool {
         matches!(
@@ -243,7 +250,7 @@ impl Tool {
             Tool::MagicWand => 'W',
             Tool::Crop | Tool::Slice | Tool::SliceSelect => 'C',
             Tool::Gradient | Tool::PaintBucket => 'G',
-            Tool::Type => 'T',
+            Tool::Type | Tool::VerticalType => 'T',
             Tool::Hand => 'H',
             Tool::Zoom => 'Z',
             Tool::SpotHealing | Tool::Healing | Tool::Patch | Tool::ContentAwareMove => 'J',
@@ -271,7 +278,7 @@ impl Tool {
             Tool::MagicWand => "W",
             Tool::Crop => "C",
             Tool::Gradient | Tool::PaintBucket => "G",
-            Tool::Type => "T",
+            Tool::Type | Tool::VerticalType => "T",
             Tool::Hand => "✋",
             Tool::Zoom => "🔍",
             _ => "•",
@@ -596,13 +603,23 @@ pub struct TransformSession {
     /// the Quick Mask by itself (`None`: the layer, with its linked masks).
     #[serde(default)]
     pub target: Option<serde_json::Value>,
-    /// Free Transform on a copy (⌥⌘T): the copy was made for this session, so Cancel takes it back
-    /// and OK folds it into the transform's history step (#352).
+    /// The layer was made for this session (⌥⌘T's copy, #352; a file dropped on the canvas), so
+    /// Cancel takes it back and OK folds it into one history step with the transform.
     #[serde(default)]
-    pub copy: bool,
+    pub made: Option<MadeLayer>,
     /// Edit › Transform › Skew / Distort / Perspective (`Free` for Free Transform).
     #[serde(default)]
     pub mode: TransformMode,
+}
+
+/// Why a Free Transform session's layer was made for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MadeLayer {
+    /// Free Transform on a copy (⌥⌘T): OK makes the copy and the transform one Free Transform step.
+    Copy,
+    /// A file dropped on the canvas: OK makes the place and the transform one Place Embedded step.
+    Place,
 }
 
 /// In-progress inline type editing (Type tool). Offsets are character indices.

@@ -2087,3 +2087,4 @@ cameraRaw	Color	Barvy
 	Variations…	Varianty…
 	Composite	Viditelný obraz
 	Prompt	Zadání
+	Couldn't place {name}: {error}	Nelze umístit {name}: {error}

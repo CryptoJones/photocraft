@@ -2364,3 +2364,4 @@ cameraRaw	Roughness	Неровность
 	Variations…	Вариации…
 	Composite	Составное изображение
 	Prompt	Запрос
+	Couldn't place {name}: {error}	Не удалось поместить {name}: {error}

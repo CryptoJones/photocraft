@@ -2130,4 +2130,5 @@
 	Variations…	Variationen…
 	Composite	Kompositbild
 	Prompt	Prompt-Text
+	Couldn't place {name}: {error}	{name} konnte nicht platziert werden: {error}
 	Full-resolution preview unavailable	Vorschau in voller Auflösung nicht verfügbar
