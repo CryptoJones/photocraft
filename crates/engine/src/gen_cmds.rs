@@ -144,6 +144,68 @@ fn mask_png(r: Rect, mut alpha: impl FnMut(i32, i32) -> f32) -> Result<Vec<u8>> 
     let img = Image::from_u8(r.width(), r.height(), ChannelLayout::Rgba, pixels).map_err(other)?;
     codecs::encode(&img, Format::Png, &Default::default()).map_err(other)
 }
+// The placement mask reaches into the source by half the requested expansion, capped at 64 px.
+// Use distance to the nearest edge so both axes meet smoothly at corners.
+fn expand_blend_alpha(x: i32, y: i32, old: Rect, band: u32) -> f32 {
+    if !old.contains(x, y) {
+        return 1.0;
+    }
+    let distance = (x - old.x0).min(old.x1 - 1 - x).min(y - old.y0).min(old.y1 - 1 - y) as f32;
+    let t = (1.0 - distance / band as f32).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn match_expand_colors(generated: &mut Surface, original: &Surface, area: Rect, old: Rect, band: u32) {
+    let mut pixels = generated.read_region(area);
+    let mut original_sum = [0.0f64; 3];
+    let mut generated_sum = [0.0f64; 3];
+    let mut original_squares = [0.0f64; 3];
+    let mut generated_squares = [0.0f64; 3];
+    let mut count = 0.0f64;
+    for y in old.y0..old.y1 {
+        for x in old.x0..old.x1 {
+            if expand_blend_alpha(x, y, old, band) <= 0.0 {
+                continue;
+            }
+            let source = original.rgba(x, y);
+            let index = (y as usize * area.width() as usize + x as usize) * 4;
+            let Some(result) = pixels.get(index..index + 4) else { continue };
+            if source[3] < 0.5 || result[3] < 0.5 {
+                continue;
+            }
+            count += 1.0;
+            for channel in 0..3 {
+                let a = f64::from(source[channel]);
+                let b = f64::from(result[channel]);
+                original_sum[channel] += a;
+                generated_sum[channel] += b;
+                original_squares[channel] += a * a;
+                generated_squares[channel] += b * b;
+            }
+        }
+    }
+    if count == 0.0 {
+        return;
+    }
+    let mut mean = [0.0; 3];
+    let mut target = [0.0; 3];
+    let mut gain = [1.0; 3];
+    for channel in 0..3 {
+        mean[channel] = generated_sum[channel] / count;
+        target[channel] = original_sum[channel] / count;
+        let source_std = (original_squares[channel] / count - target[channel] * target[channel]).max(0.0).sqrt();
+        let result_std = (generated_squares[channel] / count - mean[channel] * mean[channel]).max(0.0).sqrt();
+        if result_std > 1e-6 {
+            gain[channel] = source_std / result_std;
+        }
+    }
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        for channel in 0..3 {
+            pixel[channel] = ((f64::from(pixel[channel]) - mean[channel]) * gain[channel] + target[channel]).clamp(0.0, 1.0) as f32;
+        }
+    }
+    generated.write_region(area, &pixels);
+}
 fn place(s: &mut Session, label: &str, rgb: Surface, area: Rect, mask: Option<Surface>, expand: Option<u32>) -> Result<Value> {
     let id = s.edit(label, |doc, active| {
         if let Some(n) = expand {
@@ -239,8 +301,8 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
         move |ctx| {
             ctx.check()?;
             ctx.progress(0.05, "Preparando imagen");
-            let (input, edit_mask, target_mask) = match kind {
-                Kind::Generate => (None, None, None),
+            let (input, edit_mask, target_mask, expansion_source) = match kind {
+                Kind::Generate => (None, None, None, None),
                 Kind::Fill => {
                     let composite = rgb_for_api(&doc, area)?;
                     let (small, r) = fit(&composite, area);
@@ -248,10 +310,11 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
                     let sx = f64::from(area.width()) / f64::from(r.width());
                     let sy = f64::from(area.height()) / f64::from(r.height());
                     let mask = mask_png(r, |x, y| sel.sample_channel(area.x0 + (f64::from(x) * sx) as i32, area.y0 + (f64::from(y) * sy) as i32, 0))?;
-                    (Some(png(&small, r)?), Some(mask), selected.clone())
+                    (Some(png(&small, r)?), Some(mask), selected.clone(), None)
                 }
                 Kind::Expand => {
                     let n = expand.ok_or_else(|| bad(cmd, "falta margen"))?;
+                    let band = n.div_ceil(2).min(64);
                     let composite = rgb_for_api(&doc, doc.bounds())?;
                     let shifted = photocraft_algo::resample::translate_surface(&composite, n as i32, n as i32);
                     let (small, r) = fit(&shifted, area);
@@ -264,11 +327,11 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
                     let mut values = Vec::with_capacity(area.width() as usize * area.height() as usize);
                     for y in 0..area.height() as i32 {
                         for x in 0..area.width() as i32 {
-                            values.push(if old.contains(x, y) { 0.0 } else { 1.0 });
+                            values.push(expand_blend_alpha(x, y, old, band));
                         }
                     }
                     keep.write_region(area, &values);
-                    (Some(png(&small, r)?), Some(mask), Some(keep))
+                    (Some(png(&small, r)?), Some(mask), Some(keep), Some(shifted))
                 }
                 Kind::Vary => {
                     let id = original.ok_or_else(|| bad(cmd, "falta capa activa"))?;
@@ -279,7 +342,7 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
                     let rgb = crate::color_cmds::convert_surface(&source, doc.mode, PixelFormat::new(ColorMode::Rgb, SampleType::U8, true), &t)
                         .convert(PixelFormat::new(ColorMode::Rgb, SampleType::U8, true));
                     let (small, r) = fit(&rgb, area);
-                    (Some(png(&small, r)?), None, None)
+                    (Some(png(&small, r)?), None, None, None)
                 }
             };
             ctx.check()?;
@@ -314,6 +377,10 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
             let mut positioned = Surface::new(scaled.format());
             let local = Rect::from_xywh(0, 0, area.width(), area.height());
             positioned.write_region(area, &scaled.read_region(local));
+            if let (Some(n), Some(original)) = (expand, expansion_source.as_ref()) {
+                let old = Rect::from_xywh(n as i32, n as i32, doc.size.width, doc.size.height);
+                match_expand_colors(&mut positioned, original, area, old, n.div_ceil(2).min(64));
+            }
             ctx.check()?;
             Ok((positioned, target_mask))
         },
@@ -531,6 +598,87 @@ mod tests {
         assert_eq!(old.rgba(2, 2), before.layer(old_id).unwrap().surface().unwrap().rgba(0, 0));
         assert!(s.undo());
         assert_eq!(*s.active().unwrap().doc, before);
+    }
+
+    #[test]
+    fn expansion_matches_color_across_original_edge_and_preserves_center() {
+        let mut s = session(24, 24);
+        s.execute("edit.fill", json!({"color":"#406080"})).unwrap();
+        let before = (*s.active().unwrap().doc).clone();
+        let source = rgb_for_api(&before, before.bounds()).unwrap();
+        let (p, requests) = provider(response(1024, 1024)); // The mock returns solid red.
+        let result = call(&mut s, Kind::Expand, json!({"prompt":"extend","pixels":8}), p).unwrap();
+        let layer = s.active().unwrap().doc.layer(photocraft_doc::LayerId(result["layer"].as_u64().unwrap())).unwrap();
+        let alpha = layer.surface().unwrap();
+        assert!(alpha.rgba(9, 20)[3] > 0.1);
+        assert!(alpha.rgba(9, 20)[3] < 1.0);
+        assert_eq!(alpha.rgba(20, 20)[3], 0.0);
+        let rendered = rgb_for_api(&s.active().unwrap().doc, Rect::from_xywh(0, 0, 40, 40)).unwrap();
+        let y = 20;
+        for x in 7..13 {
+            let left = rendered.rgba(x, y);
+            let right = rendered.rgba(x + 1, y);
+            for channel in 0..3 {
+                assert!((left[channel] - right[channel]).abs() < 0.08, "color seam at x={x}, channel={channel}");
+            }
+        }
+        assert_eq!(rendered.rgba(20, 20), source.rgba(12, 12));
+        assert_eq!(rendered.rgba(8, 20), source.rgba(0, 12));
+        let req = requests.lock().unwrap();
+        let body = &req[0].2;
+        let start = body.windows(b"name=\"mask\"".len()).position(|w| w == b"name=\"mask\"").unwrap();
+        let png_start = body[start..].windows(4).position(|w| w == b"\r\n\r\n").unwrap() + start + 4;
+        let api_mask = codecs::decode_as(Format::Png, &body[png_start..]).unwrap().convert(ChannelLayout::Rgba, CodecSample::U8);
+        assert_eq!(api_mask.data()[3], 0); // New border is transparent to the API.
+        assert_eq!(api_mask.data()[(20 * 40 + 20) * 4 + 3], 255); // Original stays opaque.
+        drop(req);
+        assert!(s.undo());
+        assert_eq!(*s.active().unwrap().doc, before);
+    }
+
+    #[test]
+    fn expansion_blend_band_is_monotone_and_bounded_at_corners() {
+        let old = Rect::from_xywh(1024, 1024, 256, 256);
+        for pixels in [1u32, 2, 8, 128, 1024] {
+            let band = pixels.div_ceil(2).min(64);
+            assert_eq!(
+                band,
+                match pixels {
+                    1 | 2 => 1,
+                    8 => 4,
+                    _ => 64,
+                }
+            );
+            let mut previous = 1.0;
+            for distance in 0..=band + 1 {
+                let alpha = expand_blend_alpha(old.x0 + distance as i32, old.y0 + 128, old, band);
+                assert!((0.0..=1.0).contains(&alpha));
+                assert!(alpha <= previous);
+                previous = alpha;
+            }
+            assert_eq!(expand_blend_alpha(old.x0 - 1, old.y0, old, band), 1.0);
+            assert_eq!(expand_blend_alpha(old.x0, old.y0, old, band), 1.0);
+            assert_eq!(expand_blend_alpha(old.x0 + band as i32, old.y0 + band as i32, old, band), 0.0);
+            for y in old.y0 - 1..=old.y0 + band as i32 {
+                for x in old.x0 - 1..=old.x0 + band as i32 {
+                    assert!((0.0..=1.0).contains(&expand_blend_alpha(x, y, old, band)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn expansion_accepts_minimum_and_maximum_pixel_margins() {
+        for pixels in [1u32, 2, 1024] {
+            let mut s = session(4, 4);
+            s.execute("edit.fill", json!({"color":"#406080"})).unwrap();
+            let before = (*s.active().unwrap().doc).clone();
+            let (p, _) = provider(response(1024, 1024));
+            call(&mut s, Kind::Expand, json!({"prompt":"extend","pixels":pixels}), p).unwrap();
+            assert_eq!(s.active().unwrap().doc.size, Size::new(4 + pixels * 2, 4 + pixels * 2));
+            assert!(s.undo());
+            assert_eq!(*s.active().unwrap().doc, before);
+        }
     }
 
     #[test]
