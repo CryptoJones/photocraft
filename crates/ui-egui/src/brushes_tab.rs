@@ -252,7 +252,7 @@ fn rename_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, acts: &mut Vec<Action>
     }
     let mut cancel = false;
     ui.horizontal(|ui| {
-        ui.label(RichText::new(if r.group { tl!("Group name") } else { tl!("Brush name") }).color(t.text_dim));
+        ui.label(RichText::new(tl!(if r.group { "Group name" } else { "Brush name" })).color(t.text_dim));
         let resp = ui.add(egui::TextEdit::singleline(&mut r.text).desired_width(WIDTH - 230.0).id_salt("brush-rename"));
         if !resp.has_focus() && !resp.lost_focus() {
             resp.request_focus();

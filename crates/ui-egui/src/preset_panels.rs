@@ -44,7 +44,7 @@ pub struct PresetUi {
 
 impl PresetUi {
     pub fn shape(&self) -> &str {
-        if self.custom_shape.is_empty() { tl!("Heart") } else { &self.custom_shape }
+        if self.custom_shape.is_empty() { "Heart" } else { &self.custom_shape }
     }
 }
 
@@ -855,7 +855,7 @@ pub fn tool_presets_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     egui::ScrollArea::vertical().id_salt("tool-presets").max_height(260.0).auto_shrink([false, true]).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
         if items.is_empty() {
-            empty(ui, if only { tl!("No presets for the current tool.") } else { tl!("No tool presets.") });
+            empty(ui, tl!(if only { "No presets for the current tool." } else { "No tool presets." }));
         }
         for (name, tool) in &items {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());

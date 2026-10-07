@@ -2401,3 +2401,9 @@ cameraRaw	Roughness	Неровность
 	% of all commits	% от всех коммитов
 	Lines +/−	Строки +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login}: PR: {prs}, коммиты: {commits}, строки +{added} / −{deleted} (Δ {delta}), двоичные файлы +{binAdded} / −{binDeleted}, {first} – {last}
+
+# Language-pack controls
+	Load Translations	Загрузить переводы
+	Reload Translations	Перезагрузить переводы
+	Drag to move the targeted vector mask	Перетащите, чтобы переместить выбранную векторную маску
+	Frame {current} / {total}	Кадр {current} / {total}

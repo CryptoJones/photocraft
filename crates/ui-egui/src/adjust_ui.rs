@@ -87,7 +87,8 @@ pub fn color_lookup_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: Layer
     let current =
         if lut.is_none() { "none".to_string() } else { builtins.iter().find(|b| b.1 == name).map_or_else(|| "custom".to_string(), |b| b.0.to_string()) };
     let custom_label = format!("{name} ({size}³)");
-    let mut opts: Vec<(String, &str)> = vec![("none".into(), tl!("Load 3D LUT…"))];
+    let translated_option = tl!("Load 3D LUT…");
+    let mut opts: Vec<(String, &str)> = vec![("none".into(), translated_option)];
     opts.extend(builtins.iter().map(|(id, label)| (id.to_string(), *label)));
     if current == "custom" {
         opts.push(("custom".into(), custom_label.as_str()));

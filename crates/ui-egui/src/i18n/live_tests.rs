@@ -95,7 +95,8 @@ fn korean_glyphs_remain_available_after_repeated_language_switches() {
     }
     with_language(Lang::EN, || {
         let mut h = harness();
-        let glyphs: std::collections::BTreeSet<_> = lang("ko").0.source.chars().filter(|c| cjk::classify(*c) == Some(CjkChar::Hangul)).collect();
+        let glyphs: std::collections::BTreeSet<_> =
+            lang("ko").bundled().expect("bundled Korean").source.chars().filter(|c| cjk::classify(*c) == Some(CjkChar::Hangul)).collect();
         for code in ["zh-hans", "ja", "ko", "fr", "ko"] {
             h.state_mut().run("prefs.set", json!({"path": "interface.language", "value": code})).expect("language");
             h.run_steps(12);
@@ -113,7 +114,7 @@ fn korean_glyphs_remain_available_after_repeated_language_switches() {
     });
 }
 
-fn harness() -> egui_kittest::Harness<'static, PhotocraftApp> {
+pub(super) fn harness() -> egui_kittest::Harness<'static, PhotocraftApp> {
     harness_with_services(Services::default())
 }
 
@@ -206,7 +207,7 @@ fn a_control_request_changes_the_drawing_language_in_the_same_frame() {
             h.step();
             assert_eq!(reply.try_recv().expect("response")["ok"], true);
             assert_eq!(current(), lang(code));
-            assert!(drawn_text(&h).iter().any(|text| text == tr(lang(code), "File")), "the menu must change in this frame: {code}");
+            assert!(drawn_text(&h).iter().any(|text| text.as_str() == tr(lang(code), "File").as_ref()), "the menu must change in this frame: {code}");
             assert!(std::sync::Arc::ptr_eq(&document, &h.state().session.active().expect("document").doc), "switching language must preserve the document");
         }
         assert!(h.state_mut().run("prefs.set", json!({"path": "interface.language", "value": []})).is_err());
@@ -264,7 +265,7 @@ fn keyboard_shortcuts_list_commands_in_the_selected_language() {
     });
 }
 
-fn drawn_text(h: &egui_kittest::Harness<'_, PhotocraftApp>) -> Vec<String> {
+pub(super) fn drawn_text(h: &egui_kittest::Harness<'_, PhotocraftApp>) -> Vec<String> {
     fn collect(shape: &egui::Shape, text: &mut Vec<String>) {
         match shape {
             egui::Shape::Text(shape) => text.push(shape.galley.job.text.clone()),

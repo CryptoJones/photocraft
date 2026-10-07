@@ -218,7 +218,7 @@ pub fn toolbar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     "square-dashed",
                     bx,
                     quick_mask,
-                    if quick_mask { tl!("Edit in Standard Mode  (Q)") } else { tl!("Edit in Quick Mask Mode  (Q)") },
+                    tl!(if quick_mask { "Edit in Standard Mode  (Q)" } else { "Edit in Quick Mask Mode  (Q)" }),
                 )
                 .clicked()
                 {

@@ -384,7 +384,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui, tool: Tool) -> bo
     };
     let o = &mut app.ui.tool_options;
     if tool == Tool::PathSelection {
-        lbl(ui, if app.ui.vector_mask_target { "Drag to move the targeted vector mask" } else { tl!("Drag to move the active shape's path or the Work Path") });
+        lbl(ui, tl!(if app.ui.vector_mask_target { "Drag to move the targeted vector mask" } else { "Drag to move the active shape's path or the Work Path" }));
         return true;
     }
     if tool == Tool::Pen {
@@ -759,11 +759,8 @@ pub fn paths_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 let mut job = egui::text::LayoutJob::default();
                 // Temporary paths (the work path, the selected layer's shape path or vector mask) are italic.
                 let italics = *kind != PathRow::Saved;
-                job.append(
-                    if *kind == PathRow::Work { tl!(name) } else { name },
-                    0.0,
-                    egui::TextFormat { font_id: egui::FontId::proportional(12.0), color: t.text, italics, ..Default::default() },
-                );
+                let display_name = if *kind == PathRow::Work { crate::i18n::t(name) } else { std::borrow::Cow::Borrowed(name.as_str()) };
+                job.append(&display_name, 0.0, egui::TextFormat { font_id: egui::FontId::proportional(12.0), color: t.text, italics, ..Default::default() });
                 let g = ui.painter().layout_job(job);
                 ui.painter().galley(pos2(r.left() + 46.0, r.center().y - g.size().y / 2.0), g, t.text);
                 if resp.clicked() {

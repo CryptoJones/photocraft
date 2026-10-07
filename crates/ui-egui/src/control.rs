@@ -621,6 +621,7 @@ pub fn inspect(app: &PhotocraftApp, ctx: &egui::Context) -> Value {
         "theme": app.ui.theme,
         "status": app.ui.status,
         "statusError": app.ui.status_error,
+        "localizations": app.ui.localizations,
         "notices": app.ui.notices,
         "gpuFallbackNotice": app.ui.gpu_fallback_notice,
         "frame": app.frame,

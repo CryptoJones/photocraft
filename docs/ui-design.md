@@ -82,11 +82,11 @@ fonts use the same size, including fonts loaded after the preference changes.
 ## Localisation
 
 Strings in code stay English and are the default lookup keys. `crates/ui-egui/src/i18n` maps them
-to display text at render time from one catalog per language (`i18n/<code>.tsv`; the format is
+to display text at render time from one catalog per language (`crates/ui-egui/locales/<code>.tsv`; the format is
 documented in the header of `ja.tsv`). Command ids, menu paths used for logic, the control channel,
 the CLI and MCP always use the English ids and labels.
 
-Languages shipped (`complete_menus` marks a catalog that covers every menu string and `tl!` literal;
+Languages shipped (`completeMenus` marks a catalog that covers every menu string and `tl!` literal;
 the tests enforce it):
 
 - English (`en`), the source language.
@@ -96,11 +96,15 @@ the tests enforce it):
   `zh-MO` and `zh-Hant-*` locales all resolve to it. The resolver distinguishes the two Chinese
   scripts, so neither catalog is shown to the other script's locales.
 - Spanish (`es`), complete.
-- Russian (`ru`), complete, with three plural forms (`one|few|many`, see `plural_russian`).
+- Russian (`ru`), complete, with three plural forms (`one|few|many`, see `PluralRule::Russian`).
 - Korean (`ko`), complete, with one plural form.
 - French (`fr`), complete, with two plural forms (0 and 1 use the singular).
 - Czech (`cs`), complete, with three plural forms.
 - Indonesian (`id`), complete, with one plural form.
+- German (`de`), complete, with two plural forms.
+- Brazilian Portuguese (`pt-br`), complete, with two plural forms (0 and 1 use the singular);
+  the manifest aliases map `pt` and `pt-PT` here too.
+- Italian (`it`), complete, with two plural forms.
 
 - `tr(lang, s)` plain strings; `tr_ctx` when one English word needs different translations;
   `tr_id(lang, command_id, label)` for menu items (keyed by command id, English label as the
@@ -111,25 +115,25 @@ the tests enforce it):
 - Language changes apply without a restart; Preferences previews the chosen language until
   Apply or OK commits it. Cancel restores the committed language. Regional preference tags
   resolve through the same locale matcher. See [`localization.md`](localization.md).
-- To add a language: add `<code>.tsv` and one row in `i18n::LANGUAGES` (code, native name, catalog,
-  plural rule). The dropdown, locale matching and the catalog tests (well-formed, no duplicates,
-  placeholders and ellipses agree, command ids exist) pick it up. Set `complete_menus` once every
-  menu string is translated; a test then enforces it. A language with more plural forms lists them
-  all in `@plural` entries (Russian: `one|few|many`); the row's plural rule picks the form.
+- To add a language: create a catalog and a row in `locales/manifest.json`, or use
+  `cargo xtask i18n --init <code> --name <native-name>`. The build generates the Rust registry.
+  `cargo xtask i18n --check` validates resources and complete coverage; `--report --json`
+  lists missing keys. Native external packs support file hot reload; invalid updates keep the
+  previous snapshot. See [`localization.md`](localization.md) for the configuration contract.
 - Translations are clean-room: written from the meaning of the English text in ordinary vocabulary,
   never from another product's localisation resources.
 
 Localised so far: menus, the command palette, dialogs and panels (literals wrapped in `tl!("…")`;
 widgets such as `checkbox`, `slider_row`, `dropdown` and the buttons translate their labels
 themselves). A test fails when a `tl!` literal, a menu string, a blend mode name, brush section name or a generated
-preference label has no entry in a language marked `complete_menus`. Not translated: status-bar
+preference label has no entry in a language marked `completeMenus`. Not translated: status-bar
 messages and errors (they stay English, also for agents), names that are user data (layers, styles,
 documents), strings assembled with `format!` that were not converted to `fmt`/`trn`. Not done yet:
 right-to-left layout,
 locale-aware number and date formats, automatic language detection on the web build (native
-builds read `LANG`/`LC_*`, the macOS preferred languages and the Windows user locale).
+builds read ordered Windows/macOS UI-language preferences and the standard Unix locale environment).
 
-Camera Raw has explicit coverage for all ten available languages, including Korean and
+Camera Raw has explicit coverage for all thirteen available languages, including Korean and
 Simplified Chinese. Its contextual `cameraRaw` entries distinguish tonal regions,
 colour-band names and font-weight Light. The title uses a `{layer}` placeholder; user layer
 names and the universal RGB/Lab channel symbols stay unchanged. Collapse IDs use English

@@ -53,7 +53,7 @@ impl Sources {
     pub fn system() -> Self {
         Self {
             locale: || match crate::i18n::current().code() {
-                code @ ("ja" | "ko" | "zh-hans" | "zh-hant") => Some(code.to_string()),
+                code if matches!(code.split('-').next(), Some("ja" | "ko" | "zh")) => Some(code.to_string()),
                 _ => cjk::ui_locale().map(str::to_string),
             },
             files: cjk::font_files,

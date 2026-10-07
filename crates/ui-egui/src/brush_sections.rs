@@ -430,8 +430,9 @@ fn texture(ui: &mut egui::Ui, b: &mut BrushSettings) {
                 Pattern::Tile(_) => None,
             };
             let mut opts: Vec<(Option<PatternStyle>, &str)> = PATTERNS.iter().map(|(s, l)| (Some(*s), *l)).collect();
+            let translated_option = tl!("Custom");
             if style.is_none() {
-                opts.push((None, tl!("Custom")));
+                opts.push((None, translated_option));
             }
             if widgets::dropdown(ui, "brush-pattern", &mut style, &opts, 110.0)
                 && let Some(s) = style

@@ -113,7 +113,8 @@ fn tabs_in(
 ) -> StripOut {
     let t = Tokens::get(ui.ctx());
     // Panel names are English keys; draw them in the UI language.
-    let names: Vec<&str> = tabs.iter().map(|n| tl!(n)).collect();
+    let labels: Vec<_> = tabs.iter().map(|n| crate::i18n::t(n)).collect();
+    let names: Vec<&str> = labels.iter().map(|n| n.as_ref()).collect();
     let tabs = names.as_slice();
     let natural: Vec<f32> = tabs.iter().map(|n| ui.painter().layout_no_wrap((*n).to_owned(), font.clone(), t.text).size().x + pad).collect();
     let f = fit(&natural, *selected, area.width(), min_w, CHEVRON_W);

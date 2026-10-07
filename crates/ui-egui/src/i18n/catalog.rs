@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-/// A parsed catalog. Values are owned for the life of the process (catalogs are built once).
+/// Owned strings; bundled catalogs are cached, external catalogs live for one snapshot.
 #[derive(Debug, Default)]
 pub struct Catalog {
     /// context-free strings: English source → translation (the hot path, looked up every frame)
@@ -61,9 +61,65 @@ pub fn parse_entries(text: &str) -> (Vec<Entry>, Vec<String>) {
 }
 
 impl Catalog {
+    /// Reject a whole update rather than publishing a partly parsed catalog.
+    pub fn parse_checked(text: &str, rule: super::config::PluralRule) -> Result<Self, String> {
+        if text.len() > super::config::MAX_CATALOG_BYTES {
+            return Err("catalog exceeds 2 MiB".into());
+        }
+        if text.lines().count() > 20_000 {
+            return Err("catalog exceeds 20000 lines".into());
+        }
+        let (entries, errors) = parse_entries(text.trim_start_matches('\u{feff}'));
+        if let Some(error) = errors.first() {
+            return Err(error.clone());
+        }
+        if entries.len() > 10_000 {
+            return Err("catalog exceeds 10000 entries".into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for (context, source, translation) in &entries {
+            if context.len() > 256 || source.len() > 8192 || translation.len() > 16384 {
+                return Err("catalog entry is too long".into());
+            }
+            if !seen.insert((context, source)) {
+                return Err(format!("duplicate key {context:?} {source:?}"));
+            }
+            let (source, forms): (&str, Vec<&str>) = if context == "@plural" {
+                let (one, other) = source.split_once('|').ok_or_else(|| format!("plural source must be one|other: {source:?}"))?;
+                let mut one_parameters = placeholders(one);
+                let mut other_parameters = placeholders(other);
+                one_parameters.sort_unstable();
+                other_parameters.sort_unstable();
+                if one.is_empty() || other.is_empty() || other.contains('|') || one_parameters != other_parameters {
+                    return Err(format!("invalid plural source {source:?}"));
+                }
+                let forms: Vec<_> = translation.split('|').collect();
+                if forms.len() != rule.forms() || forms.iter().any(|f| f.is_empty()) {
+                    return Err(format!("{source:?}: expected {} nonempty plural forms", rule.forms()));
+                }
+                (other, forms)
+            } else {
+                if context.is_empty() && source.ends_with('…') != translation.ends_with('…') {
+                    return Err(format!("{source:?}: trailing ellipsis differs"));
+                }
+                (source.as_str(), vec![translation.as_str()])
+            };
+            let mut expected = placeholders(source);
+            expected.sort_unstable();
+            for form in forms {
+                let mut actual = placeholders(form);
+                actual.sort_unstable();
+                if expected != actual {
+                    return Err(format!("{source:?}: placeholders differ (expected {expected:?}, got {actual:?})"));
+                }
+            }
+        }
+        Ok(Self::parse(text.trim_start_matches('\u{feff}')))
+    }
+
     pub fn parse(text: &str) -> Catalog {
         let mut c = Catalog::default();
-        for (ctx, src, tr) in parse_entries(text).0 {
+        for (ctx, src, tr) in parse_entries(text.trim_start_matches('\u{feff}')).0 {
             match ctx.as_str() {
                 "" => {
                     c.plain.insert(src, tr);
@@ -102,16 +158,15 @@ impl Catalog {
 }
 
 /// `{name}` placeholders of a template, in order of appearance.
-#[cfg(test)]
 pub fn placeholders(s: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut rest = s;
     while let Some(a) = rest.find('{') {
-        let after = &rest[a + 1..];
+        let after = rest.get(a.saturating_add(1)..).unwrap_or("");
         match after.find('}') {
             Some(b) => {
-                out.push(&after[..b]);
-                rest = &after[b + 1..];
+                out.push(after.get(..b).unwrap_or(""));
+                rest = after.get(b.saturating_add(1)..).unwrap_or("");
             }
             None => break,
         }

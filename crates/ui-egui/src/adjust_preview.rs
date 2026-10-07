@@ -64,7 +64,7 @@ pub fn unsupported(doc: &Document, target: LayerId) -> Option<&'static str> {
         return Some("the target is clipped");
     }
     if photocraft_compose::blend_if_active(l, doc.mode) {
-        return Some(tl!("Blend If"));
+        return Some("Blend If");
     }
     let shows_default = !s.format().alpha || s.default_pixel().last().is_some_and(|a| *a > 0.0);
     if shows_default && !s.content_bounds().contains_rect(&doc.bounds()) {

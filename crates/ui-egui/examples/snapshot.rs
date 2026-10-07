@@ -8,6 +8,7 @@
 //!
 //! `--safe-gpu` draws the canvas on the CPU path, like the app's `--safe-gpu` launch.
 //! `--wayland-notice` previews the native file drag-and-drop guidance shown in Wayland sessions.
+//! `--locales-dir PATH` attaches the real native translation-file watcher for hot-reload QA.
 //!
 //! `--monitor 1366x768 --window-top 31` simulates the display the window is on (in points) and
 //! where its content starts on it, e.g. a window running under a Windows taskbar.
@@ -54,6 +55,7 @@ fn main() {
         ..Default::default()
     };
     let open = arg(&args, "--open");
+    let locales_dir = arg(&args, "--locales-dir");
     let safe_gpu = args.iter().any(|a| a == "--safe-gpu");
     // `--background-jobs`: long commands run as background jobs, as in the desktop app (#210).
     let background_jobs = args.iter().any(|a| a == "--background-jobs");
@@ -64,6 +66,13 @@ fn main() {
             PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
             let mut services = services;
             services.is_wayland = wayland_notice;
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(dir) = &locales_dir {
+                match photocraft_ui_egui::i18n::native::watch(std::path::PathBuf::from(dir), cc.egui_ctx.clone()) {
+                    Ok(source) => services.locales = Some(Box::new(source)),
+                    Err(error) => eprintln!("PhotoCraft translations: {error}"),
+                }
+            }
             let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
             app.background_jobs = background_jobs;
             // `--safe-gpu`: the CPU canvas, as the desktop app's `--safe-gpu` launch.
@@ -141,6 +150,9 @@ fn main() {
     let (req, _rx) = ControlRequest::new("ui.inspect", Value::Null);
     if let Outcome::Done(v) = handle(harness.state_mut(), &ctx, &req) {
         println!("perf: {}", v["result"]["perf"]["timings"]);
+        if let Some(status) = v.get("result").and_then(|v| v.get("localizations")) {
+            println!("localizations: {status}");
+        }
     }
     println!(
         "language: {}",

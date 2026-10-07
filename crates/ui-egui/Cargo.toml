@@ -47,5 +47,6 @@ photocraft-testkit = { workspace = true }
 photocraft-psd = { workspace = true }
 
 [build-dependencies]
+serde = { workspace = true }
 serde_json = { workspace = true }
 toml = "1"

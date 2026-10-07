@@ -79,7 +79,8 @@ pub fn properties(app: &mut PhotocraftApp, ui: &mut egui::Ui, layer: &Layer) {
     ui.label(egui::RichText::new(tl!("Artboard")).font(crate::theme::semibold(12.0)).color(t.text));
     ui.add_space(4.0);
     let mut preset = a.preset.clone();
-    let mut opts: Vec<(String, &str)> = vec![(String::new(), tl!("Custom"))];
+    let translated_option = tl!("Custom");
+    let mut opts: Vec<(String, &str)> = vec![(String::new(), translated_option)];
     opts.extend(photocraft_engine::artboard_cmds::PRESETS.iter().map(|(n, _, _)| (n.to_string(), *n)));
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(tl!("Size")).color(t.text_dim).size(12.0));

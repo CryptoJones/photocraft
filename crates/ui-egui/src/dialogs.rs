@@ -203,14 +203,16 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                     }
                 } else {
                     let ok_label = if d.kind == DialogKind::NewDocument {
-                        tl!("Create")
+                        "Create"
                     } else if d.fields.contains_key("__export") {
-                        tl!("Export")
+                        "Export"
                     } else {
-                        crate::file_ui::ok_label(&d.fields).unwrap_or(tl!("OK"))
+                        crate::file_ui::ok_label(&d.fields).unwrap_or("OK")
                     };
-                    let ok = DialogButton::new(ButtonRole::Default, ok_label, 84.0);
-                    let cancel = DialogButton::new(ButtonRole::Cancel, if d.kind == DialogKind::NewDocument { tl!("Close") } else { tl!("Cancel") }, 84.0);
+                    let ok_label = crate::i18n::t(ok_label);
+                    let cancel_label = crate::i18n::t(if d.kind == DialogKind::NewDocument { "Close" } else { "Cancel" });
+                    let ok = DialogButton::new(ButtonRole::Default, &ok_label, 84.0);
+                    let cancel = DialogButton::new(ButtonRole::Cancel, &cancel_label, 84.0);
                     let clicked = if d.kind == DialogKind::Command && crate::prefs_ui::is_preferences(&fields) {
                         let changed = crate::prefs_ui::preferences_changed(app, &fields);
                         dialog_buttons(ui, &[ok, cancel, DialogButton::new(ButtonRole::Apply, tl!("Apply"), 84.0).enabled(changed)])

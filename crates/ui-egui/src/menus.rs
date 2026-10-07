@@ -10,6 +10,8 @@ pub const TOP_MENUS: [&str; 10] = ["File", "Edit", "Image", "Layer", "Type", "Se
 
 /// UI-level commands (handled by the shell rather than the engine): id, label, menu, shortcut.
 pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
+    ("ui.i18n.load", "Load Translations", &[], None),
+    ("ui.i18n.reload", "Reload Translations", &[], None),
     ("file.open", "Open…", &["File"], Some("Cmd+O")),
     ("file.save", "Save", &["File"], Some("Cmd+S")),
     ("file.saveAs", "Save As…", &["File"], Some("Cmd+Shift+S")),
@@ -161,6 +163,9 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
     // View/Window/Type shell items, and dialogs/pickers in front of File commands.
     // Edit › Preferences, Keyboard Shortcuts, Color Settings and other Edit dialogs.
     if let Some(r) = crate::prefs_ui::invoke(app, ctx, id, &params) {
+        return r;
+    }
+    if let Some(r) = crate::i18n::runtime::invoke(app, ctx, id, &params) {
         return r;
     }
     // Save for Web, Print and the other File-menu dialogs added with slices.
@@ -478,6 +483,8 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
         return e;
     }
     match id {
+        "ui.i18n.load" => true,
+        "ui.i18n.reload" => app.services.locales.is_some(),
         "file.open" | "file.exit" | "file.clearRecent" | "help.about" | "help.systemInfo" | "edit.search" => true,
         i if i.starts_with("file.openRecent.") => true,
         i if crate::links::url_for(i).is_some() => true,
@@ -917,7 +924,7 @@ pub fn search_items<'a>(items: &'a [MenuItem], query: &str, lang: crate::i18n::L
     let rank = |it: &MenuItem| {
         let english = search_rank(&q, &it.label, &it.path);
         let path: Vec<String> = it.path.iter().map(|p| crate::i18n::tr(lang, p).to_string()).collect();
-        let local = search_rank(&q, crate::i18n::tr_id(lang, &it.id, &it.label), &path);
+        let local = search_rank(&q, &crate::i18n::tr_id(lang, &it.id, &it.label), &path);
         english.into_iter().chain(local).min()
     };
     let mut hits: Vec<(u8, usize, &MenuItem)> =
@@ -957,7 +964,7 @@ fn help_search(ui: &mut egui::Ui, items: &[MenuItem], clicked: &mut Option<Strin
             ui.weak(crate::i18n::tr(lang, "No matching commands"));
         }
         for it in results {
-            let mut trail: Vec<&str> = it.path.iter().map(|p| crate::i18n::tr(lang, p)).collect();
+            let mut trail: Vec<std::borrow::Cow<'_, str>> = it.path.iter().map(|p| crate::i18n::tr(lang, p)).collect();
             trail.push(crate::i18n::tr_id(lang, &it.id, &it.label));
             let mut b = egui::Button::new(trail.join(" › "));
             if let Some(sc) = &it.shortcut {

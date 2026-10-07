@@ -140,7 +140,8 @@ pub(crate) fn draw_readout(ctx: &egui::Context, id: &str, cursor: Pos2, labels: 
     let t = crate::theme::Tokens::get(ctx);
     let font = egui::FontId::proportional(11.5);
     let width = |text: &str| ctx.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font.clone(), t.text).size().x);
-    let labels = labels.map(|label| tl!(label));
+    let translated_labels = labels.map(crate::i18n::t);
+    let labels = translated_labels.each_ref().map(|label| label.as_ref());
     let (lw, vw) = (labels.map(width), [width(&values[0]), width(&values[1])]);
     let (label_col, value_col) = (lw[0].max(lw[1]), vw[0].max(vw[1]));
     egui::Area::new(egui::Id::new(id)).order(egui::Order::Tooltip).fixed_pos(cursor + vec2(16.0, 18.0)).interactable(false).constrain(true).show(ctx, |ui| {
@@ -1348,7 +1349,7 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             ui.add_space(22.0);
             ui.horizontal(|ui| {
                 let msg = start_screen_drop_hint(app.services.is_wayland);
-                let g = ui.painter().layout_no_wrap(msg.into(), egui::FontId::proportional(12.5), t.text_faint);
+                let g = ui.painter().layout_no_wrap(msg.as_ref().to_owned(), egui::FontId::proportional(12.5), t.text_faint);
                 ui.add_space(((card.width() - g.size().x - 24.0) / 2.0).max(0.0));
                 let (r, _) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), Sense::hover());
                 crate::icons::paint(ui, r, "image", 15.0, t.text_faint);
@@ -1366,8 +1367,8 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     });
 }
 
-fn start_screen_drop_hint(is_wayland: bool) -> &'static str {
-    if is_wayland { tl!("Use File › Open to open an image.") } else { tl!("Drop an image or PSD anywhere to open it.") }
+fn start_screen_drop_hint(is_wayland: bool) -> std::borrow::Cow<'static, str> {
+    if is_wayland { crate::i18n::t("Use File › Open to open an image.") } else { crate::i18n::t("Drop an image or PSD anywhere to open it.") }
 }
 
 /// Recent files listed on the Home screen.

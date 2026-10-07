@@ -47,11 +47,11 @@ pub enum NameMode {
 impl NameMode {
     pub const ALL: [NameMode; 3] = [NameMode::Username, NameMode::DisplayName, NameMode::RealName];
 
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> std::borrow::Cow<'static, str> {
         match self {
-            NameMode::Username => tl!("Username"),
-            NameMode::DisplayName => tl!("Display name"),
-            NameMode::RealName => tl!("Real name"),
+            NameMode::Username => crate::i18n::t("Username"),
+            NameMode::DisplayName => crate::i18n::t("Display name"),
+            NameMode::RealName => crate::i18n::t("Real name"),
         }
     }
 }
@@ -86,18 +86,18 @@ impl SortKey {
     ];
 
     /// Menu label and table header, in the UI language.
-    pub fn label(self) -> (&'static str, &'static str) {
+    pub fn label(self) -> (std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>) {
         match self {
-            SortKey::Name => (tl!("Name (A–Z)"), tl!("Name")),
-            SortKey::Prs => (tl!("Merged PRs"), "PRs"),
-            SortKey::Commits => (tl!("Commits"), tl!("Commits")),
-            SortKey::LinesAdded => (tl!("Lines added"), "+LOC"),
-            SortKey::LinesDeleted => (tl!("Lines deleted"), "−LOC"),
-            SortKey::LinesDelta => (tl!("Line delta"), "ΔLOC"),
-            SortKey::BinaryAdded => (tl!("Binary assets added"), "+Bin"),
-            SortKey::BinaryDeleted => (tl!("Binary assets removed"), "−Bin"),
-            SortKey::FirstCommit => (tl!("First commit"), tl!("First")),
-            SortKey::LastCommit => (tl!("Last commit"), tl!("Last")),
+            SortKey::Name => (crate::i18n::t("Name (A–Z)"), crate::i18n::t("Name")),
+            SortKey::Prs => (crate::i18n::t("Merged PRs"), "PRs".into()),
+            SortKey::Commits => (crate::i18n::t("Commits"), crate::i18n::t("Commits")),
+            SortKey::LinesAdded => (crate::i18n::t("Lines added"), "+LOC".into()),
+            SortKey::LinesDeleted => (crate::i18n::t("Lines deleted"), "−LOC".into()),
+            SortKey::LinesDelta => (crate::i18n::t("Line delta"), "ΔLOC".into()),
+            SortKey::BinaryAdded => (crate::i18n::t("Binary assets added"), "+Bin".into()),
+            SortKey::BinaryDeleted => (crate::i18n::t("Binary assets removed"), "−Bin".into()),
+            SortKey::FirstCommit => (crate::i18n::t("First commit"), crate::i18n::t("First")),
+            SortKey::LastCommit => (crate::i18n::t("Last commit"), crate::i18n::t("Last")),
         }
     }
 

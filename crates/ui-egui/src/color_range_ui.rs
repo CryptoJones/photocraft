@@ -82,7 +82,7 @@ pub fn controls(f: &Map<String, Value>) -> Controls {
 /// Open the dialog with Photoshop's defaults (Sampled Colors, Fuzziness 40, the foreground colour
 /// as the sample until the eyedropper picks one).
 pub fn open(app: &mut PhotocraftApp) -> u64 {
-    let label = photocraft_engine::commands::find(COMMAND).map_or(tl!("Color Range…"), |c| c.label);
+    let label = photocraft_engine::commands::find(COMMAND).map_or("Color Range…", |c| c.label);
     let mut f = Map::new();
     f.insert("__colorRange".into(), json!(true));
     f.insert("__label".into(), json!(label));

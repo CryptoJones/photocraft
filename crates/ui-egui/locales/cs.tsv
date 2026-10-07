@@ -2126,3 +2126,8 @@ cameraRaw	Color	Barvy
 	% of all commits	% všech commitů
 	Lines +/−	Řádky +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login}: PR: {prs}, commity: {commits}, řádky +{added} / −{deleted} (Δ {delta}), binární soubory +{binAdded} / −{binDeleted}, {first} – {last}
+
+# Language-pack controls
+	Load Translations	Načíst překlady
+	Reload Translations	Znovu načíst překlady
+	Drag to move the targeted vector mask	Tažením přesunete cílovou vektorovou masku

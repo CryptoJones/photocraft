@@ -510,7 +510,7 @@ pub fn hue_stops() -> Vec<Color32> {
 
 /// A compact labelled dropdown in the studio style.
 pub fn dropdown<T: PartialEq + Clone>(ui: &mut Ui, id: &str, current: &mut T, options: &[(T, &str)], width: f32) -> bool {
-    let label = options.iter().find(|(v, _)| v == current).map(|(_, l)| tl!(l)).unwrap_or("—");
+    let label = options.iter().find(|(v, _)| v == current).map(|(_, l)| crate::i18n::t(l)).unwrap_or(std::borrow::Cow::Borrowed("—"));
     let mut changed = false;
     egui::ComboBox::from_id_salt(id).selected_text(label).width(width).height(420.0).icon(chevron_icon).show_ui(ui, |ui| {
         for (v, l) in options {
@@ -554,7 +554,7 @@ pub fn swatch_popup(swatch: &Response) -> egui::Popup<'static> {
 }
 
 pub fn dropdown_with_tooltips<T: PartialEq + Clone>(ui: &mut Ui, id: &str, current: &mut T, options: &[(T, &str, &str)], width: f32) -> bool {
-    let label = options.iter().find(|(v, _, _)| v == current).map(|(_, l, _)| tl!(l)).unwrap_or("—");
+    let label = options.iter().find(|(v, _, _)| v == current).map(|(_, l, _)| crate::i18n::t(l)).unwrap_or_else(|| "—".into());
     let mut changed = false;
     let response = egui::ComboBox::from_id_salt(id).selected_text(label).width(width).height(420.0).icon(chevron_icon).show_ui(ui, |ui| {
         for (v, l, tip) in options {

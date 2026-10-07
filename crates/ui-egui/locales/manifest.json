@@ -1,0 +1,136 @@
+{
+  "$schema": "manifest.schema.json",
+  "schemaVersion": 1,
+  "fallbackLocale": "en",
+  "reloadIntervalMs": 1000,
+  "languages": [
+    {
+      "code": "en",
+      "name": "English",
+      "catalog": null,
+      "pluralRule": "one_other",
+      "fallback": null,
+      "aliases": [],
+      "completeMenus": false
+    },
+    {
+      "code": "ja",
+      "name": "日本語",
+      "catalog": "ja.tsv",
+      "pluralRule": "none",
+      "fallback": "en",
+      "aliases": [],
+      "completeMenus": true
+    },
+    {
+      "code": "zh-hans",
+      "name": "简体中文",
+      "catalog": "zh-hans.tsv",
+      "pluralRule": "none",
+      "fallback": "en",
+      "aliases": [
+        "zh",
+        "zh-cn",
+        "zh-sg"
+      ],
+      "completeMenus": true
+    },
+    {
+      "code": "zh-hant",
+      "name": "繁體中文",
+      "catalog": "zh-hant.tsv",
+      "pluralRule": "none",
+      "fallback": "en",
+      "aliases": [
+        "zh-tw",
+        "zh-hk",
+        "zh-mo"
+      ],
+      "completeMenus": true
+    },
+    {
+      "code": "es",
+      "name": "Español",
+      "catalog": "es.tsv",
+      "pluralRule": "one_other",
+      "fallback": "en",
+      "aliases": [],
+      "completeMenus": true
+    },
+    {
+      "code": "ru",
+      "name": "Русский",
+      "catalog": "ru.tsv",
+      "pluralRule": "russian",
+      "fallback": "en",
+      "aliases": [],
+      "completeMenus": true
+    },
+    {
+      "code": "cs",
+      "name": "Čeština",
+      "catalog": "cs.tsv",
+      "pluralRule": "czech",
+      "fallback": "en",
+      "aliases": [],
+      "completeMenus": true
+    },
+    {
+      "code": "fr",
+      "name": "Français",
+      "catalog": "fr.tsv",
+      "pluralRule": "french",
+      "fallback": "en",
+      "aliases": [],
+      "completeMenus": true
+    },
+    {
+      "code": "id",
+      "name": "Bahasa Indonesia",
+      "catalog": "id.tsv",
+      "pluralRule": "none",
+      "fallback": "en",
+      "aliases": [],
+      "completeMenus": true
+    },
+    {
+      "code": "ko",
+      "name": "한국어",
+      "catalog": "ko.tsv",
+      "pluralRule": "none",
+      "fallback": "en",
+      "aliases": [],
+      "completeMenus": true
+    },
+    {
+      "code": "de",
+      "name": "Deutsch",
+      "catalog": "de.tsv",
+      "pluralRule": "one_other",
+      "fallback": "en",
+      "aliases": [],
+      "completeMenus": true
+    },
+    {
+      "code": "pt-br",
+      "name": "Português (Brasil)",
+      "catalog": "pt-br.tsv",
+      "pluralRule": "portuguese",
+      "fallback": "en",
+      "aliases": [
+        "pt",
+        "pt-pt"
+      ],
+      "completeMenus": true
+    },
+    {
+      "code": "it",
+      "name": "Italiano",
+      "catalog": "it.tsv",
+      "pluralRule": "one_other",
+      "fallback": "en",
+      "aliases": [],
+      "completeMenus": true
+    }
+  ]
+}

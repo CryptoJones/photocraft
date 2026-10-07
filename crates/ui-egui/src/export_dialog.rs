@@ -159,7 +159,8 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(tl!("Metadata")).color(t.text_dim));
                 let mut m = s(f, "metadata");
-                let opts: Vec<(String, &str)> = vec![("none".into(), tl!("None")), ("all".into(), tl!("All"))];
+                let labels = [crate::i18n::t("None"), crate::i18n::t("All")];
+                let opts: Vec<(String, &str)> = vec![("none".into(), &labels[0]), ("all".into(), &labels[1])];
                 if crate::widgets::dropdown(ui, "export-metadata", &mut m, &opts, 130.0) {
                     f.insert("metadata".into(), json!(m));
                 }

@@ -28,12 +28,12 @@ pub fn finish_stroke(app: &mut PhotocraftApp, tool: Tool, points: &[[f64; 3]], m
                 (None, Some(src)) => p["source"] = json!(src),
                 (None, None) => {
                     // Photoshop says Option-click on the Mac and Alt-click on Windows.
-                    app.ui.status = if cfg!(target_os = "macos") {
-                        tl!("Option-click to define a source point to clone from")
+                    app.ui.status = tl!(if cfg!(target_os = "macos") {
+                        "Option-click to define a source point to clone from"
                     } else {
-                        tl!("Alt-click to define a source point to clone from")
-                    }
-                    .into();
+                        "Alt-click to define a source point to clone from"
+                    })
+                    .to_owned();
                     app.ui.status_error = true;
                     return true;
                 }

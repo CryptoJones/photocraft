@@ -81,7 +81,7 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
             Some(tl) => {
                 ui.horizontal(|ui| {
                     let play_icon = if playing { "pause" } else { "play" };
-                    if crate::icons::button(ui, play_icon, 22.0, playing, if playing { tl!("Pause") } else { tl!("Play") }).clicked() {
+                    if crate::icons::button(ui, play_icon, 22.0, playing, tl!(if playing { "Pause" } else { "Play" })).clicked() {
                         toggle_play = true;
                     }
                     if crate::icons::button(ui, "chevron-left", 22.0, false, tl!("Previous frame")).clicked() {

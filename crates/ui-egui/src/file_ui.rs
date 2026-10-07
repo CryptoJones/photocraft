@@ -142,9 +142,9 @@ pub fn dialog_width(f: &Map<String, Value>) -> Option<f32> {
 
 pub fn ok_label(f: &Map<String, Value>) -> Option<&'static str> {
     if f.contains_key("__web") {
-        Some(tl!("Save…"))
+        Some("Save…")
     } else if f.contains_key("__print") {
-        Some(tl!("Print"))
+        Some("Print")
     } else {
         None
     }

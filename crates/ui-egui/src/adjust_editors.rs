@@ -737,7 +737,8 @@ fn hue_saturation(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
         range = 0;
     }
     ui.horizontal(|ui| {
-        let opts: Vec<(usize, &str)> = std::iter::once((0, tl!("Master"))).chain(RANGE_LABELS.iter().enumerate().map(|(i, l)| (i + 1, *l))).collect();
+        let translated_option = tl!("Master");
+        let opts: Vec<(usize, &str)> = std::iter::once((0, translated_option)).chain(RANGE_LABELS.iter().enumerate().map(|(i, l)| (i + 1, *l))).collect();
         ui.add_enabled_ui(!colorize, |ui| widgets::dropdown(ui, &format!("{range_id:?}"), &mut range, &opts, 120.0));
     });
     ui.data_mut(|d| d.insert_temp(range_id, range));
@@ -1098,7 +1099,8 @@ fn gradient_map(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let mut preset = usize::MAX;
     ui.horizontal(|ui| {
         label(ui, tl!("Preset:"));
-        let mut opts: Vec<(usize, &str)> = vec![(usize::MAX, tl!("Custom"))];
+        let translated_option = tl!("Custom");
+        let mut opts: Vec<(usize, &str)> = vec![(usize::MAX, translated_option)];
         opts.extend(presets.iter().enumerate().map(|(i, p)| (i, p.0)));
         if widgets::dropdown(ui, &format!("{:?}-gm-preset", cx.mem), &mut preset, &opts, 190.0)
             && let Some(p) = presets.get(preset)

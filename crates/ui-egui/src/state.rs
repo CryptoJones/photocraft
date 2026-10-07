@@ -696,8 +696,18 @@ pub struct ColorPanelState {
     pub background: bool,
 }
 
+/// Agent-readable localisation status; catalogs stay outside persisted view state.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LocalizationStatus {
+    pub generation: u64,
+    pub languages: Vec<String>,
+    pub error: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
+    #[serde(default)]
+    pub localizations: LocalizationStatus,
     pub tool: Tool,
     /// Recently opened file paths, most-recent first (File › Open Recent). Capped; de-duplicated.
     #[serde(default)]
@@ -839,6 +849,7 @@ impl Default for UiState {
     fn default() -> Self {
         Self {
             tool: Tool::Brush,
+            localizations: LocalizationStatus::default(),
             recent_files: Vec::new(),
             text_edit: None,
             transform: None,
