@@ -145,7 +145,7 @@
           '';
 
           nixfmt = pkgs.runCommand "nixfmt-check" { nativeBuildInputs = [ pkgs.nixfmt ]; } ''
-            nixfmt --check ${./flake.nix} ${./nix/package.nix} ${./nix/devshell.nix} ${./nix/android.nix} ${./nix/android-sign.nix}
+            nixfmt --check ${./flake.nix} ${./nix/package.nix} ${./nix/devshell.nix} ${./nix/android.nix} ${./nix/android-sign.nix} ${./nix/android-input.nix}
             touch $out
           '';
         }

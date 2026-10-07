@@ -10,6 +10,8 @@
 # overlay (`rust-bin`), which provides the Android targets' standard library.
 {
   lib,
+  callPackage,
+  stdenv,
   stdenvNoCC,
   rustPlatform,
   rust-bin,
@@ -114,7 +116,9 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     ];
   };
 
-  cargoDeps = rustPlatform.importCargoLock { lockFile = ../Cargo.lock; };
+  cargoDeps = callPackage ./android-input.nix {
+    cargoDeps = rustPlatform.importCargoLock { lockFile = ../Cargo.lock; };
+  };
 
   # The library is stripped with the target NDK below, not the host ELF tools.
   dontStrip = true;
@@ -123,6 +127,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   nativeBuildInputs = [
     rustPlatform.cargoSetupHook
     rustToolchain
+    stdenv.cc # Host linker for the policy and patched-egui regression tests.
     zip
   ];
 
@@ -175,6 +180,10 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   checkPhase = ''
     runHook preCheck
     ${targetEnv}
+    cargo test --release --frozen --package photocraft-android --lib --target ${stdenv.hostPlatform.rust.rustcTarget} -j $NIX_BUILD_CORES
+    cp -r ${./tests/pointer-cancel} pointer-cancel-check
+    chmod -R u+w pointer-cancel-check
+    cargo test --offline --release --manifest-path pointer-cancel-check/Cargo.toml --target ${stdenv.hostPlatform.rust.rustcTarget} -j $NIX_BUILD_CORES
     ${lib.concatMapStrings (abi: ''
       cargo clippy --release --frozen --package photocraft-android --target ${tripleOf abi} -j $NIX_BUILD_CORES -- -D warnings
     '') abis}

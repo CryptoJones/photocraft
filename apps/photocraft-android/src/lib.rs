@@ -9,7 +9,8 @@
 //! - no File › Open dialog yet (Android's Storage Access Framework needs JNI);
 //! - File › Save writes a new file in the app-specific files folder and refuses overwrites;
 //! - no Android screen-reader support or lifecycle recovery yet;
-//! - no clipboard images, no pen pressure, no display profile reader;
+//! - no clipboard images, pen tilt/eraser integration, or display profile reader;
+//! - automatic palm rejection in the Nix APK's patched native input backend;
 //! - logs and panics go to logcat with the tag `photocraft`.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -19,3 +20,7 @@ mod android;
 
 #[cfg(any(target_os = "android", test))]
 mod storage;
+
+// Nix compiles this same policy into patched winit, before tool identity is lost.
+#[cfg(test)]
+mod palm_rejection;

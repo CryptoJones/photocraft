@@ -34,6 +34,8 @@ egui = { workspace = true }
 log = { workspace = true }
 # Android sends a process's stdout and stderr nowhere: logs and panics go to logcat instead.
 android_logger = "0.15"
+# Route the patched winit backend's rejection-state diagnostics to Android logcat.
+tracing = { version = "0.1", default-features = false, features = ["log"] }
 # Must match the AndroidApp type used by winit/eframe, already pinned in Cargo.lock.
 android-activity = { version = "=0.6.1", features = ["native-activity"] }
 tempfile = "3"

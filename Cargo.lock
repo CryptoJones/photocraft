@@ -3587,6 +3587,7 @@ dependencies = [
  "photocraft-io",
  "photocraft-ui-egui",
  "tempfile",
+ "tracing",
 ]
 
 [[package]]
