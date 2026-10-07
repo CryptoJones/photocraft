@@ -198,7 +198,7 @@ Every screenshot here is the real app at work on public-domain art, rendered off
     </td>
     <td width="33%" valign="top">
       <h4>🗂️ Formats</h4>
-      PSD and PSB, plus PNG, JPEG, TIFF, WebP, GIF, BMP, TGA, ICO, QOI, PNM, OpenEXR, Radiance HDR and AVIF, with symmetric read and write at 8, 16 and 32 bits, and the native <code>.pcraft</code> format.
+      PSD and PSB, plus PNG, JPEG, TIFF, WebP, GIF, BMP, TGA, ICO, QOI, PNM, OpenEXR, Radiance HDR and AVIF, with symmetric read and write at 8, 16 and 32 bits, HEIC photos from iPhone and Mac (read; in official builds, an optional <code>--features heif</code> build feature), and the native <code>.pcraft</code> format.
     </td>
     <td width="33%" valign="top">
       <h4>🪄 The everyday essentials</h4>
@@ -230,6 +230,9 @@ photocraft-cli run wave.psd \
 
 # Apply one action list to a folder of images
 photocraft-cli batch --actions grade.json --in ./raw --out ./graded
+
+# Every subcommand explains itself
+photocraft-cli batch --help
 
 # Let an agent drive it over MCP (headless, or bridged to the running app)
 photocraft-cli mcp
@@ -373,5 +376,6 @@ Forks and modified versions must remove them.
   <sub>Made by the <a href="https://getartcraft.com/">ArtCraft</a> team and community.</sub>
 </p>
 
+## Star history
 
-ArtCraft
+[![Star History Chart](https://api.star-history.com/svg?repos=storytold/photocraft&type=Date&legend=top-left)](https://www.star-history.com/?repos=storytold%2Fphotocraft&type=date&legend=top-left)
