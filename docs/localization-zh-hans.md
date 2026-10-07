@@ -17,7 +17,7 @@ proofread separately; script conversion alone is insufficient.
 
 ## Files and integration
 
-- `crates/ui-egui/src/i18n/zh-hans.ftl` is the editable Fluent catalog and the
+- `crates/ui-egui/src/i18n/locales/zh-CN/messages.ftl` is the editable Fluent catalog and the
   translation source of truth. Message IDs correspond to entries in the English
   catalog and are audited by `cargo xtask i18n`.
 - Select **Preferences > Interface > Language > 简体中文**, or set
@@ -84,6 +84,8 @@ Weblate offers a GitHub pull request workflow and Fluent syntax checks, but its
 Fluent editor does not expose plural variants as separate fields. Keep
 `cargo xtask i18n check` and the UI build as merge gates with either service.
 No translation service is connected yet.
+The [Pontoon setup guide](pontoon.md) records the project configuration, and
+the [menu gallery](images/i18n/README.md) contains ten menus in each Chinese locale.
 
 References: [Pontoon's Fluent editor](https://blog.mozilla.org/l10n/2019/04/11/implementing-fluent-in-a-localization-tool/),
 [Weblate's Fluent format support](https://docs.weblate.org/en/latest/formats/fluent.html).

@@ -3,7 +3,7 @@
 //! paths used for logic, the control channel, the CLI and MCP never see translated text.
 //!
 //! # Adding a language
-//! 1. Add `xx.ftl` translated from `en.ftl` and its stable ids.
+//! 1. Add `locales/xx/messages.ftl` translated from `locales/en/messages.ftl` and its stable ids.
 //! 2. Add one row to [`LANGUAGES`] (code, native name, catalog).
 //!
 //! That is all: the Preferences dropdown, the system-locale match and the catalog tests (parse,
@@ -39,12 +39,26 @@ pub struct LangInfo {
 
 /// The registry. English first: it is the fallback and the source language.
 pub static LANGUAGES: [LangInfo; 7] = [
-    LangInfo { code: "en", name: "English", fluent_source: include_str!("en.ftl"), complete_menus: false, fluent: OnceLock::new(), simple: OnceLock::new() },
-    LangInfo { code: "ja", name: "日本語", fluent_source: include_str!("ja.ftl"), complete_menus: true, fluent: OnceLock::new(), simple: OnceLock::new() },
+    LangInfo {
+        code: "en",
+        name: "English",
+        fluent_source: include_str!("locales/en/messages.ftl"),
+        complete_menus: false,
+        fluent: OnceLock::new(),
+        simple: OnceLock::new(),
+    },
+    LangInfo {
+        code: "ja",
+        name: "日本語",
+        fluent_source: include_str!("locales/ja/messages.ftl"),
+        complete_menus: true,
+        fluent: OnceLock::new(),
+        simple: OnceLock::new(),
+    },
     LangInfo {
         code: "zh-hans",
         name: "简体中文",
-        fluent_source: include_str!("zh-hans.ftl"),
+        fluent_source: include_str!("locales/zh-CN/messages.ftl"),
         complete_menus: true,
         fluent: OnceLock::new(),
         simple: OnceLock::new(),
@@ -54,16 +68,35 @@ pub static LANGUAGES: [LangInfo; 7] = [
     LangInfo {
         code: "zh-hant",
         name: "繁體中文",
-        fluent_source: include_str!("zh-hant.ftl"),
+        fluent_source: include_str!("locales/zh-TW/messages.ftl"),
         complete_menus: true,
         fluent: OnceLock::new(),
         simple: OnceLock::new(),
     },
-    LangInfo { code: "es", name: "Español", fluent_source: include_str!("es.ftl"), complete_menus: true, fluent: OnceLock::new(), simple: OnceLock::new() },
     LangInfo {
-        code: "ru", name: "Русский", fluent_source: include_str!("ru.ftl"), complete_menus: true, fluent: OnceLock::new(), simple: OnceLock::new()
+        code: "es",
+        name: "Español",
+        fluent_source: include_str!("locales/es/messages.ftl"),
+        complete_menus: true,
+        fluent: OnceLock::new(),
+        simple: OnceLock::new(),
     },
-    LangInfo { code: "cs", name: "Čeština", fluent_source: include_str!("cs.ftl"), complete_menus: true, fluent: OnceLock::new(), simple: OnceLock::new() },
+    LangInfo {
+        code: "ru",
+        name: "Русский",
+        fluent_source: include_str!("locales/ru/messages.ftl"),
+        complete_menus: true,
+        fluent: OnceLock::new(),
+        simple: OnceLock::new(),
+    },
+    LangInfo {
+        code: "cs",
+        name: "Čeština",
+        fluent_source: include_str!("locales/cs/messages.ftl"),
+        complete_menus: true,
+        fluent: OnceLock::new(),
+        simple: OnceLock::new(),
+    },
 ];
 
 impl LangInfo {

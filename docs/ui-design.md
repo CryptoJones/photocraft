@@ -74,7 +74,8 @@ continue to control the document independently of UI scaling.
 
 ## Localisation
 
-UI messages use stable IDs in the Fluent catalogs at `crates/ui-egui/src/i18n/<code>.ftl`.
+UI messages use stable IDs in the Fluent catalogs at
+`crates/ui-egui/src/i18n/locales/<locale>/messages.ftl`.
 English is the fallback catalog. `keys.tsv` maps remaining English-string calls to those IDs;
 new static UI text should use `tl_id!`. Command ids, menu paths used for logic, the control
 channel, the CLI and MCP continue to use their English ids and labels.
@@ -98,7 +99,8 @@ the tests enforce it):
   translators may reorder.
 - The language is Preferences › Interface › Language (`interface.language`: `auto` or a language
   code; `auto` follows the system locale, an unknown code falls back to `auto`).
-- To add a language: translate `en.ftl` into `<code>.ftl` and add one row in `i18n::LANGUAGES`.
+- To add a language: translate `locales/en/messages.ftl` into a new locale directory,
+  update `l10n.toml`, and add one row in `i18n::LANGUAGES`.
   `cargo xtask i18n check` parses every catalog and checks IDs, variables and source references.
   Set `complete_menus` once every cataloged menu string is translated; tests then enforce it.
   Fluent selects plural forms using the chosen locale.

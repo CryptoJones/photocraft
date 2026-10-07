@@ -8,6 +8,15 @@ use syn::visit::{self, Visit};
 
 const LANGS: &[&str] = &["en", "ja", "zh-hans", "zh-hant", "es", "ru", "cs"];
 
+fn fluent_path(dir: &Path, lang: &str) -> PathBuf {
+    let pontoon_locale = match lang {
+        "zh-hans" => "zh-CN",
+        "zh-hant" => "zh-TW",
+        other => other,
+    };
+    dir.join("locales").join(pontoon_locale).join("messages.ftl")
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 struct Key {
     context: String,
@@ -23,12 +32,38 @@ pub fn run(root: &Path, args: &[&str]) -> Result<(), String> {
         "generate" => generate(&dir, args.contains(&"--force")),
         "check" => {
             check_catalogs(&dir)?;
+            check_pontoon_config(root)?;
             check_calls(&root.join("crates/ui-egui/src"), &dir)
         }
         "audit" => audit(&root.join("crates/ui-egui/src")),
         "migrate" => migrate(&root.join("crates/ui-egui/src"), &dir, args.get(1).copied().unwrap_or("--dry-run")),
         other => Err(format!("unknown i18n command: {other}")),
     }
+}
+
+fn check_pontoon_config(root: &Path) -> Result<(), String> {
+    let path = root.join("l10n.toml");
+    let source = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let config: toml::Value = toml::from_str(&source).map_err(|e| format!("{}: {e}", path.display()))?;
+    let locales = config.get("locales").and_then(toml::Value::as_array).ok_or("l10n.toml: missing locales")?;
+    let paths = config.get("paths").and_then(toml::Value::as_array).ok_or("l10n.toml: missing paths")?;
+    let resource = paths.first().ok_or("l10n.toml: missing resource path")?;
+    let reference = resource.get("reference").and_then(toml::Value::as_str).ok_or("l10n.toml: missing reference")?;
+    let l10n = resource.get("l10n").and_then(toml::Value::as_str).ok_or("l10n.toml: missing l10n path")?;
+    if root.join(reference) != fluent_path(&root.join("crates/ui-egui/src/i18n"), "en") {
+        return Err("l10n.toml: English reference differs from the runtime catalog".into());
+    }
+    for &lang in LANGS.iter().filter(|&&lang| lang != "en") {
+        let expected = fluent_path(&root.join("crates/ui-egui/src/i18n"), lang);
+        let locale = expected.parent().and_then(Path::file_name).and_then(|name| name.to_str()).ok_or("invalid Fluent locale path")?;
+        if !locales.iter().any(|value| value.as_str() == Some(locale)) {
+            return Err(format!("l10n.toml: missing Pontoon locale {locale}"));
+        }
+        if root.join(l10n.replace("{locale}", locale)) != expected {
+            return Err(format!("l10n.toml: {locale} path differs from the runtime catalog"));
+        }
+    }
+    Ok(())
 }
 
 fn unescape(s: &str) -> String {
@@ -250,12 +285,15 @@ fn generate(dir: &Path, force: bool) -> Result<(), String> {
     let english: Vec<Entry> = keys.iter().map(|key| (key.context.clone(), key.source.clone(), key.source.clone())).collect();
     for &lang in LANGS {
         let entries = if lang == "en" { &english } else { catalogs.get(lang).ok_or_else(|| format!("missing {lang}"))? };
-        outputs.push((dir.join(format!("{lang}.ftl")), render_ftl(lang, entries, &ids)?));
+        outputs.push((fluent_path(&dir, lang), render_ftl(lang, entries, &ids)?));
     }
     if !force && outputs.iter().any(|(path, _)| path.exists()) {
         return Err("Fluent catalogs already exist; use `i18n generate --force` only to repeat the one-time TSV migration".into());
     }
     for (path, content) in &outputs {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
         fs::write(path, content).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     println!("i18n: {} stable IDs, {} FTL catalogs generated", keys.len(), LANGS.len());
@@ -572,7 +610,7 @@ fn check_catalogs(dir: &Path) -> Result<(), String> {
         return Err("empty i18n key ledger".into());
     }
     for &lang in LANGS {
-        let path = dir.join(format!("{lang}.ftl"));
+        let path = fluent_path(dir, lang);
         let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let resource = fluent_syntax::parser::parse(text.as_str()).map_err(|(_, errors)| format!("{}: {errors:?}", path.display()))?;
         let mut seen = BTreeSet::new();

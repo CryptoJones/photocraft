@@ -1,0 +1,7 @@
+# Pontoon project configuration. PhotoCraft keeps its runtime language codes
+# `zh-hans` and `zh-hant`; Pontoon uses the regional locale directories below.
+locales = ["cs", "es", "ja", "ru", "zh-CN", "zh-TW"]
+
+[[paths]]
+reference = "crates/ui-egui/src/i18n/locales/en/messages.ftl"
+l10n = "crates/ui-egui/src/i18n/locales/{locale}/messages.ftl"
