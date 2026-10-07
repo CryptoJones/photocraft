@@ -231,6 +231,9 @@ photocraft-cli run wave.psd \
 # Apply one action list to a folder of images
 photocraft-cli batch --actions grade.json --in ./raw --out ./graded
 
+# Every subcommand explains itself
+photocraft-cli batch --help
+
 # Let an agent drive it over MCP (headless, or bridged to the running app)
 photocraft-cli mcp
 ```
@@ -375,3 +378,7 @@ Forks and modified versions must remove them.
 
 
 ArtCraft
+
+## Star history
+
+[![Star History Chart](https://api.star-history.com/svg?repos=storytold/photocraft&type=Date&legend=top-left)](https://www.star-history.com/?repos=storytold%2Fphotocraft&type=date&legend=top-left)

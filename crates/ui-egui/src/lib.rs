@@ -76,6 +76,7 @@ pub mod move_mods;
 pub mod move_ui;
 pub mod new_doc_ui;
 pub mod notices;
+mod opacity_keys;
 pub mod outline;
 pub mod paint_mouse;
 pub mod palette;
@@ -170,8 +171,21 @@ pub type SaveTextFn = Box<dyn FnMut(&str) -> Result<(), String>>;
 pub type AutosaveFn = Box<dyn FnMut(&std::sync::Arc<Document>, u64, Option<&str>) -> Result<(), String>>;
 /// Drop the recovery data of a document (by `DocId` value) once it is saved or closed.
 pub type DiscardAutosaveFn = Box<dyn FnMut(u64)>;
-/// Load recoverable documents left by a previous session: (original path, document).
-pub type RecoverFn = Box<dyn FnMut() -> Vec<(Option<String>, Document)>>;
+/// Load recoverable documents left by a previous session. Their recovery data stays until the
+/// documents are saved or closed.
+pub type RecoverFn = Box<dyn FnMut() -> Vec<Recovered>>;
+/// A recovered document (by `DocId` value, once open) takes over its recovery entry (by key):
+/// its autosaves replace the entry, and saving or closing it drops the entry.
+pub type AdoptAutosaveFn = Box<dyn FnMut(u64, &str)>;
+
+/// A document [`RecoverFn`] found.
+pub struct Recovered {
+    /// The recovery entry it was loaded from (see [`AdoptAutosaveFn`]).
+    pub key: String,
+    /// Where the user last saved it, if anywhere.
+    pub path: Option<String>,
+    pub doc: Document,
+}
 /// Append text to a file (History Log).
 pub type AppendTextFn = Box<dyn FnMut(&str, &str) -> Result<(), String>>;
 /// Requests from the operating system since the last call (see [`OsEvent`]).
@@ -209,10 +223,13 @@ pub struct Services {
     /// the web (see `prefs_ui`).
     pub load_prefs: Option<LoadTextFn>,
     pub save_prefs: Option<SaveTextFn>,
+    /// The native window is connected directly to a Wayland compositor.
+    pub is_wayland: bool,
     /// Crash-recovery autosave (Preferences › File Handling) and recovery at launch.
     pub autosave: Option<AutosaveFn>,
     pub discard_autosave: Option<DiscardAutosaveFn>,
     pub recover: Option<RecoverFn>,
+    pub adopt_autosave: Option<AdoptAutosaveFn>,
     /// History Log text file output.
     pub append_text: Option<AppendTextFn>,
     /// OS requests (macOS open-documents / quit Apple events), polled every frame.
@@ -251,6 +268,8 @@ pub struct PhotocraftApp {
     /// This press began with ⌥ (Alt) held on a painting tool, so it samples colours instead of
     /// painting until it is released (`canvas::alt_eyedropper`, #417).
     pub(crate) alt_sampling: bool,
+    /// The first digit of a two-digit opacity typed on the number keys (`opacity_keys`, #352).
+    pub(crate) opacity_keys: opacity_keys::Pending,
     control_rx: Option<Receiver<ControlRequest>>,
     pending_screenshots: Vec<(u64, Option<String>, Sender<ControlResponse>)>,
     /// Screenshots not yet requested from the viewport: (token, earliest time in ms, frames seen).
@@ -377,6 +396,7 @@ impl PhotocraftApp {
             brush_resize: None,
             brush_resize_armed: false,
             alt_sampling: false,
+            opacity_keys: None,
             control_rx: None,
             pending_screenshots: Vec::new(),
             queued_screenshots: Vec::new(),
@@ -433,6 +453,7 @@ impl PhotocraftApp {
         };
         // Saved preferences (and recovered documents) are in place before the first frame.
         prefs_ui::load(&mut app);
+        notices::wayland_file_drop_guidance(&mut app);
         // File › Scripts › Script Events Manager: "Start Application".
         photocraft_engine::automate_cmds::fire_event(&mut app.session, "startApplication");
         app
@@ -443,8 +464,22 @@ impl PhotocraftApp {
     pub fn set_wgpu(&mut self, rs: eframe::egui_wgpu::RenderState) {
         // Preferences › Performance › cache tile size (PHOTOCRAFT_GPU_TILE still overrides).
         let tile = self.session.prefs().performance.cache_tile_size;
-        let gpu = gpu_canvas::GpuCanvas::with_tile(&rs, Some(tile));
-        self.perf.gpu_info.set_adapter(&gpu.adapter_info());
+        // Escaped driver/setup panics must leave the session and CPU canvas alive.
+        self.perf.gpu_info.set_adapter(&rs.adapter.get_info());
+        let gpu = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| gpu_canvas::GpuCanvas::with_tile(&rs, Some(tile)))) {
+            Ok(gpu) => gpu,
+            Err(payload) => {
+                let detail = payload
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
+                    .unwrap_or_else(|| "GPU canvas initialization failed".into());
+                self.perf.gpu_info.canvas = "cpu".into();
+                self.perf.gpu_info.fallback = Some(detail.clone());
+                gpu_status::queue_fallback_notice(self, detail);
+                return;
+            }
+        };
         self.perf.gpu_info.canvas = "gpu".into();
         self.gpu = Some(gpu);
         self.prefs_rt.gpu_style = None;
@@ -486,6 +521,9 @@ impl PhotocraftApp {
             && let Some(authorize) = self.services.automation_command.as_ref()
         {
             authorize(id, &params)?;
+        }
+        if let Some(r) = transform_tool::intercept(self, id) {
+            return r;
         }
         let suppress_events = self.automation_input && self.session.prefs().script_events.enabled;
         if suppress_events {
@@ -646,21 +684,6 @@ impl PhotocraftApp {
         self.ui.status_error = false;
         notices::io_warnings(self, &format!("Opened {name}"), &warnings);
         Ok(warnings)
-    }
-
-    /// Run one engine command on behalf of automation while suppressing
-    /// user-configured script-event file reads. Interactive commands retain
-    /// their normal event behavior.
-    pub fn run_automation(&mut self, id: &str, params: Value) -> Result<Value, String> {
-        let events_enabled = self.session.prefs().script_events.enabled;
-        if events_enabled {
-            self.session.edit_prefs(|prefs| prefs.script_events.enabled = false);
-        }
-        let result = self.run(id, params);
-        if events_enabled {
-            self.session.edit_prefs(|prefs| prefs.script_events.enabled = true);
-        }
-        result
     }
 
     /// File › Open: the platform dialog returns the chosen file's path (native; the web delivers
@@ -914,6 +937,7 @@ impl eframe::App for PhotocraftApp {
         wide_angle_ui::show(self, &ctx);
         canvas::extra_windows(self, &ctx);
         notices::show(self, &ctx);
+        gpu_status::show_fallback(self, &ctx);
         // A device lost while drawing this frame: switch to the CPU canvas before the next one.
         gpu_status::check(self, &ctx);
         self.automation_input = false;
@@ -1250,6 +1274,9 @@ mod input_tests;
 mod pencil_tests;
 
 #[cfg(test)]
+mod transform_undo_tests;
+
+#[cfg(test)]
 mod move_auto_select_tests;
 
 #[cfg(test)]
@@ -1257,6 +1284,9 @@ mod marquee_tests;
 
 #[cfg(test)]
 mod stamp_tests;
+
+#[cfg(test)]
+mod polygon_lasso_tests;
 
 #[cfg(test)]
 mod clipboard_tests {

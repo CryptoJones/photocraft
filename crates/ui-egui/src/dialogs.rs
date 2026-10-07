@@ -37,6 +37,31 @@ pub fn pan_delta(ctx: &egui::Context, canvas: egui::Rect, hand: bool) -> Option<
     (panning && canvas.contains(origin) && !rects.iter().any(|r| r.contains(origin))).then_some(delta)
 }
 
+/// A click or drag with the primary button started on the free canvas under an open dialog, Space
+/// not held: where the pointer is this frame. The press itself counts even when it is released in
+/// the same frame (a quick click, `ui.click`); the drag only while it stays on the free canvas.
+pub fn free_press(ctx: &egui::Context, canvas: egui::Rect) -> Option<egui::Pos2> {
+    if egui::Popup::is_any_open(ctx) {
+        return None;
+    }
+    let rects = rects(ctx);
+    let free = |p: egui::Pos2| canvas.contains(p) && !rects.iter().any(|r| r.contains(p));
+    ctx.input(|i| {
+        if i.key_down(egui::Key::Space) {
+            return None;
+        }
+        let pressed = i.events.iter().rev().find_map(|e| match e {
+            egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, .. } => Some(*pos),
+            _ => None,
+        });
+        if let Some(p) = pressed {
+            return free(p).then_some(p);
+        }
+        let held = i.pointer.primary_down() && i.pointer.press_origin().is_some_and(free);
+        i.pointer.latest_pos().filter(|p| held && free(*p))
+    })
+}
+
 pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
     let dialogs = app.ui.dialogs.clone();
     let mut shown = Vec::new();
@@ -46,12 +71,19 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let mut apply_requested = false;
         let title = display_title(&d);
         let id = egui::Id::new(("dialog", d.id));
-        // Offset from centre, moved by dragging the title bar (view state only, so egui memory).
-        let offset: egui::Vec2 = ctx.data(|m| m.get_temp(id)).unwrap_or_default();
+        // Opens centred, then its top-left stays put (offset from the window's top-left, moved by
+        // dragging the title bar; view state only, so egui memory): a dialog whose body grows, like
+        // Layer Style switching effects, extends down and right instead of re-centring.
+        let pinned: Option<egui::Vec2> = ctx.data(|m| m.get_temp(id));
         let mut drag = egui::Vec2::ZERO;
-        let area = egui::Modal::default_area(id).anchor(egui::Align2::CENTER_CENTER, offset);
+        let mut sizing = false;
+        let area = match pinned {
+            Some(offset) => egui::Modal::default_area(id).anchor(egui::Align2::LEFT_TOP, offset),
+            None => egui::Modal::default_area(id),
+        };
         // Photoshop doesn't dim the window behind dialogs: previews must be judged at true contrast.
         let modal = egui::Modal::new(id).area(area).backdrop_color(egui::Color32::TRANSPARENT).show(ctx, |ui| {
+            sizing = ui.is_sizing_pass();
             ui.set_min_width(380.0);
             let wide = crate::prefs_ui::width(&d.fields);
             if let Some(w) = wide {
@@ -152,10 +184,13 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             ui.min_rect().expand(ui.spacing().menu_margin.sum().max_elem() + 2.0)
         });
         shown.push(modal.inner);
-        if drag != egui::Vec2::ZERO {
+        // Pin once laid out at its real size (the first frame is an invisible sizing pass).
+        if !sizing && (pinned.is_none() || drag != egui::Vec2::ZERO) {
+            let screen = ctx.content_rect();
             // Keep the whole dialog (and so its title bar) on screen.
-            let room = ((ctx.content_rect().size() - modal.response.rect.size()) / 2.0).max(egui::Vec2::ZERO);
-            ctx.data_mut(|m| m.insert_temp(id, (offset + drag).clamp(-room, room)));
+            let room = (screen.size() - modal.response.rect.size()).max(egui::Vec2::ZERO);
+            let offset = pinned.unwrap_or(modal.response.rect.min - screen.min) + drag;
+            ctx.data_mut(|m| m.insert_temp(id, offset.clamp(egui::Vec2::ZERO, room)));
         }
         // Esc cancels (topmost dialog, no popup open). A click outside does nothing: Photoshop keeps
         // the dialog, and the pointer may be panning or zooming the canvas under it.
