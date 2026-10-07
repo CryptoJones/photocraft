@@ -75,3 +75,9 @@ next to the files:
 | `corpus/pngsuite/` | PngSuite | Willem van Schaik | <http://www.schaik.com/pngsuite/> | Public domain |
 
 Files copied into `corpus/` by hand (tiff, exr, raw) must be MIT, BSD or CC0.
+
+## Locally patched dependency
+
+| Path | Title | Author | Source | License |
+|---|---|---|---|---|
+| `vendor/winit` | winit 0.30.13 (macOS Korean IME repair) | The winit contributors; local patch by PhotoCraft contributors | <https://crates.io/crates/winit/0.30.13> | Apache-2.0, [`vendor/winit/LICENSE`](vendor/winit/LICENSE); embedded documentation illustrations retain [`vendor/winit/docs/res/ATTRIBUTION.md`](vendor/winit/docs/res/ATTRIBUTION.md) |
