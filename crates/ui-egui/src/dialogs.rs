@@ -66,6 +66,12 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
     let dialogs = app.ui.dialogs.clone();
     let mut shown = Vec::new();
     for d in dialogs {
+        let lang = if crate::prefs_ui::is_preferences(&d.fields) {
+            crate::i18n::Lang::from_pref(d.fields.get("values").and_then(|v| v.pointer("/interface/language")).and_then(Value::as_str).unwrap_or("auto"))
+        } else {
+            crate::i18n::current()
+        };
+        let _language = crate::i18n::language_scope(lang);
         let mut fields = d.fields.clone();
         let mut outcome: Option<bool> = None; // Some(true)=OK, Some(false)=Cancel
         let mut apply_requested = false;
@@ -143,7 +149,13 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 DialogKind::Command if fields.contains_key("__export") => crate::export_dialog::body(app, ui, &mut fields),
                 DialogKind::Command if fields.contains_key("__sizing") => crate::sizing::body(ui, &mut fields),
                 DialogKind::Command if crate::adjust_dialog::owns(&fields) => crate::adjust_dialog::body(app, ui, &mut fields),
-                DialogKind::Command if fields.contains_key("__filter") => crate::filter_dialog::body(ui, &mut fields),
+                DialogKind::Command if fields.contains_key("__filter") => {
+                    // Color Settings: the monitor profile in use can change while it is open.
+                    if fields.get("__command").and_then(Value::as_str) == Some("edit.colorSettings") {
+                        fields.insert("__note".into(), Value::String(crate::monitor_status::note(app)));
+                    }
+                    crate::filter_dialog::body(ui, &mut fields)
+                }
                 DialogKind::Command if fields.contains_key("__form") => crate::view_cmds::form_body(ui, &mut fields),
                 DialogKind::Command => {}
                 DialogKind::LayerStyle => crate::layer_style::body(ui, &mut fields),
