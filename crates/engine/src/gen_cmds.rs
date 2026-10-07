@@ -34,7 +34,7 @@ fn variation_source(p: &Value, cmd: &str) -> Result<VariationSource> {
         None => Ok(VariationSource::Composite),
         Some(Value::String(s)) if s == "composite" => Ok(VariationSource::Composite),
         Some(Value::String(s)) if s == "layer" => Ok(VariationSource::Layer),
-        _ => Err(bad(cmd, "`source` debe ser `composite` o `layer`")),
+        _ => Err(bad(cmd, "`source` must be `composite` or `layer`")),
     }
 }
 
@@ -43,7 +43,7 @@ fn key_enabled(s: &Session) -> std::result::Result<(), String> {
         return Err("no document open".into());
     }
     if std::env::var("OPENAI_API_KEY").ok().is_none_or(|v| v.trim().is_empty()) {
-        return Err("IA generativa desactivada: falta OPENAI_API_KEY".into());
+        return Err("Generative AI is off: set OPENAI_API_KEY".into());
     }
     Ok(())
 }
@@ -57,27 +57,27 @@ fn other(e: impl std::fmt::Display) -> EngineError {
 
 fn prompt<'a>(p: &'a Value, cmd: &str, required: bool) -> Result<&'a str> {
     if p.get("prompt").is_some_and(|v| !v.is_string()) {
-        return Err(bad(cmd, "`prompt` debe ser texto"));
+        return Err(bad(cmd, "`prompt` must be text"));
     }
     let v = p.get("prompt").and_then(Value::as_str).unwrap_or(if required { "" } else { "Create a faithful visual variation of this image." });
     if v.trim().is_empty() || v.len() > 32_000 {
-        return Err(bad(cmd, "`prompt` debe ser texto no vacío (máximo 32000 bytes)"));
+        return Err(bad(cmd, "`prompt` must be nonempty text (at most 32000 bytes)"));
     }
     Ok(v)
 }
 fn size<'a>(p: &'a Value, cmd: &str) -> Result<&'a str> {
     if p.get("size").is_some_and(|v| !v.is_string()) {
-        return Err(bad(cmd, "`size` debe ser texto"));
+        return Err(bad(cmd, "`size` must be text"));
     }
     let v = p.get("size").and_then(Value::as_str).unwrap_or("1024x1024");
     if !matches!(v, "1024x1024" | "1024x1536" | "1536x1024" | "auto") {
-        return Err(bad(cmd, "`size` debe ser 1024x1024, 1024x1536, 1536x1024 o auto"));
+        return Err(bad(cmd, "`size` must be 1024x1024, 1024x1536, 1536x1024, or auto"));
     }
     Ok(v)
 }
 fn limit(r: Rect, cmd: &str) -> Result<()> {
     if r.is_empty() || r.width() > MAX_SIDE || r.height() > MAX_SIDE || u64::from(r.width()) * u64::from(r.height()) > MAX_PIXELS {
-        return Err(bad(cmd, "imagen demasiado grande para IA generativa (máximo 4096 px por lado y 16 MP)"));
+        return Err(bad(cmd, "image too large for generative AI (maximum 4096 px per side and 16 MP)"));
     }
     Ok(())
 }
@@ -148,8 +148,7 @@ fn from_api(doc: &Document, s: &Surface) -> Result<Surface> {
     Ok(if converted.format() == fmt { converted } else { converted.convert(fmt) })
 }
 fn mask_png(r: Rect, mut alpha: impl FnMut(i32, i32) -> f32) -> Result<Vec<u8>> {
-    let count =
-        (r.width() as usize).checked_mul(r.height() as usize).and_then(|n| n.checked_mul(4)).ok_or_else(|| bad("image.ai", "máscara demasiado grande"))?;
+    let count = (r.width() as usize).checked_mul(r.height() as usize).and_then(|n| n.checked_mul(4)).ok_or_else(|| bad("image.ai", "mask too large"))?;
     let mut pixels = vec![255u8; count];
     for (i, px) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let x = r.x0 + (i % r.width() as usize) as i32;
@@ -244,7 +243,7 @@ fn place(s: &mut Session, label: &str, rgb: Surface, area: Rect, mask: Option<Su
             converted.write_region(area, &pixels);
         }
         let mut layer = Layer::raster(doc.next_layer_name(label), fmt);
-        *layer.surface_mut().ok_or_else(|| EngineError::Other("no se pudo crear la capa".into()))? = converted;
+        *layer.surface_mut().ok_or_else(|| EngineError::Other("could not create layer".into()))? = converted;
         let id = doc.insert_above(*active, layer);
         *active = Some(id);
         Ok(id)
@@ -254,7 +253,7 @@ fn place(s: &mut Session, label: &str, rgb: Surface, area: Rect, mask: Option<Su
 fn run(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, label: &'static str) -> Result<Value> {
     // Validate before taking a snapshot or starting a network job.
     if p.get("model").is_some_and(|v| !v.is_string()) {
-        return Err(bad(cmd, "`model` debe ser texto"));
+        return Err(bad(cmd, "`model` must be text"));
     }
     let provider = OpenAiProvider::from_env(p.get("model").and_then(Value::as_str)).map_err(other)?;
     run_with_provider(s, p, kind, cmd, label, provider)
@@ -277,10 +276,10 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
             (Rect::from_xywh(0, 0, w, h), None, None)
         }
         Kind::Fill => {
-            let sel = doc.selection.clone().ok_or_else(|| bad(cmd, "requiere una selección activa"))?;
+            let sel = doc.selection.clone().ok_or_else(|| bad(cmd, "requires an active selection"))?;
             let b = sel.content_bounds().intersect(&bounds);
             if b.is_empty() {
-                return Err(bad(cmd, "la selección está vacía"));
+                return Err(bad(cmd, "selection is empty"));
             }
             let x0 = (b.x0 - MARGIN).max(0);
             let y0 = (b.y0 - MARGIN).max(0);
@@ -293,17 +292,17 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
                 .get("pixels")
                 .and_then(Value::as_u64)
                 .filter(|&n| (1..=1024).contains(&n))
-                .ok_or_else(|| bad(cmd, "`pixels` debe ser entero entre 1 y 1024"))? as u32;
-            let w = doc.size.width.checked_add(n * 2).ok_or_else(|| bad(cmd, "ancho fuera de rango"))?;
-            let h = doc.size.height.checked_add(n * 2).ok_or_else(|| bad(cmd, "alto fuera de rango"))?;
+                .ok_or_else(|| bad(cmd, "`pixels` must be an integer from 1 to 1024"))? as u32;
+            let w = doc.size.width.checked_add(n * 2).ok_or_else(|| bad(cmd, "width out of range"))?;
+            let h = doc.size.height.checked_add(n * 2).ok_or_else(|| bad(cmd, "height out of range"))?;
             (Rect::from_xywh(0, 0, w, h), None, Some(n))
         }
         Kind::Vary => {
             if matches!(source, Some(VariationSource::Layer)) {
-                let id = st.active_layer.ok_or_else(|| bad(cmd, "requiere una capa activa"))?;
-                let layer = doc.layer(id).and_then(Layer::surface).ok_or_else(|| bad(cmd, "la capa activa debe ser raster"))?;
+                let id = st.active_layer.ok_or_else(|| bad(cmd, "requires an active layer"))?;
+                let layer = doc.layer(id).and_then(Layer::surface).ok_or_else(|| bad(cmd, "active layer must be a raster layer"))?;
                 if layer.content_bounds().intersect(&bounds).is_empty() {
-                    return Err(bad(cmd, "la capa activa está vacía"));
+                    return Err(bad(cmd, "active layer is empty"));
                 }
             }
             (bounds, None, None)
@@ -317,20 +316,20 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
         true,
         move |ctx| {
             ctx.check()?;
-            ctx.progress(0.05, "Preparando imagen");
+            ctx.progress(0.05, "Preparing image");
             let (input, edit_mask, target_mask, expansion_source) = match kind {
                 Kind::Generate => (None, None, None, None),
                 Kind::Fill => {
                     let composite = rgb_for_api(&doc, area)?;
                     let (small, r) = fit(&composite, area);
-                    let sel = selected.as_ref().ok_or_else(|| bad(cmd, "falta selección"))?;
+                    let sel = selected.as_ref().ok_or_else(|| bad(cmd, "selection is missing"))?;
                     let sx = f64::from(area.width()) / f64::from(r.width());
                     let sy = f64::from(area.height()) / f64::from(r.height());
                     let mask = mask_png(r, |x, y| sel.sample_channel(area.x0 + (f64::from(x) * sx) as i32, area.y0 + (f64::from(y) * sy) as i32, 0))?;
                     (Some(png(&small, r)?), Some(mask), selected.clone(), None)
                 }
                 Kind::Expand => {
-                    let n = expand.ok_or_else(|| bad(cmd, "falta margen"))?;
+                    let n = expand.ok_or_else(|| bad(cmd, "expansion margin is missing"))?;
                     let band = n.div_ceil(2).min(64);
                     let composite = rgb_for_api(&doc, doc.bounds())?;
                     let shifted = photocraft_algo::resample::translate_surface(&composite, n as i32, n as i32);
@@ -354,22 +353,22 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
                     let rgb = match source {
                         Some(VariationSource::Composite) => rgb_for_api(&doc, area)?,
                         Some(VariationSource::Layer) => {
-                            let id = original.ok_or_else(|| bad(cmd, "falta capa activa"))?;
-                            let layer = doc.layer(id).and_then(Layer::surface).ok_or_else(|| bad(cmd, "la capa activa debe ser raster"))?;
+                            let id = original.ok_or_else(|| bad(cmd, "active layer is missing"))?;
+                            let layer = doc.layer(id).and_then(Layer::surface).ok_or_else(|| bad(cmd, "active layer must be a raster layer"))?;
                             let source = layer.convert(PixelFormat::new(doc.mode, doc.depth, true));
                             let t = Transform::new(&crate::color_cmds::document_profile(&doc), Builtin::Srgb.profile(), Intent::RelativeColorimetric, true)
                                 .map_err(other)?;
                             crate::color_cmds::convert_surface(&source, doc.mode, PixelFormat::new(ColorMode::Rgb, SampleType::U8, true), &t)
                                 .convert(PixelFormat::new(ColorMode::Rgb, SampleType::U8, true))
                         }
-                        None => return Err(bad(cmd, "falta origen de variación")),
+                        None => return Err(bad(cmd, "variation source is missing")),
                     };
                     let (small, r) = fit(&rgb, area);
                     (Some(png(&small, r)?), None, None, None)
                 }
             };
             ctx.check()?;
-            ctx.progress(0.2, "Esperando a OpenAI");
+            ctx.progress(0.2, "Waiting for OpenAI");
             let result = match kind {
                 Kind::Generate => provider.generate(&text, &requested),
                 Kind::Fill | Kind::Expand => provider.edit(
@@ -382,7 +381,7 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
             }
             .map_err(other)?;
             ctx.check()?;
-            ctx.progress(0.8, "Decodificando imagen");
+            ctx.progress(0.8, "Decoding image");
             let (decoded, got) = decode_png(&result)?;
             let output_size = if matches!(kind, Kind::Generate) { requested.as_str() } else { coded_size(area.width(), area.height()) };
             let expected = match output_size {
@@ -392,7 +391,7 @@ fn run_with_provider(s: &mut Session, p: &Value, kind: Kind, cmd: &'static str, 
                 _ => None,
             };
             if expected.is_some_and(|(w, h)| got.width() != w || got.height() != h) {
-                return Err(other("el servicio devolvió una imagen de tamaño distinto al solicitado"));
+                return Err(other("image service returned a different image size than requested"));
             }
             let sx = f64::from(area.width()) / f64::from(got.width());
             let sy = f64::from(area.height()) / f64::from(got.height());
@@ -420,7 +419,7 @@ pub fn specs() -> Vec<CommandSpec> {
             shortcut: None,
             params: r##"{"prompt":str,"size":"1024x1024|1024x1536|1536x1024|auto"?,"model":"gpt-image-1"?}"##,
             enabled: key_enabled,
-            run: |s, p| run(s, p, Kind::Generate, "image.ai.generate", "Imagen generada"),
+            run: |s, p| run(s, p, Kind::Generate, "image.ai.generate", "Generated Image"),
             journal: true,
         },
         CommandSpec {
@@ -428,9 +427,9 @@ pub fn specs() -> Vec<CommandSpec> {
             label: "Generative Fill…",
             menu: &["Edit"],
             shortcut: None,
-            params: r##"{"prompt":str,"model":"gpt-image-1"?} requiere selección"##,
+            params: r##"{"prompt":str,"model":"gpt-image-1"?} requires a selection"##,
             enabled: key_enabled,
-            run: |s, p| run(s, p, Kind::Fill, "edit.ai.generativeFill", "Relleno generativo"),
+            run: |s, p| run(s, p, Kind::Fill, "edit.ai.generativeFill", "Generative Fill"),
             journal: true,
         },
         CommandSpec {
@@ -440,7 +439,7 @@ pub fn specs() -> Vec<CommandSpec> {
             shortcut: None,
             params: r##"{"pixels":1..1024,"prompt":str,"model":"gpt-image-1"?}"##,
             enabled: key_enabled,
-            run: |s, p| run(s, p, Kind::Expand, "image.ai.expandCanvas", "Expandir lienzo con IA"),
+            run: |s, p| run(s, p, Kind::Expand, "image.ai.expandCanvas", "Expand Canvas with AI"),
             journal: true,
         },
         CommandSpec {
@@ -448,9 +447,9 @@ pub fn specs() -> Vec<CommandSpec> {
             label: "Variations…",
             menu: &["Layer"],
             shortcut: None,
-            params: r##"{"prompt":str?,"source":"composite|layer"="composite","model":"gpt-image-1"?} composite usa la imagen visible; layer usa la capa raster activa"##,
+            params: r##"{"prompt":str?,"source":"composite|layer"="composite","model":"gpt-image-1"?} composite uses the visible image; layer uses the active raster layer"##,
             enabled: key_enabled,
-            run: |s, p| run(s, p, Kind::Vary, "layer.ai.variations", "Variación generada"),
+            run: |s, p| run(s, p, Kind::Vary, "layer.ai.variations", "Generated Variation"),
             journal: true,
         },
     ]
@@ -553,10 +552,10 @@ mod tests {
     }
     fn call(s: &mut Session, kind: Kind, p: Value, provider: OpenAiProvider<MockTransport>) -> Result<Value> {
         let (id, label) = match kind {
-            Kind::Generate => ("image.ai.generate", "Imagen generada"),
-            Kind::Fill => ("edit.ai.generativeFill", "Relleno generativo"),
-            Kind::Expand => ("image.ai.expandCanvas", "Expandir lienzo con IA"),
-            Kind::Vary => ("layer.ai.variations", "Variación generada"),
+            Kind::Generate => ("image.ai.generate", "Generated Image"),
+            Kind::Fill => ("edit.ai.generativeFill", "Generative Fill"),
+            Kind::Expand => ("image.ai.expandCanvas", "Expand Canvas with AI"),
+            Kind::Vary => ("layer.ai.variations", "Generated Variation"),
         };
         run_with_provider(s, &p, kind, id, label, provider)
     }
@@ -755,7 +754,7 @@ mod tests {
         assert!(call(&mut s, Kind::Vary, json!({"source":"layer"}), p).is_err());
         s.active_mut().unwrap().active_layer = before.top_layer();
         let (p, _) = provider(response(4, 4));
-        assert!(call(&mut s, Kind::Generate, json!({"prompt":"red"}), p).unwrap_err().to_string().contains("tamaño distinto"));
+        assert!(call(&mut s, Kind::Generate, json!({"prompt":"red"}), p).unwrap_err().to_string().contains("different image size"));
         for reply in [b"{".to_vec(), br#"{"data":[{"b64_json":"AQID"}]}"#.to_vec()] {
             let (p, _) = provider(reply);
             assert!(call(&mut s, Kind::Generate, json!({"prompt":"red"}), p).is_err());
@@ -905,11 +904,11 @@ mod tests {
             .start_job(
                 "image.ai.generate",
                 json!({"prompt":"red"}),
-                "Imagen generada",
+                "Generated Image",
                 true,
                 move |_| provider.generate("red", "1024x1024").map_err(other),
                 |s, _| {
-                    place(s, "Imagen generada", Surface::new(PixelFormat::new(ColorMode::Rgb, SampleType::U8, true)), Rect::from_xywh(0, 0, 1, 1), None, None)
+                    place(s, "Generated Image", Surface::new(PixelFormat::new(ColorMode::Rgb, SampleType::U8, true)), Rect::from_xywh(0, 0, 1, 1), None, None)
                 },
             )
             .unwrap();

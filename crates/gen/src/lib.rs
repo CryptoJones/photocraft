@@ -11,13 +11,13 @@ const MAX_RESPONSE: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum GenError {
-    #[error("IA generativa desactivada: falta OPENAI_API_KEY")]
+    #[error("Generative AI is off: set OPENAI_API_KEY")]
     MissingKey,
-    #[error("solicitud de imagen inválida: {0}")]
+    #[error("invalid image request: {0}")]
     Invalid(&'static str),
-    #[error("servicio de imágenes no disponible: {0}")]
+    #[error("image service unavailable: {0}")]
     Service(&'static str),
-    #[error("servicio de imágenes respondió con HTTP {0}")]
+    #[error("image service returned HTTP {0}")]
     Http(u16),
 }
 
@@ -49,17 +49,12 @@ impl HttpTransport for UreqTransport {
         let mut response = match agent.post(&url).header("Authorization", format!("Bearer {key}")).header("Content-Type", content_type).send(body) {
             Ok(r) => r,
             Err(ureq::Error::StatusCode(code)) => return Err(GenError::Http(code)),
-            Err(_) => return Err(GenError::Service("falló la conexión HTTPS")),
+            Err(_) => return Err(GenError::Service("HTTPS connection failed")),
         };
         let mut bytes = Vec::new();
-        response
-            .body_mut()
-            .as_reader()
-            .take((MAX_RESPONSE + 1) as u64)
-            .read_to_end(&mut bytes)
-            .map_err(|_| GenError::Service("no se pudo leer la respuesta"))?;
+        response.body_mut().as_reader().take((MAX_RESPONSE + 1) as u64).read_to_end(&mut bytes).map_err(|_| GenError::Service("could not read response"))?;
         if bytes.len() > MAX_RESPONSE {
-            return Err(GenError::Service("respuesta demasiado grande"));
+            return Err(GenError::Service("response too large"));
         }
         Ok(bytes)
     }
@@ -68,7 +63,7 @@ impl HttpTransport for UreqTransport {
 #[cfg(target_arch = "wasm32")]
 impl HttpTransport for UreqTransport {
     fn post(&self, _: &str, _: &str, _: &str, _: &[u8]) -> Result<Vec<u8>> {
-        Err(GenError::Service("la generación requiere la aplicación de escritorio"))
+        Err(GenError::Service("image generation requires the desktop app"))
     }
 }
 
@@ -92,7 +87,7 @@ impl<T: HttpTransport> OpenAiProvider<T> {
             return Err(GenError::MissingKey);
         }
         if !model.starts_with("gpt-image") || model.len() > 80 || !model.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.') {
-            return Err(GenError::Invalid("modelo gpt-image inválido"));
+            return Err(GenError::Invalid("invalid gpt-image model"));
         }
         Ok(Self { key, model: model.to_owned(), transport })
     }
@@ -100,29 +95,29 @@ impl<T: HttpTransport> OpenAiProvider<T> {
     fn request(&self, path: &str, content_type: &str, body: &[u8]) -> Result<Vec<u8>> {
         let response = self.transport.post(path, &self.key, content_type, body)?;
         if response.len() > MAX_RESPONSE {
-            return Err(GenError::Service("respuesta demasiado grande"));
+            return Err(GenError::Service("response too large"));
         }
-        let value: Value = serde_json::from_slice(&response).map_err(|_| GenError::Service("respuesta JSON inválida"))?;
+        let value: Value = serde_json::from_slice(&response).map_err(|_| GenError::Service("invalid JSON response"))?;
         let data = value
             .get("data")
             .and_then(Value::as_array)
             .and_then(|a| a.first())
             .and_then(|v| v.get("b64_json"))
             .and_then(Value::as_str)
-            .ok_or(GenError::Service("respuesta sin imagen b64_json"))?;
+            .ok_or(GenError::Service("response missing b64_json image"))?;
         if data.len() > MAX_RESPONSE {
-            return Err(GenError::Service("imagen demasiado grande"));
+            return Err(GenError::Service("image too large"));
         }
-        base64::engine::general_purpose::STANDARD.decode(data).map_err(|_| GenError::Service("imagen base64 inválida"))
+        base64::engine::general_purpose::STANDARD.decode(data).map_err(|_| GenError::Service("invalid base64 image"))
     }
 
     fn multipart(&self, image: &[u8], mask: Option<&[u8]>, prompt: &str, size: &str) -> Result<Vec<u8>> {
         validate(prompt, size)?;
         if image.is_empty() || image.len() > 20 * 1024 * 1024 {
-            return Err(GenError::Invalid("imagen PNG vacía o demasiado grande"));
+            return Err(GenError::Invalid("PNG image is empty or too large"));
         }
         if mask.is_some_and(|m| m.is_empty() || m.len() > 20 * 1024 * 1024) {
-            return Err(GenError::Invalid("máscara PNG vacía o demasiado grande"));
+            return Err(GenError::Invalid("PNG mask is empty or too large"));
         }
         // A boundary absent from binary input. A constant is safe after checking both buffers.
         let mut boundary = "photocraft-boundary-1".to_owned();
@@ -150,7 +145,7 @@ impl<T: HttpTransport> ImageProvider for OpenAiProvider<T> {
     fn generate(&self, prompt: &str, size: &str) -> Result<Vec<u8>> {
         validate(prompt, size)?;
         let body = json!({"model":self.model,"prompt":prompt,"size":size,"output_format":"png"});
-        let bytes = serde_json::to_vec(&body).map_err(|_| GenError::Service("no se pudo preparar la solicitud"))?;
+        let bytes = serde_json::to_vec(&body).map_err(|_| GenError::Service("could not prepare request"))?;
         self.request("/generations", "application/json", &bytes)
     }
     fn edit(&self, image: &[u8], mask: &[u8], prompt: &str, size: &str) -> Result<Vec<u8>> {
@@ -164,10 +159,10 @@ impl<T: HttpTransport> ImageProvider for OpenAiProvider<T> {
 
 fn validate(prompt: &str, size: &str) -> Result<()> {
     if prompt.trim().is_empty() || prompt.len() > 32_000 {
-        return Err(GenError::Invalid("prompt vacío o demasiado largo"));
+        return Err(GenError::Invalid("prompt is empty or too long"));
     }
     if !matches!(size, "1024x1024" | "1024x1536" | "1536x1024" | "auto") {
-        return Err(GenError::Invalid("tamaño no compatible"));
+        return Err(GenError::Invalid("unsupported size"));
     }
     Ok(())
 }
@@ -244,7 +239,7 @@ mod tests {
         }
         let missing = OpenAiProvider::new(" ".into(), "gpt-image-1", Mock::new(Vec::new())).err().unwrap();
         assert!(matches!(missing, GenError::MissingKey));
-        assert!(missing.to_string().starts_with("IA generativa desactivada"));
+        assert!(missing.to_string().starts_with("Generative AI is off"));
         let p = OpenAiProvider::new(secret.into(), "gpt-image-1", Mock::new(Vec::new())).unwrap();
         assert!(matches!(p.generate(" ", "1024x1024"), Err(GenError::Invalid(_))));
         assert!(matches!(p.generate("cat", "99x99"), Err(GenError::Invalid(_))));

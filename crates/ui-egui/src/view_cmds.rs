@@ -704,7 +704,7 @@ fn label_of(key: &str) -> String {
             out.push(c);
         }
     }
-    out
+    crate::i18n::t(&out).to_string()
 }
 
 /// Body of a `__form` dialog: text fields, number fields, checkboxes and `__choices` dropdowns.
