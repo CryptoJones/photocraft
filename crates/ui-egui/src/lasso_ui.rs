@@ -93,7 +93,7 @@ pub fn commit(app: &mut PhotocraftApp) {
 
 pub fn pointer(app: &mut PhotocraftApp, ev: ToolEvent, mods: Modifiers) -> bool {
     cancel_stale(app);
-    if app.ui.tool != Tool::Lasso || moving_selection(app) {
+    if app.active_tool() != Tool::Lasso || moving_selection(app) {
         return false;
     }
     let p = match ev {

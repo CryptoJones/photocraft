@@ -1778,6 +1778,9 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
         None if middle => Tool::Hand,
         None => app.ui.tool,
     };
+    // ⌘ held: this frame's gestures go to the Move tool (`PhotocraftApp::active_tool`). The Hand
+    // and Zoom never reach `tool_event`, so only the Move needs the state machine to know.
+    app.tool_override = (temporary == Some(crate::hold_keys::Temporary::Move)).then_some(Tool::Move);
     // Zoom direction: the temporary zoom key decides, else ⌥ (Zoom tool).
     let zoom_out = |alt: bool| match temporary {
         Some(crate::hold_keys::Temporary::ZoomOut) => true,
@@ -2105,6 +2108,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             crate::stroke_constraint::draw_line_preview(app, &painter, &xf, p, tool, held.shift);
         }
     }
+    app.tool_override = None;
     // Scrollbars (scrollbars.rs): drawn over the canvas edges, they take the pointer there.
     let t0 = crate::gpu_canvas::now_ms();
     let before = view.center;
@@ -2389,7 +2393,7 @@ fn alt_samples(tool: Tool, mods: egui::Modifiers) -> bool {
 /// painting and sampling.
 fn alt_eyedropper(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers) -> bool {
     if matches!(ev, ToolEvent::Down { .. }) {
-        app.alt_sampling = alt_samples(app.ui.tool, mods);
+        app.alt_sampling = alt_samples(app.active_tool(), mods);
     }
     if !app.alt_sampling {
         return false;
@@ -2426,7 +2430,7 @@ pub(crate) fn composite_color(app: &mut PhotocraftApp, x: f64, y: f64) -> Option
 /// on. It does not feed the live stroke, so the canvas can push a whole frame's recovered samples
 /// and update the live stroke once (see `canvas_view`).
 fn tool_move(app: &mut PhotocraftApp, x: f64, y: f64, pressure: f32, mods: egui::Modifiers) {
-    let tool = app.ui.tool;
+    let tool = app.active_tool();
     if tool.is_type() && app.drag.is_none() {
         crate::type_tool::pointer_move(app, x, y);
     }
@@ -2519,7 +2523,7 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
     if crate::magnetic_lasso_ui::pointer(app, ev, mods) {
         return;
     }
-    let tool = app.ui.tool;
+    let tool = app.active_tool();
     if tool == Tool::Eyedropper {
         match ev {
             ToolEvent::Down { x, y, .. } | ToolEvent::Move { x, y, .. } => {
@@ -2568,8 +2572,10 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
                 return;
             }
             // Marquee / lasso inside the selection: drag the outline, or ⌘-drag to cut the selected
-            // pixels into a floating piece (`select.float`) and drag that.
-            if let Some(cut) = selection_drag_kind(app, tool, [x, y], mods) {
+            // pixels into a floating piece (`select.float`) and drag that. Judged by the selected
+            // tool: ⌘ makes the marquee the Move tool everywhere else (`hold_keys::cmd_moves`), and
+            // this is what the Move tool does with selected pixels.
+            if let Some(cut) = selection_drag_kind(app, app.ui.tool, [x, y], mods) {
                 if cut
                     && app.session.active().is_some_and(|st| photocraft_engine::float_cmds::floating(st).is_none())
                     && let Err(e) = app.run("select.float", json!({"dx": 0, "dy": 0}))
@@ -2578,7 +2584,7 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
                     app.ui.status_error = true;
                     return;
                 }
-                let mut d = Drag::new(tool, [x, y], vec![[x, y, pressure as f64]], mods, false);
+                let mut d = Drag::new(app.ui.tool, [x, y], vec![[x, y, pressure as f64]], mods, false);
                 d.sel_move = Some(cut);
                 app.drag = Some(d);
                 return;
