@@ -149,6 +149,22 @@ pub fn pen_move(app: &mut PhotocraftApp, x: f64, y: f64) {
     }
 }
 
+/// Undo the most recently placed Pen anchor while its path is still in progress.
+/// These knots are editor-only gesture state, not document history until Enter or
+/// clicking the first anchor commits the path. Therefore Cmd/Ctrl+Z must consume one
+/// knot rather than undoing an unrelated, already committed document operation.
+pub fn pen_undo_last_point(app: &mut PhotocraftApp) -> bool {
+    let Some(pen) = app.ui.pen.as_mut() else { return false };
+    if pen.knots.pop().is_none() {
+        return false;
+    }
+    pen.dragging = false;
+    if pen.knots.is_empty() {
+        app.ui.pen = None;
+    }
+    true
+}
+
 pub fn pen_up(app: &mut PhotocraftApp) {
     if let Some(pen) = app.ui.pen.as_mut() {
         pen.dragging = false;
