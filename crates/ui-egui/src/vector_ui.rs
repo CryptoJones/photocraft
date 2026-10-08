@@ -1020,6 +1020,48 @@ mod tests {
         assert_eq!((wp.subpaths[0].knots[0].anchor.x, wp.subpaths[0].knots[0].anchor.y), (30.0, 25.0));
     }
 
+    #[test]
+    fn pen_point_undo_preserves_earlier_knots_and_document_history() {
+        let mut app = app();
+        app.ui.tool = Tool::Pen;
+        app.run("shape.create", json!({"kind": "rect", "rect": [10, 10, 40, 40], "fill": "#ff0000"})).unwrap();
+        let old_history = app.session.active().unwrap().history.past_len();
+
+        pen_down(&mut app, 20.0, 20.0);
+        pen_up(&mut app);
+        pen_down(&mut app, 120.0, 20.0);
+        pen_move(&mut app, 120.0, 60.0);
+        pen_up(&mut app);
+        pen_down(&mut app, 120.0, 120.0);
+        pen_up(&mut app);
+
+        let original_first_two = app.ui.pen.as_ref().unwrap().knots[..2].to_vec();
+        assert!(pen_undo_last_point(&mut app));
+        let pen = app.ui.pen.as_ref().unwrap();
+        assert_eq!(pen.knots, original_first_two);
+        assert!(!pen.dragging, "undo releases the current Pen drag");
+        assert_eq!(app.session.active().unwrap().history.past_len(), old_history, "undo must not roll back previous document changes");
+        assert!(app.session.active().unwrap().doc.work_path.is_none(), "path is not committed yet");
+
+        pen_commit(&mut app, false);
+        let work = app.session.active().unwrap().doc.work_path.as_ref().unwrap();
+        assert_eq!(work.subpaths[0].knots.len(), 2);
+        assert!(work.subpaths[0].knots[1].smooth, "retained smooth handles are unchanged");
+    }
+
+    #[test]
+    fn pen_undo_of_first_anchor_cancels_empty_draft() {
+        let mut app = app();
+        assert!(!pen_undo_last_point(&mut app));
+        pen_down(&mut app, 15.0, 17.0);
+        pen_up(&mut app);
+        assert!(pen_undo_last_point(&mut app));
+        assert!(app.ui.pen.is_none());
+        assert!(!pen_undo_last_point(&mut app));
+        assert_eq!(app.session.active().unwrap().history.past_len(), 0);
+        assert!(app.session.active().unwrap().doc.work_path.is_none());
+    }
+
     /// #534: dragging in a shape's fill picker, opened from the Properties panel at the right edge
     /// of the window, keeps the picker in place (it flipped from side to side as its width
     /// followed the colour readouts, which moved it under the pointer).
