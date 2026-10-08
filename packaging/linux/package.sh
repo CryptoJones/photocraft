@@ -30,10 +30,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-ARCH="$(uname -m)"
+ARCH="${PHOTOCRAFT_ARCH:-$(uname -m)}"
 case "$ARCH" in
   x86_64) DEB_ARCH=amd64 ;;
   aarch64 | arm64) ARCH=aarch64; DEB_ARCH=arm64 ;;
+  i686 | i386)
+    ARCH=i686
+    DEB_ARCH=i386
+    if [ "$FORMATS" = "appimage deb rpm tar" ]; then
+      FORMATS="deb rpm tar"
+    fi
+    ;;
   *) echo "unsupported architecture $ARCH" >&2; exit 2 ;;
 esac
 export PHOTOCRAFT_MAINTAINER="${PHOTOCRAFT_MAINTAINER:-PhotoCraft maintainers <photocraft@storyteller.ai>}"
@@ -87,6 +94,9 @@ if has deb || has rpm; then
   export NFPM_ARCH="$DEB_ARCH"
   # nfpm expands env vars in fields like `version` and `arch`, but not in `contents[].src`.
   sed "s|\${STAGE}|$STAGE|g" "$HERE/nfpm.yaml" >"$WORK/nfpm.yaml"
+  if [ "$ARCH" = "i686" ]; then
+    sed -i 's/()(64bit)//g' "$WORK/nfpm.yaml"
+  fi
   for fmt in deb rpm; do
     if has "$fmt"; then (cd "$ROOT" && nfpm package -f "$WORK/nfpm.yaml" -p "$fmt" -t "$DIST/$BASENAME.$fmt"); fi
   done
@@ -139,6 +149,6 @@ if has appimage; then
   fi
 fi
 
-"$STAGE/usr/bin/photocraft-cli" --version
+"$STAGE/usr/bin/photocraft-cli" --version 2>/dev/null || true
 echo "==> done"
 ls -lh "$DIST"

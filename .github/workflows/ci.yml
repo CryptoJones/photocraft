@@ -161,6 +161,24 @@ jobs:
       - name: Check wasm-safe crates
         run: cargo xtask wasm
 
+  i686-linux:
+    name: i686 linux check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install 32-bit development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: i686-linux
+      - name: Check workspace on i686 Linux
+        run: cargo check --target i686-unknown-linux-gnu --locked
+
   fuzz:
     name: fuzz (${{ matrix.target.crate }}/${{ matrix.target.name }})
     # Placeholder: manual trigger only until a nightly schedule is enabled.
