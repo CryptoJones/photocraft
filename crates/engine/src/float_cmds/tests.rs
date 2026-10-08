@@ -48,6 +48,29 @@ fn float_moves_a_cut_piece_without_touching_the_document_until_dropped() {
     assert_eq!(alpha(&s.active().unwrap().doc, id, 12, 12), 1.0);
 }
 
+/// `copy`: the piece is a copy, the layer keeps its pixels, and the drop is a duplicate.
+#[test]
+fn float_copy_lifts_a_copy_and_leaves_the_layer_whole() {
+    let (mut s, id) = session();
+    let steps = s.active().unwrap().history.past_len();
+    s.execute("select.float", json!({"dx": 25, "dy": 0, "copy": true})).unwrap();
+    let st = s.active().unwrap();
+    assert!(floating(st).unwrap().copy);
+    let shown = displayed(st, (0, 0)).unwrap();
+    assert!(alpha(&shown, id, 12, 12) == 1.0 && alpha(&shown, id, 37, 12) == 1.0, "original and copy both show");
+    // A second call moves the same copy; "copy" is read only when the piece is cut.
+    s.execute("select.float", json!({"dx": 0, "dy": 5})).unwrap();
+    s.execute("select.drop", json!({})).unwrap();
+    let st = s.active().unwrap();
+    assert_eq!(st.history.past_len(), steps + 1);
+    assert_eq!(st.history.undo_label(), Some("Duplicate Selected Pixels"));
+    assert!(alpha(&st.doc, id, 12, 12) == 1.0 && alpha(&st.doc, id, 37, 17) == 1.0 && alpha(&st.doc, id, 37, 12) == 0.0);
+    assert_eq!(st.doc.selection.as_ref().unwrap().content_bounds(), Rect::new(35, 15, 55, 35));
+    // Bad params never panic.
+    s.undo();
+    assert!(s.execute("select.float", json!({"copy": "yes", "dx": "x"})).is_ok());
+}
+
 #[test]
 fn any_other_command_drops_it_and_undo_puts_it_back() {
     let (mut s, id) = session();

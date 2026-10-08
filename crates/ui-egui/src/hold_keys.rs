@@ -6,10 +6,11 @@
 //! - Space while a marquee, lasso or shape is being dragged repositions it; releasing Space
 //!   goes back to sizing it (the Crop tool does the same for its frame, `crop_ui`).
 //! - ⌘ (Ctrl off the Mac): the Move tool while held, with every tool but the Hand, Zoom, Crop,
-//!   Slice, Path Selection, shape, Pen and Type tools ([`cmd_moves`]). So ⌘-drag with a marquee
-//!   moves the layer, ⌘⌥-drag duplicates it first (`move_mods`), and a ⌘-click picks the layer
-//!   under the pointer, as with the Move tool itself. Inside the selection, a marquee's ⌘-drag
-//!   still cuts and moves the selected pixels (`canvas::selection_drag_kind`).
+//!   Slice, Path Selection, shape, Pen and Type tools ([`cmd_moves`]). With a selection, ⌘-drag
+//!   cuts the selected pixels into a floating piece and moves it, from wherever the drag starts,
+//!   and ⌘⌥-drag lifts a copy of them; the piece drags again with plain drags until it is dropped
+//!   (`canvas::selection_drag_kind`). Without one, ⌘-drag moves the layer, ⌘⌥-drag duplicates it
+//!   first (`move_mods`), and a ⌘-click picks the layer under the pointer, as with the Move tool.
 //!
 //! The current tool is never changed, so releasing the key gives the previous tool back. A
 //! temporary tool that started a drag lasts until the button is released, as in Photoshop.

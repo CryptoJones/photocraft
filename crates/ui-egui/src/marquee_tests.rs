@@ -290,3 +290,101 @@ fn mouse_drag_inside_the_selection_moves_it() {
     release_at(&mut h, 170.0, 130.0, Modifiers::NONE);
     assert_eq!(selection(&h), Rect::new(120, 90, 220, 170), "moved by (20, 10)");
 }
+
+fn offset(app: &PhotocraftApp) -> Option<(i32, i32)> {
+    photocraft_engine::float_cmds::floating(app.session.active().unwrap()).map(|f| f.offset)
+}
+
+fn doc_alpha(app: &PhotocraftApp, layer: photocraft_doc::LayerId, x: i32, y: i32) -> f32 {
+    app.session.active().unwrap().doc.layer(layer).unwrap().surface().unwrap().rgba(x, y)[3]
+}
+
+/// ⌘⌥-drag lifts a copy of the selected pixels (Photoshop): the layer keeps its pixels, the copy
+/// floats until dropped, and the drop is one "Duplicate Selected Pixels" step; no layer is added.
+#[test]
+fn cmd_alt_drag_floats_a_copy_of_the_selected_pixels() {
+    let (mut app, layer) = painted();
+    let layers = app.session.active().unwrap().doc.layers.len();
+    let steps = app.session.active().unwrap().history.past_len();
+    // The canvas makes ⌘ the Move tool before the press reaches the tool (hold_keys::cmd_moves).
+    app.tool_override = Some(Tool::Move);
+    drag(&mut app, [20.0, 20.0], [45.0, 20.0], Modifiers::COMMAND | Modifiers::ALT);
+    app.tool_override = None;
+    assert_eq!(offset(&app), Some((25, 0)));
+    let (shown, _) = crate::move_ui::display_doc(&mut app, 0).expect("the copy shows at its offset");
+    let shown_alpha = |x, y| shown.layer(layer).unwrap().surface().unwrap().rgba(x, y)[3];
+    assert!(shown_alpha(12, 12) == 1.0 && shown_alpha(37, 12) == 1.0, "original and copy");
+    assert_eq!(app.session.active().unwrap().doc.layers.len(), layers, "no layer was duplicated");
+    // A plain drag on the copy keeps moving it, with the marquee tool and no modifier.
+    drag(&mut app, [45.0, 20.0], [45.0, 30.0], Modifiers::NONE);
+    assert_eq!(offset(&app), Some((25, 10)));
+    assert_eq!(app.session.active().unwrap().history.past_len(), steps, "nothing written yet");
+    crate::menus::invoke(&mut app, &egui::Context::default(), "select.deselect", json!({})).unwrap();
+    assert!(doc_alpha(&app, layer, 12, 12) == 1.0 && doc_alpha(&app, layer, 37, 22) == 1.0 && doc_alpha(&app, layer, 37, 12) == 0.0);
+    let labels: Vec<String> = app.session.active().unwrap().history.entries().into_iter().skip(steps + 1).map(|e| e.to_string()).collect();
+    assert_eq!(labels.first().map(String::as_str), Some("Duplicate Selected Pixels"), "{labels:?}");
+}
+
+/// The Move tool (⌘ with a marquee) moves the selected pixels wherever the drag starts, not the
+/// layer; without a selection it moves the layer.
+#[test]
+fn move_tool_with_a_selection_moves_the_selected_pixels_from_anywhere() {
+    let (mut app, layer) = painted();
+    app.ui.tool = Tool::Move;
+    app.ui.tool_options.move_auto_select = false;
+    // Smart guides would snap the piece to the layer's edges.
+    app.ui.view.show.smart_guides = false;
+    drag(&mut app, [60.0, 50.0], [75.0, 50.0], Modifiers::NONE);
+    assert_eq!(offset(&app), Some((15, 0)), "a floating piece, pressed outside the selection");
+    assert_eq!(doc_alpha(&app, layer, 12, 12), 1.0, "the layer was not translated");
+    crate::menus::invoke(&mut app, &egui::Context::default(), "select.deselect", json!({})).unwrap();
+    assert!(doc_alpha(&app, layer, 12, 12) == 0.0 && doc_alpha(&app, layer, 27, 12) == 1.0);
+    // ⌥ with the Move tool and a selection: a copy of the pixels, not of the layer.
+    app.run("select.rect", json!({"x": 25, "y": 10, "width": 20, "height": 20})).unwrap();
+    let layers = app.session.active().unwrap().doc.layers.len();
+    drag(&mut app, [30.0, 20.0], [30.0, 40.0], Modifiers::ALT);
+    assert_eq!(offset(&app), Some((0, 20)));
+    assert_eq!(app.session.active().unwrap().doc.layers.len(), layers);
+    crate::menus::invoke(&mut app, &egui::Context::default(), "select.deselect", json!({})).unwrap();
+    assert!(doc_alpha(&app, layer, 27, 12) == 1.0 && doc_alpha(&app, layer, 27, 32) == 1.0);
+    // No selection: the layer itself moves.
+    let before = app.session.active().unwrap().doc.layer(layer).unwrap().surface().unwrap().content_bounds();
+    drag(&mut app, [30.0, 20.0], [32.0, 20.0], Modifiers::NONE);
+    let after = app.session.active().unwrap().doc.layer(layer).unwrap().surface().unwrap().content_bounds();
+    assert_eq!(after, before.translate(2, 0));
+}
+
+/// The cursor over a selection: the four Photoshop states.
+#[test]
+fn selection_cursor_follows_the_modifiers_and_the_floating_piece() {
+    use crate::canvas::{SelCursor, selection_cursor};
+    let (mut app, _) = painted();
+    let (inside, outside) = ([20.0, 20.0], [60.0, 50.0]);
+    let none = Modifiers::NONE;
+    let cmd_alt = Modifiers::COMMAND | Modifiers::ALT;
+    // The marquee: a dashed box inside the ants, nothing outside; ⇧ / ⌥ draw instead.
+    assert_eq!(selection_cursor(&app, Tool::RectMarquee, inside, none), Some(SelCursor::Outline));
+    assert_eq!(selection_cursor(&app, Tool::RectMarquee, outside, none), None);
+    assert_eq!(selection_cursor(&app, Tool::RectMarquee, inside, Modifiers::SHIFT), None);
+    // ⌘ is the Move tool: scissors anywhere, a second arrow with ⌥.
+    assert_eq!(selection_cursor(&app, Tool::RectMarquee, inside, Modifiers::COMMAND), Some(SelCursor::Cut));
+    assert_eq!(selection_cursor(&app, Tool::RectMarquee, inside, cmd_alt), Some(SelCursor::Copy));
+    assert_eq!(selection_cursor(&app, Tool::Move, inside, Modifiers::COMMAND), Some(SelCursor::Cut));
+    assert_eq!(selection_cursor(&app, Tool::Move, outside, Modifiers::COMMAND), Some(SelCursor::Cut));
+    assert_eq!(selection_cursor(&app, Tool::Move, inside, cmd_alt), Some(SelCursor::Copy));
+    assert_eq!(selection_cursor(&app, Tool::Move, inside, Modifiers::ALT), Some(SelCursor::Copy));
+    // While dragging: the hollow arrowhead.
+    use crate::canvas::{ToolEvent, tool_event};
+    app.tool_override = Some(Tool::Move);
+    tool_event(&mut app, ToolEvent::Down { x: 20.0, y: 20.0, pressure: 1.0 }, Modifiers::COMMAND);
+    tool_event(&mut app, ToolEvent::Move { x: 35.0, y: 20.0, pressure: 1.0 }, Modifiers::COMMAND);
+    assert_eq!(selection_cursor(&app, Tool::Move, [35.0, 20.0], Modifiers::COMMAND), Some(SelCursor::Dragging));
+    tool_event(&mut app, ToolEvent::Up { x: 35.0, y: 20.0 }, Modifiers::COMMAND);
+    app.tool_override = None;
+    // A floating piece: a plain arrow over it (with or without ⌘), nothing beside it.
+    assert_eq!(selection_cursor(&app, Tool::RectMarquee, [35.0, 20.0], none), Some(SelCursor::Piece));
+    assert_eq!(selection_cursor(&app, Tool::Move, [35.0, 20.0], Modifiers::COMMAND), Some(SelCursor::Piece));
+    assert_eq!(selection_cursor(&app, Tool::RectMarquee, inside, none), None, "where it was cut from");
+    // No selection tool: nothing.
+    assert_eq!(selection_cursor(&app, Tool::Brush, [35.0, 20.0], none), None);
+}

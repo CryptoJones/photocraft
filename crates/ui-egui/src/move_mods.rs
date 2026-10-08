@@ -76,8 +76,9 @@ fn past_len(app: &PhotocraftApp) -> Option<usize> {
     app.session.active().map(|st| st.history.past_len())
 }
 
+/// A Move drag of layers (not of the selected pixels: `Drag::sel_move`, which ⌥ copies instead).
 fn moving(app: &PhotocraftApp) -> bool {
-    app.drag.as_ref().is_some_and(|d| d.tool == Tool::Move)
+    app.drag.as_ref().is_some_and(|d| d.tool == Tool::Move && d.sel_move.is_none())
 }
 
 /// Duplicates the selected layers (the copies become the selection), remembering the history

@@ -2008,11 +2008,32 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             ui.ctx().set_cursor_icon(c);
         } else if let Some(c) = response.hover_pos().filter(|_| tool == Tool::Crop).and_then(|p| crate::crop_ui::cursor(app, xf.to_doc(p))) {
             ui.ctx().set_cursor_icon(c);
-        } else if app.drag.as_ref().is_some_and(|d| d.sel_move.is_some())
-            || response.hover_pos().is_some_and(|p| app.drag.is_none() && selection_drag_kind(app, tool, xf.to_doc(p), ui.input(|i| i.modifiers)).is_some())
+        } else if let Some(p) = response.hover_pos()
+            && let Some(c) = selection_cursor(app, tool, xf.to_doc(p), crate::workspace_ui::sticky_mods(app, ui.input(|i| i.modifiers)))
         {
-            // Over the ants with a marquee or lasso: a press drags the selection.
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
+            // Over a selection (Photoshop's cursors): the arrow with a badge for what a press
+            // does, a hollow arrowhead while dragging, a plain arrow over a floating piece.
+            let icon = match c {
+                SelCursor::Dragging => {
+                    // The tip of the arrowhead is at (4, 4) of its 24-unit box.
+                    crate::icons::cursor(&ctx, "mouse-pointer-2", p, vec2(4.0, 4.0) / 24.0, 18.0);
+                    egui::CursorIcon::None
+                }
+                SelCursor::Piece => egui::CursorIcon::Default,
+                SelCursor::Outline => {
+                    crate::icons::cursor_badge(&ctx, "square-dashed", p);
+                    egui::CursorIcon::Default
+                }
+                SelCursor::Cut => {
+                    crate::icons::cursor_badge(&ctx, "scissors", p);
+                    egui::CursorIcon::Default
+                }
+                SelCursor::Copy => {
+                    crate::icons::cursor_copy_badge(&ctx, p);
+                    egui::CursorIcon::Default
+                }
+            };
+            ui.ctx().set_cursor_icon(icon);
         } else if let Some(p) = response.hover_pos() {
             let alt = ui.input(|i| i.modifiers.alt);
             let icon = match tool {
@@ -2464,7 +2485,7 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
     // A press anywhere but on the floating piece (or with ⇧ / ⌥, to draw) drops it first.
     if let ToolEvent::Down { x, y, .. } = raw
         && app.session.active().is_some_and(|st| photocraft_engine::float_cmds::floating(st).is_some())
-        && selection_drag_kind(app, app.ui.tool, [x, y], mods) != Some(true)
+        && selection_drag_kind(app, app.active_tool(), [x, y], mods) != Some(true)
     {
         let _ = app.run("select.drop", json!({}));
     }
@@ -2571,20 +2592,19 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
             if !sets_source && crate::rasterize_prompt::intercept(app, tool, x, y, pressure) {
                 return;
             }
-            // Marquee / lasso inside the selection: drag the outline, or ⌘-drag to cut the selected
-            // pixels into a floating piece (`select.float`) and drag that. Judged by the selected
-            // tool: ⌘ makes the marquee the Move tool everywhere else (`hold_keys::cmd_moves`), and
-            // this is what the Move tool does with selected pixels.
-            if let Some(cut) = selection_drag_kind(app, app.ui.tool, [x, y], mods) {
+            // Marquee / lasso inside the selection: drag the outline. The Move tool (⌘ with a
+            // marquee) with a selection: cut the selected pixels into a floating piece
+            // (`select.float`; ⌥ lifts a copy) and drag that; a floating piece drags again.
+            if let Some(cut) = selection_drag_kind(app, tool, [x, y], mods) {
                 if cut
                     && app.session.active().is_some_and(|st| photocraft_engine::float_cmds::floating(st).is_none())
-                    && let Err(e) = app.run("select.float", json!({"dx": 0, "dy": 0}))
+                    && let Err(e) = app.run("select.float", json!({"dx": 0, "dy": 0, "copy": mods.alt}))
                 {
                     app.ui.status = e;
                     app.ui.status_error = true;
                     return;
                 }
-                let mut d = Drag::new(app.ui.tool, [x, y], vec![[x, y, pressure as f64]], mods, false);
+                let mut d = Drag::new(tool, [x, y], vec![[x, y, pressure as f64]], mods, false);
                 d.sel_move = Some(cut);
                 app.drag = Some(d);
                 return;
@@ -2685,25 +2705,66 @@ fn inside_selection(app: &PhotocraftApp, p: [f64; 2]) -> bool {
     v[0] > 0.0
 }
 
-/// Does a press with `tool` at `p` drag the selection rather than draw a new one? `Some(true)`
-/// moves the floating piece (⌘ cuts one first; a floating piece moves with a plain drag),
-/// `Some(false)` just the outline (no ⇧ / ⌥ and the options bar on New Selection, so a combining
-/// drag still draws).
+/// Does a press with `tool` (the tool in effect: ⌘ makes a marquee the Move tool,
+/// `hold_keys::cmd_moves`) at `p` drag the selection rather than draw a new one? `Some(true)`
+/// moves the selected pixels: the Move tool does that from anywhere while a selection exists
+/// (cutting a floating piece first, or a copy with ⌥), and a marquee or lasso drags a floating
+/// piece it is pressed on. `Some(false)` moves just the outline (a marquee or lasso inside the
+/// selection with no ⇧ / ⌥ and the options bar on New Selection, so a combining drag still
+/// draws). Photoshop: the selection's pixels are not written until the piece is dropped
+/// (deselect, or any other edit), so the piece can be dragged again and again.
 pub fn selection_drag_kind(app: &PhotocraftApp, tool: Tool, p: [f64; 2], mods: egui::Modifiers) -> Option<bool> {
-    if !matches!(tool, Tool::RectMarquee | Tool::EllipseMarquee | Tool::Lasso) {
+    // ⌘ in the modifiers counts too: automation and tests reach `tool_event` without the canvas
+    // having resolved the held key into the tool.
+    let move_tool = tool == Tool::Move || (mods.command && crate::hold_keys::cmd_moves(tool));
+    if !move_tool && !matches!(tool, Tool::RectMarquee | Tool::EllipseMarquee | Tool::Lasso) {
         return None;
     }
-    if let Some(f) = app.session.active().and_then(photocraft_engine::float_cmds::floating) {
+    let st = app.session.active()?;
+    if let Some(f) = photocraft_engine::float_cmds::floating(st) {
+        if move_tool {
+            return Some(true);
+        }
         let on = inside_selection(app, [p[0] - f64::from(f.offset.0), p[1] - f64::from(f.offset.1)]);
         return (on && !mods.shift && !mods.alt).then_some(true);
+    }
+    if move_tool {
+        return st.doc.selection.as_ref().map(|_| true);
     }
     if !inside_selection(app, p) {
         return None;
     }
-    if mods.command && !mods.shift && !mods.alt {
-        return Some(true);
+    (selection_mode(app, mods) == "replace").then_some(false)
+}
+
+/// Photoshop's cursor over a selection: what a press (or the drag under way) would do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelCursor {
+    /// Arrow with a dashed box: a marquee inside the selection moves the outline.
+    Outline,
+    /// Arrow with scissors: the Move tool (⌘ with a marquee) cuts and moves the selected pixels.
+    Cut,
+    /// Arrow with a second arrow: ⌥ lifts a copy of them instead.
+    Copy,
+    /// Plain arrow: a floating piece, moved again by a plain drag until it is dropped.
+    Piece,
+    /// Hollow arrowhead: the outline or piece is being dragged.
+    Dragging,
+}
+
+/// The cursor at document point `p` with `tool` in effect and `mods` held (`None`: not over a
+/// selection the press would move).
+pub fn selection_cursor(app: &PhotocraftApp, tool: Tool, p: [f64; 2], mods: egui::Modifiers) -> Option<SelCursor> {
+    if let Some(d) = &app.drag {
+        return d.sel_move.is_some().then_some(SelCursor::Dragging);
     }
-    (!mods.command && selection_mode(app, mods) == "replace").then_some(false)
+    let floating = app.session.active().and_then(photocraft_engine::float_cmds::floating).is_some();
+    Some(match (selection_drag_kind(app, tool, p, mods)?, floating) {
+        (false, _) => SelCursor::Outline,
+        (true, true) => SelCursor::Piece,
+        (true, false) if mods.alt => SelCursor::Copy,
+        (true, false) => SelCursor::Cut,
+    })
 }
 
 /// Whole-pixel offset of a selection drag in progress (`Drag::sel_move`).

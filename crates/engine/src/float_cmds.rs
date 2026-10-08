@@ -1,9 +1,9 @@
 //! Floating selection: the selected pixels of a layer cut out and moved as a piece, without
 //! touching the document until the piece is dropped.
 //!
-//! - `select.float {"dx","dy"}` cuts the selected pixels of the active layer into a floating piece
-//!   (the first time) and moves it by whole pixels. Further calls move the same piece; nothing new
-//!   is cut.
+//! - `select.float {"dx","dy","copy"}` cuts the selected pixels of the active layer into a floating
+//!   piece (the first time; `copy` lifts a copy and leaves the layer whole, Photoshop's ⌘⌥-drag)
+//!   and moves it by whole pixels. Further calls move the same piece; nothing new is cut.
 //! - `select.drop` drops the piece into its layer and moves the selection with it, as one history
 //!   step.
 //! - Any other command drops the piece first (so it lands exactly where it was shown), except Undo,
@@ -33,8 +33,9 @@ pub struct CutParts {
 }
 
 impl CutParts {
-    /// Split `layer` of `doc` by its selection. Errors without a selection or pixels.
-    pub fn new(doc: &Document, layer: LayerId) -> Result<Self> {
+    /// Split `layer` of `doc` by its selection; with `copy`, the piece is a copy and the rest is
+    /// the whole layer. Errors without a selection or pixels.
+    pub fn new(doc: &Document, layer: LayerId, copy: bool) -> Result<Self> {
         let sel = doc.selection.as_ref().ok_or_else(|| EngineError::Other("no selection".into()))?;
         let l = doc.layer(layer).ok_or(EngineError::NoLayer(layer))?;
         let LayerContent::Raster(surf) = &l.content else {
@@ -58,7 +59,9 @@ impl CutParts {
                 } else {
                     p[a] *= k;
                 }
-                r[a] *= 1.0 - k;
+                if !copy {
+                    r[a] *= 1.0 - k;
+                }
             }
             rest.write_region(b, &rp);
             rest.prune();
@@ -90,6 +93,8 @@ pub struct Floating {
     pub offset: (i32, i32),
     pub revision: u64,
     pub parts: Arc<CutParts>,
+    /// The piece is a copy: the layer keeps its pixels (`select.float {"copy": true}`).
+    pub copy: bool,
 }
 
 /// The floating piece of `st`, if it is still valid (the document hasn't changed under it).
@@ -132,8 +137,9 @@ fn float(s: &mut Session, p: &Value) -> Result<Value> {
     let st = s.active_mut().ok_or(EngineError::NoDocument)?;
     if floating(st).is_none() {
         let layer = st.active_layer.ok_or_else(|| EngineError::Other("no active layer".into()))?;
-        let parts = CutParts::new(&st.doc, layer)?;
-        st.floating = Some(Floating { layer, offset: (0, 0), revision: st.revision, parts: Arc::new(parts) });
+        let copy = p.get("copy").and_then(Value::as_bool).unwrap_or(false);
+        let parts = CutParts::new(&st.doc, layer, copy)?;
+        st.floating = Some(Floating { layer, offset: (0, 0), revision: st.revision, parts: Arc::new(parts), copy });
     }
     let f = st.floating.as_mut().ok_or(EngineError::NoDocument)?;
     f.offset = (f.offset.0.saturating_add(dx), f.offset.1.saturating_add(dy));
@@ -152,7 +158,7 @@ pub fn drop_floating(s: &mut Session) -> Result<Value> {
     if (dx, dy) == (0, 0) {
         return Ok(json!({"dropped": true, "offset": [0, 0]}));
     }
-    s.edit("Move Selected Pixels", |doc, _| {
+    s.edit(if f.copy { "Duplicate Selected Pixels" } else { "Move Selected Pixels" }, |doc, _| {
         let moved = f.parts.moved(doc, dx, dy)?;
         let surf = moved.layer(f.layer).and_then(|l| l.surface()).cloned().ok_or(EngineError::NoLayer(f.layer))?;
         *doc.layer_mut(f.layer).ok_or(EngineError::NoLayer(f.layer))?.surface_mut().ok_or(EngineError::NoLayer(f.layer))? = surf;
@@ -192,7 +198,7 @@ pub fn specs() -> Vec<CommandSpec> {
             label: "Float Selection",
             menu: &[],
             shortcut: None,
-            params: r##"{"dx":px=0,"dy":px=0} → {layer, offset} (cuts the selected pixels of the active layer into a floating piece the first time, then moves it by whole pixels; dropped by select.drop or any other command, put back by edit.undo)"##,
+            params: r##"{"dx":px=0,"dy":px=0,"copy":bool=false} → {layer, offset} (cuts the selected pixels of the active layer into a floating piece the first time, or lifts a copy with "copy", then moves it by whole pixels; dropped by select.drop or any other command, put back by edit.undo)"##,
             enabled: can_float,
             journal: true,
             run: float,
