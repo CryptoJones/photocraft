@@ -146,10 +146,6 @@ if has appimage; then
   fi
 fi
 
-# Validate the CLI binary
-# i686 is compiled in a container, so skip validation for that architecture
-if [ "$ARCH" != "i686" ]; then
-  "$STAGE/usr/bin/photocraft-cli" --version
-fi
+"$STAGE/usr/bin/photocraft-cli" --version
 echo "==> done"
 ls -lh "$DIST"

@@ -265,7 +265,7 @@ jobs:
       - name: Install packaging tools on host runner
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends zsync
+          sudo apt-get install -y --no-install-recommends zsync libc6-i386
           curl -fsSL -o "$RUNNER_TEMP/nfpm.deb" \
             "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_amd64.deb"
           sudo dpkg -i "$RUNNER_TEMP/nfpm.deb"
