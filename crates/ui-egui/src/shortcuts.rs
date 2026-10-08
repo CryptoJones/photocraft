@@ -280,6 +280,19 @@ pub fn handle(app: &mut PhotocraftApp, ctx: &egui::Context) {
     if focus == Focus::None && crate::move_mods::arrow_keys(app, ctx) {
         return;
     }
+    // A Pen path's points are uncommitted gesture state, not History entries (#1466).
+    // Intercept Cmd/Ctrl+Z before the normal Edit › Undo shortcut, as well as unmodified
+    // Backspace/Delete. Once the last anchor is removed, regular Undo works again.
+    if app.ui.pen.as_ref().is_some_and(|pen| !pen.knots.is_empty()) {
+        let mods = ctx.input(|i| i.modifiers);
+        let command_undo = mods.command && !mods.alt && !mods.shift && ctx.input_mut(|i| i.consume_key(mods, Key::Z));
+        let remove = !mods.command && !mods.ctrl && !mods.shift && !mods.alt
+            && ctx.input_mut(|i| i.consume_key(mods, Key::Backspace) || i.consume_key(mods, Key::Delete));
+        if command_undo || remove {
+            crate::vector_ui::pen_undo_last_point(app);
+            return;
+        }
+    }
     // Pen path in progress: ↩ finishes (open path), Esc cancels.
     if app.ui.pen.is_some() {
         if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter)) {
