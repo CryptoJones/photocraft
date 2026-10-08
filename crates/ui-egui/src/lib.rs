@@ -44,6 +44,7 @@ pub mod comps_ui;
 pub mod control;
 pub mod credits;
 pub mod crop_ui;
+pub mod delete_layer_prompt;
 pub mod dialogs;
 pub mod direct_select;
 pub mod discard_ui;
@@ -604,6 +605,9 @@ impl PhotocraftApp {
 
     /// Run an engine command, reporting errors in the status bar.
     pub fn run(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        if let Some(result) = delete_layer_prompt::intercept(self, id, &params) {
+            return result;
+        }
         // Automation input also gates every step a command runs on its behalf (`actions.play`).
         let gate = if self.automation_input && self.session.authorize.is_none() { self.services.automation_authorize } else { None };
         if gate.is_some() {

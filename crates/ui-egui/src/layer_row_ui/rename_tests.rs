@@ -182,7 +182,8 @@ fn a_rename_ends_when_its_layer_goes_away() {
     let (mut h, [a, ..]) = harness(1.0);
     start(&mut h, a);
     h.state_mut().run("layer.select", json!({"layer": a})).unwrap();
-    h.state_mut().run("layer.delete", json!({})).unwrap();
+    let dialog = h.state_mut().run("layer.delete", json!({})).unwrap()["dialog"].as_u64().unwrap();
+    crate::dialogs::confirm(h.state_mut(), dialog).unwrap();
     assert!(h.state().session.active().unwrap().doc.layer(photocraft_doc::LayerId(a)).is_none());
     h.run_steps(3);
     assert_eq!(renaming(&h.ctx), None);

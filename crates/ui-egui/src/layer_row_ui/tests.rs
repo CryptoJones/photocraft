@@ -261,6 +261,9 @@ fn dropping_a_row_on_the_footer_buttons_duplicates_groups_and_deletes() {
     assert_eq!(h.state().session.active().unwrap().history.past_len(), steps + 1, "one undo step");
     let n = h.state().session.active().unwrap().doc.layers.len();
     drag_to(&mut h, 0, "Delete layer");
+    assert!(names(&h).iter().any(|name| name == "L2"), "deletion waits for confirmation");
+    let dialog = h.state().ui.dialogs.last().unwrap().id;
+    crate::dialogs::confirm(h.state_mut(), dialog).unwrap();
     assert!(!names(&h).iter().any(|n| n == "L2"));
     assert_eq!(h.state().session.active().unwrap().doc.layers.len(), n - 1);
 }
