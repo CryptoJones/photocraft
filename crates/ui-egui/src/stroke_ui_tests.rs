@@ -84,7 +84,10 @@ fn preferences_remember_all_choices_and_reject_corrupt_values() {
         "mode": "multiply",
         "opacity": 42,
         "preserveTransparency": true
-    }).as_object().unwrap() {
+    })
+    .as_object()
+    .unwrap()
+    {
         d.fields.insert(key.clone(), value.clone());
     }
     crate::dialogs::confirm(&mut app, id).unwrap();
@@ -102,12 +105,24 @@ fn preferences_remember_all_choices_and_reject_corrupt_values() {
     assert_eq!(remembered["opacity"], 42);
     assert_eq!(remembered["preserveTransparency"], true);
 
-    again.session.prefs.edit(|p| p.dialogs.insert(COMMAND.into(), json!({
-        "width": -5, "color": "#nan", "location": "sideways",
-        "mode": "unrecognized", "opacity": "a lot", "preserveTransparency": 7
-    })));
+    again.session.prefs.edit(|p| {
+        p.dialogs.insert(
+            COMMAND.into(),
+            json!({
+                "width": -5, "color": "#nan", "location": "sideways",
+                "mode": "unrecognized", "opacity": "a lot", "preserveTransparency": 7
+            }),
+        )
+    });
     let fallback = fields(&again);
-    for (key, value) in [("width", json!(1.0)), ("color", json!("#ff0000")), ("location", json!("center")), ("mode", json!("normal")), ("opacity", json!(100.0)), ("preserveTransparency", json!(false))] {
+    for (key, value) in [
+        ("width", json!(1.0)),
+        ("color", json!("#ff0000")),
+        ("location", json!("center")),
+        ("mode", json!("normal")),
+        ("opacity", json!(100.0)),
+        ("preserveTransparency", json!(false)),
+    ] {
         assert_eq!(fallback[key], value, "invalid persisted value {key} must be discarded");
     }
 }
