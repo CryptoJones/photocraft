@@ -39,10 +39,20 @@ pass. The full L0–L6 wasm check and the additional optional-feature engine was
 check pass; native OAuth and ONNX Runtime stay outside the web dependency graph.
 
 The native release build uses `local-ml,chatgpt,heif`. Live OpenAI authorization,
-eligibility and production revocation have not been exercised. Dedicated
-Linux/Windows/macOS workflows perform simulated native-auth/CPU-runtime tests
-and native compile/lint checks; their actual run conclusions must be read from
-CI rather than inferred from the local checks.
+eligibility and production revocation have not been exercised. The dedicated
+[native account workflow](https://github.com/mighty-programmer/photocraft/actions/runs/37849490335)
+and [optional CPU model workflow](https://github.com/mighty-programmer/photocraft/actions/runs/37849490309)
+both completed successfully on Linux, Windows and macOS at implementation head `8d06074`.
+They perform simulated native-auth/CPU-runtime tests and native compile/lint checks;
+they do not exercise a real OpenAI account or packaged installers. The subsequent publication
+delta adds documentation and the contributor's own name preference; Rust source is unchanged.
+
+Review the [local-model pack #1199](https://github.com/storytold/photocraft/pull/1199) first, then
+the [dependent draft #1449](https://github.com/storytold/photocraft/pull/1449). The
+[22-case model comparison PDF and public supplement](https://github.com/mighty-programmer/photocraft/releases/tag/model-evaluation-2026-10-08)
+support the first pack and were measured on the earlier engine `6e2b7bc`. They do not evaluate
+ChatGPT authorization or generative images. See [local-models-validation.md](local-models-validation.md)
+for the scoring protocol, failures and limits.
 
 ## Visual checks
 
