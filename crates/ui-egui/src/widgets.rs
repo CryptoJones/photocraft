@@ -150,7 +150,8 @@ pub fn value_field(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive
         ui.painter().rect_stroke(rect, t.radius_sm, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
     }
     let suffix_w = if suffix.is_empty() { 0.0 } else { 16.0 };
-    let field = Rect::from_min_max(rect.min + vec2(4.0, 2.0), rect.max - vec2(4.0 + suffix_w, 2.0));
+    // 1 pt higher than centred: digits have no descenders, so centred text looks low.
+    let field = Rect::from_min_max(rect.min + vec2(4.0, 1.0), rect.max - vec2(4.0 + suffix_w, 3.0));
     // Small ranges (gamma 0.01–9.99, 0–1 centres) need two decimals and a finer drag, like Photoshop.
     let fine = range.end() - range.start() <= 10.0;
     // new_child (not scope_builder): a scope would move the parent cursor back to the child rect.
