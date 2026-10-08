@@ -831,6 +831,52 @@ mod tests {
     }
 
     #[test]
+    fn stroke_uses_fill_blending_and_preserves_transparency_at_every_depth() {
+        for depth in [8, 16, 32] {
+            let mut s = session(depth);
+            paint_square(&mut s, Rect::new(10, 10, 20, 20), [0.5, 0.5, 0.5, 1.0]);
+            s.execute("select.rect", json!({"x": 10, "y": 10, "width": 10, "height": 10})).unwrap();
+
+            let past = s.active().unwrap().history.past_len();
+            s.execute(
+                "edit.stroke",
+                json!({"width": 2, "color": "#ffffff", "location": "inside", "mode": "multiply", "opacity": 100, "preserveTransparency": true}),
+            )
+            .unwrap();
+            assert_eq!(s.active().unwrap().history.past_len(), past + 1, "Stroke is one history step");
+            let edge = pixel(&s, 10, 15);
+            assert!((edge[0] - 0.5).abs() < 0.015, "{depth}-bit Multiply must preserve gray: {edge:?}");
+            assert_eq!(edge[3], 1.0);
+
+            s.execute("edit.stroke", json!({"width": 2, "color": "#ffffff", "location": "outside", "preserveTransparency": true})).unwrap();
+            assert_eq!(pixel(&s, 9, 15)[3], 0.0, "{depth}-bit transparency lock prevents new outer pixels");
+
+            s.execute("edit.stroke", json!({"width": 2, "color": "#ffffff", "location": "outside", "opacity": 50})).unwrap();
+            let out = pixel(&s, 9, 15);
+            assert!((out[3] - 0.5).abs() < 0.015, "{depth}-bit 50% stroke opacity: {out:?}");
+            s.execute("edit.undo", json!({})).unwrap();
+            assert_eq!(pixel(&s, 9, 15)[3], 0.0);
+        }
+    }
+
+    #[test]
+    fn stroke_rejects_invalid_blending_options_without_modifying_the_document() {
+        let mut s = session(8);
+        s.execute("select.rect", json!({"x": 10, "y": 10, "width": 10, "height": 10})).unwrap();
+        let past = s.active().unwrap().history.past_len();
+        for params in [
+            json!({"mode": "unknown-mode"}),
+            json!({"mode": 42}),
+            json!({"mode": "passThrough"}),
+            json!({"opacity": "lots"}),
+            json!({"preserveTransparency": "true"}),
+        ] {
+            assert!(s.execute("edit.stroke", params.clone()).is_err(), "{params}");
+            assert_eq!(s.active().unwrap().history.past_len(), past, "{params} should not create a history step");
+        }
+    }
+
+    #[test]
     fn transform_presets_are_exact() {
         let mut s = session(8);
         paint_square(&mut s, Rect::new(10, 10, 20, 14), [1.0, 0.0, 0.0, 1.0]);
