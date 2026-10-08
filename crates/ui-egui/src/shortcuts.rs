@@ -386,6 +386,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pen_command_z_and_backspace_retract_points_before_document_undo() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        app.run("file.new", serde_json::json!({"width": 200, "height": 200})).unwrap();
+        app.ui.tool = crate::state::Tool::Pen;
+        app.run("shape.create", serde_json::json!({"kind": "rect", "rect": [10, 10, 40, 40], "fill": "#ff0000"})).unwrap();
+        let history = app.session.active().unwrap().history.past_len();
+        for (x, y) in [(10.0, 10.0), (50.0, 10.0), (50.0, 50.0)] {
+            crate::vector_ui::pen_down(&mut app, x, y);
+            crate::vector_ui::pen_up(&mut app);
+        }
+        let ctx = egui::Context::default();
+        let press = |app: &mut PhotocraftApp, key, modifiers| {
+            let raw = egui::RawInput {
+                modifiers,
+                events: vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers }],
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| handle(app, ctx));
+        };
+
+        press(&mut app, Key::Z, Modifiers::COMMAND);
+        assert_eq!(app.ui.pen.as_ref().unwrap().knots.len(), 2);
+        assert_eq!(app.session.active().unwrap().history.past_len(), history);
+        press(&mut app, Key::Backspace, Modifiers::NONE);
+        assert_eq!(app.ui.pen.as_ref().unwrap().knots.len(), 1);
+        press(&mut app, Key::Delete, Modifiers::NONE);
+        assert!(app.ui.pen.is_none());
+        assert_eq!(app.session.active().unwrap().history.past_len(), history);
+        // No unfinished Pen points remain, so regular Undo can now affect the document.
+        app.run("edit.undo", serde_json::json!({})).unwrap();
+        assert_eq!(app.session.active().unwrap().history.past_len(), history - 1);
+    }
+
+    #[test]
     fn parses_registry_shortcuts() {
         let sc = parse("Cmd+Shift+N").unwrap();
         assert_eq!(sc.logical_key, Key::N);
