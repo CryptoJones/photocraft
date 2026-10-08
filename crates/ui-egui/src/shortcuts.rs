@@ -402,11 +402,15 @@ mod tests {
         let ctx = egui::Context::default();
         let press = |app: &mut PhotocraftApp, key, modifiers| {
             let raw = egui::RawInput {
-                modifiers,
-                events: vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers }],
+                events: vec![
+                    egui::Event::ModifiersChanged(modifiers),
+                    egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers },
+                ],
                 ..Default::default()
             };
-            let _ = ctx.run(raw, |ctx| handle(app, ctx));
+            ctx.begin_pass(raw);
+            handle(app, &ctx);
+            ctx.end_pass();
         };
 
         press(&mut app, Key::Z, Modifiers::COMMAND);
