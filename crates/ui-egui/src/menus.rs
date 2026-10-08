@@ -503,6 +503,8 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
             .and_then(|s| s.active_layer.and_then(|id| s.doc.layer(id)))
             .is_some_and(|l| matches!(l.content, photocraft_doc::LayerContent::Text(_))),
         "select.transformSelection" => app.ui.transform.is_none() && app.session.is_enabled("select.transformSelection"),
+        // ⇧[ / ⇧] only step the hardness of a tool that paints with the brush tip, as in Photoshop.
+        "tools.decreaseBrushHardness" | "tools.increaseBrushHardness" => app.ui.tool.is_brushlike(),
         i if (i.starts_with("view.zoom") || i == "view.fitOnScreen" || i == "view.actualPixels") || i == "window.newWindowForDocument" => {
             app.session.active().is_some()
         }
@@ -516,7 +518,8 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
             Some(t) => t.warp.is_none(),
             None => app.session.active().and_then(|s| s.active_layer).is_some(),
         },
-        i => app.session.is_enabled(i),
+        // A targeted layer mask enables what edits it (Invert on an adjustment layer's mask).
+        i => app.session.is_enabled_with(i, &app.with_mask_target(i, Value::Null)),
     }
 }
 
@@ -981,12 +984,18 @@ fn render_level(ui: &mut egui::Ui, items: &[&MenuItem], depth: usize, clicked: &
     crate::menu_nav::level(ui, depth, nav, |ui, nav| render_level_rows(ui, items, depth, clicked, nav));
 }
 
+/// Height of a menu separator: a line with room above and below, as in native menus.
+const MENU_SEPARATOR: f32 = 9.0;
+
 fn render_level_rows(ui: &mut egui::Ui, items: &[&MenuItem], depth: usize, clicked: &mut Option<String>, nav: &mut crate::menu_nav::Nav) {
     let t = crate::theme::Tokens::get(ui.ctx());
     let lang = crate::i18n::current();
     // Items never wrap: the menu widens to its longest label plus shortcut (translations can be
     // longer than the English).
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+    // Rows touch, as in native menus: the dialog spacing between them made long menus a fifth
+    // taller than they need to be (#402).
+    ui.spacing_mut().item_spacing.y = 0.0;
     if t.pro {
         // Spectrum/macOS menus: blue highlight row with white text.
         let v = &mut ui.style_mut().visuals;
@@ -1004,7 +1013,7 @@ fn render_level_rows(ui: &mut egui::Ui, items: &[&MenuItem], depth: usize, click
         if it.path.len() == depth {
             if it.label == "---" {
                 if !last_was_sep && i + 1 < items.len() {
-                    ui.separator();
+                    ui.add(egui::Separator::default().spacing(MENU_SEPARATOR));
                     last_was_sep = true;
                 }
                 continue;
@@ -1103,11 +1112,12 @@ mod tests {
         app.run("select.rect", json!({"x": 2, "y": 2, "width": 8, "height": 8})).unwrap();
         let items = menu_items(&app);
         let top: Vec<_> = items.iter().filter(|i| i.path.len() == 1 && i.path.first().is_some_and(|p| p == "Select")).collect();
-        // Context actions live somewhere under Select (Feather stays in Select > Modify, as in the
-        // reference menus).
+        // The context menus' Select actions live somewhere under Select (Feather stays in Select >
+        // Modify, as in the reference menus). Make Work Path is a Paths panel action.
         let select: Vec<_> = items.iter().filter(|i| i.path.first().is_some_and(|p| p == "Select")).collect();
-        for &(label, id) in crate::canvas_tool_menu::entries(true).iter().chain(crate::canvas_tool_menu::entries(false)) {
-            assert!(select.iter().any(|i| i.id == id && i.label == label), "Select menu missing {label} ({id})");
+        let rows = crate::canvas_tool_menu::SELECTION_MENU.iter().chain(crate::canvas_tool_menu::NO_SELECTION_MENU).flatten();
+        for &(label, id) in rows.filter(|(_, id)| id.starts_with("select.") && *id != "select.toWorkPath") {
+            assert!(select.iter().any(|i| i.id == id), "Select menu missing {label} ({id})");
         }
         assert!(top.iter().any(|i| i.id == "select.all"));
         assert!(top.iter().any(|i| i.id == "select.colorRange"));
@@ -1256,6 +1266,10 @@ mod tests {
             let font = egui::TextStyle::Button.resolve(&harness.ctx.global_style()).size;
             assert!(a.height() >= font + 8.0, "{theme:?}: item height {} for a {font} pt font", a.height());
             assert!(b.top() - a.top() >= font + 10.0, "{theme:?}: rows {} apart", b.top() - a.top());
+            // #402: rows touch (no dialog spacing between them), so long menus fit the window.
+            let next = harness.get_by_label_contains("New from Clipboard").rect();
+            assert!((next.top() - a.bottom()).abs() < 0.5, "{theme:?}: {} pt between rows", next.top() - a.bottom());
+            assert!(next.top() - a.top() <= 24.5, "{theme:?}: rows {} apart", next.top() - a.top());
         }
     }
 

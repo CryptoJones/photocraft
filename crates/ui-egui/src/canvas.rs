@@ -819,7 +819,8 @@ fn ensure_filter_preview(app: &mut PhotocraftApp, idx: usize) -> Option<(u32, u6
         return None;
     }
     let cmd = d.fields.get("__command")?.as_str()?.to_string();
-    let params = crate::filter_dialog::params_of(&d.fields);
+    // Previews edit what the command will: a targeted layer mask included (#780).
+    let params = app.with_mask_target(&cmd, crate::filter_dialog::params_of(&d.fields));
     let (doc_id, revision, doc, active) = {
         let st = app.session.documents().get(idx)?;
         (st.doc.id, st.revision, st.doc.clone(), st.active_layer)
@@ -940,8 +941,25 @@ pub(crate) fn retain_gpu_documents(app: &mut PhotocraftApp) {
     }
 }
 
-/// Tabs + canvas for the active document, or the start screen.
+/// Tabs + canvas for the active document, or the start screen; then drops layers dragged onto
+/// another document (`layer_transfer`).
 pub fn document_area(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+    documents(app, ui);
+    crate::layer_transfer::finish(app, ui.ctx());
+}
+
+/// Window › Arrange tiles: each document shown with its tile in `rect`, or `None` when the
+/// active document fills the area.
+pub(crate) fn arranged_cells(app: &PhotocraftApp, rect: Rect) -> Option<Vec<(usize, Rect)>> {
+    let idx = app.session.active_index()?;
+    let n = app.session.documents().len();
+    let cells = crate::view_cmds::cells(&app.ui.view.arrange, rect, n)?;
+    let mut shown: Vec<(usize, Rect)> = (0..n).map(|k| (idx + k) % n).zip(cells).collect();
+    shown.sort_by_key(|(d, _)| *d);
+    Some(shown)
+}
+
+fn documents(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     app.drop_canvas_rect = None;
     app.tab_strip = None;
     retain_gpu_documents(app);
@@ -970,13 +988,9 @@ pub fn document_area(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let rect = ui.available_rect_before_wrap();
     app.last_canvas_rect = rect;
     app.drop_canvas_rect = Some(rect);
-    let n = app.session.documents().len();
     // Window › Arrange: tiled / n-up layouts show several documents side by side; the active one
     // takes input, a click elsewhere activates that document.
-    if let Some(cells) = crate::view_cmds::cells(&app.ui.view.arrange, rect, n) {
-        let order: Vec<usize> = (0..n).map(|k| (idx + k) % n).collect();
-        let mut shown: Vec<(usize, Rect)> = order.into_iter().zip(cells).collect();
-        shown.sort_by_key(|(d, _)| *d);
+    if let Some(shown) = arranged_cells(app, rect) {
         let t = crate::theme::Tokens::get(ui.ctx());
         for (d, cell) in shown {
             let cell = cell.shrink(1.0);
@@ -1010,6 +1024,9 @@ fn tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
     let tab_count = app.session.documents().len();
     let (mut focus_open, mut cancel_open) = (None, None);
     let focused_open = app.jobs.focus.is_some();
+    // Layers dragged over a tab show its document (`layer_transfer`).
+    let dragging = crate::layer_transfer::pointer_if_armed(app, ui.ctx());
+    let mut drag_over = None;
     let mut doc_tabs = Vec::with_capacity(tab_count);
     let frame = egui::Frame::NONE.fill(t.canvas).inner_margin(egui::Margin { left: 8, right: 8, top: 6, bottom: 4 }).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -1022,12 +1039,17 @@ fn tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
                 let meta_g = ui.painter().layout_no_wrap(meta, egui::FontId::proportional(10.5), t.text_faint);
                 let w = name_g.size().x + meta_g.size().x + 44.0;
                 let (r, resp) = ui.allocate_exact_size(egui::vec2(w, 26.0), Sense::click());
+                resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, sel, &st.doc.name));
                 doc_tabs.push(r);
                 if sel {
                     ui.painter().rect_filled(r, t.radius_sm, t.card);
                     ui.painter().rect_stroke(r, t.radius_sm, Stroke::new(1.0, t.card_border), egui::StrokeKind::Inside);
                 } else if resp.hovered() {
                     ui.painter().rect_filled(r, t.radius_sm, t.hover.gamma_multiply(0.5));
+                }
+                if dragging.is_some_and(|p| r.contains(p)) {
+                    drag_over = Some(i);
+                    ui.painter().rect_stroke(r, t.radius_sm, Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
                 }
                 let color = if sel { t.text } else { t.text_dim };
                 let ny = r.center().y - name_g.size().y / 2.0;
@@ -1080,6 +1102,9 @@ fn tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
         });
     });
     open_tab_clicks(app, activate, focus_open, cancel_open);
+    if let Some(i) = drag_over {
+        crate::layer_transfer::over_tab(app, ui.ctx(), i);
+    }
     if let Some(i) = close {
         let _ = crate::menus::invoke(app, ui.ctx(), "file.close", json!({"document": i}));
     }
@@ -1103,14 +1128,16 @@ fn tab_context_items(index: usize, count: usize) -> [(&'static str, &'static str
 }
 
 fn tab_context_menu(ui: &mut egui::Ui, index: usize, count: usize) -> Option<(&'static str, serde_json::Value)> {
-    ui.set_min_width(170.0);
-    for (label, id, params, enabled) in tab_context_items(index, count) {
-        if ui.add_enabled(enabled, egui::Button::new(tl!(label))).clicked() {
-            ui.close();
-            return Some((id, params));
+    crate::widgets::menu_scroll(ui, |ui| {
+        ui.set_min_width(170.0);
+        for (label, id, params, enabled) in tab_context_items(index, count) {
+            if ui.add_enabled(enabled, egui::Button::new(tl!(label))).clicked() {
+                ui.close();
+                return Some((id, params));
+            }
         }
-    }
-    None
+        None
+    })
 }
 
 /// Apply tab-strip clicks: a document tab shows that document, an opening tab its progress, and
@@ -1140,6 +1167,9 @@ fn pro_tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
     let (mut activate, mut close) = (None, None);
     let mut tab_action = None;
     let tab_count = app.session.documents().len();
+    let dragging = crate::layer_transfer::pointer_if_armed(app, ui.ctx());
+    let mut drag_over = None;
+    let mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
     let (strip, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 26.0), Sense::hover());
     ui.painter().rect_filled(strip, 0.0, t.tab_strip);
     let mut x = strip.left();
@@ -1164,11 +1194,18 @@ fn pro_tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
         } else if resp.hovered() {
             ui.painter().rect_filled(r, 0.0, t.hover.gamma_multiply(0.35));
         }
+        if dragging.is_some_and(|p| r.contains(p)) {
+            drag_over = Some(i);
+            ui.painter().rect_stroke(r, 0.0, Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+        }
         ui.painter().line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0, t.separator));
-        let xr = Rect::from_center_size(egui::pos2(r.left() + 13.0, r.center().y), egui::vec2(14.0, 14.0));
+        let (xr, at) = pro_tab_layout(r, g.size().y, mac);
         let xresp = ui.interact(xr, ui.id().with(("ptabx", i)), Sense::click());
+        // Painted: name the tab and its × for accessibility (and so tests and agents can find them).
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, sel, g.text()));
+        xresp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tl!("Close")));
         crate::icons::paint(ui, xr, "x", 10.0, if xresp.hovered() { t.text } else { t.text_faint });
-        ui.painter().galley_with_override_text_color(egui::pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, if sel { t.text } else { t.text_faint });
+        ui.painter().galley_with_override_text_color(at, g, if sel { t.text } else { t.text_faint });
         if xresp.clicked() {
             close = Some(i);
         } else if resp.clicked() {
@@ -1194,10 +1231,10 @@ fn pro_tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
         }
         ui.painter().line_segment([r.right_top(), r.right_bottom()], Stroke::new(1.0, t.separator));
         crate::jobs_ui::tab_underline(ui, r, frac, &t);
-        let xr = Rect::from_center_size(egui::pos2(r.left() + 13.0, r.center().y), egui::vec2(14.0, 14.0));
+        let (xr, at) = pro_tab_layout(r, g.size().y, mac);
         let xresp = ui.interact(xr, ui.id().with(("ptabjobx", job.0)), Sense::click());
         crate::icons::paint(ui, xr, "x", 10.0, if xresp.hovered() { t.text } else { t.text_faint });
-        ui.painter().galley_with_override_text_color(egui::pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, if sel { t.text } else { t.text_faint });
+        ui.painter().galley_with_override_text_color(at, g, if sel { t.text } else { t.text_faint });
         if xresp.on_hover_text(tl!("Cancel opening")).clicked() {
             cancel_open = Some(job);
         } else if resp.clicked() {
@@ -1206,6 +1243,9 @@ fn pro_tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
         x = r.right();
     }
     open_tab_clicks(app, activate, focus_open, cancel_open);
+    if let Some(i) = drag_over {
+        crate::layer_transfer::over_tab(app, ui.ctx(), i);
+    }
     if let Some(i) = close {
         let _ = crate::menus::invoke(app, ui.ctx(), "file.close", json!({"document": i}));
     }
@@ -1244,6 +1284,13 @@ fn drop_slot_line(app: &mut PhotocraftApp, ui: &egui::Ui) {
     let Some(tabs) = app.tab_strip.as_ref().map(|s| &s.tabs) else { return };
     let Some((r, after)) = tabs.get(slot).map(|r| (*r, false)).or_else(|| tabs.last().map(|r| (*r, true))) else { return };
     crate::widgets::drop_line(ui, r, after, true, &crate::theme::Tokens::get(ui.ctx()));
+}
+
+/// A Photoshop-style tab's close button and where its title starts. Photoshop puts the × after the
+/// title on Windows (and so Linux) and before it on macOS (#619).
+fn pro_tab_layout(tab: Rect, title_height: f32, mac: bool) -> (Rect, egui::Pos2) {
+    let (x, title) = if mac { (tab.left() + 13.0, tab.left() + 26.0) } else { (tab.right() - 13.0, tab.left() + 16.0) };
+    (Rect::from_center_size(egui::pos2(x, tab.center().y), egui::vec2(14.0, 14.0)), egui::pos2(title, tab.center().y - title_height / 2.0))
 }
 
 /// Photoshop-style zoom label: "33.3", "100", "12.5".
@@ -1688,6 +1735,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
     // drawn; otherwise Space is the Hand and ⌘Space / ⌘⌥Space the Zoom tool while held.
     let reposition = crate::hold_keys::reposition_held(app, &ctx);
     crate::crop_ui::set_space(app, reposition);
+    crate::crop_ui::ensure_frame(app);
     let mut drawing = crate::crop_ui::active(app);
     if let Some(d) = app.drag.as_mut().filter(|d| crate::hold_keys::repositions(d.tool)) {
         d.reposition = reposition;
@@ -2245,7 +2293,7 @@ fn draw_drag_preview(app: &mut PhotocraftApp, painter: &egui::Painter, xf: &View
             trail.feed(&d.points, app.session.tools.brush.size);
             trail.draw(painter, doc_rect, xf.flip, col);
         }
-        t if crate::vector_ui::is_shape_tool(t) => crate::vector_ui::draw_shape_preview(app, painter, xf, t, d.start, last, d.modifiers),
+        t if crate::vector_ui::is_shape_tool(t) => crate::vector_ui::draw_shape_preview(app, painter, xf, t, d.start, last, d.live),
         Tool::RectMarquee | Tool::EllipseMarquee | Tool::ObjectSelection => {
             // Marching ants, visible on any pixels (#172).
             let (a, b) = marquee.unwrap_or((d.start, last));
@@ -2411,6 +2459,10 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
     }
     // Move tool: ⇧ locks the axis, ⌥ duplicates (move_mods.rs).
     let ev = crate::move_mods::filter_event(app, ev, mods);
+    // Direct Selection, and the Pen's ⌘ (Direct Selection) and ⌥ (Convert Point) modes (#790).
+    if crate::direct_select::pointer(app, ev, mods) {
+        return;
+    }
     // Ruler, Count and Note tools.
     if crate::analysis_ui::pointer(app, ev, mods) {
         return;
@@ -2662,7 +2714,7 @@ pub(crate) fn finish_gesture(app: &mut PhotocraftApp, d: Drag) {
     }
     match d.tool {
         Tool::ObjectSelection => crate::retouch_ui::finish_object_selection(app, d.start, [end[0], end[1]], d.modifiers),
-        t if crate::vector_ui::is_shape_tool(t) => crate::vector_ui::finish_shape(app, t, d.start, [end[0], end[1]], d.modifiers),
+        t if crate::vector_ui::is_shape_tool(t) => crate::vector_ui::finish_shape(app, t, d.start, [end[0], end[1]], d.live),
         Tool::PathSelection => crate::vector_ui::path_selection_finish(app, d.start, [end[0], end[1]]),
         Tool::Type | Tool::VerticalType => crate::type_tool::pointer_up(app, d.start, [end[0], end[1]]),
         Tool::Brush | Tool::Pencil | Tool::Eraser => {
@@ -2802,6 +2854,10 @@ pub fn commit_polygon(app: &mut PhotocraftApp) {
 /// Apply the crop tool's rectangle.
 pub fn commit_crop(app: &mut PhotocraftApp) {
     let Some(r) = app.ui.crop_rect.take() else { return };
+    // The untouched default frame crops nothing (Photoshop's ↵ on it does nothing).
+    if std::mem::take(&mut app.crop.default_frame) {
+        return;
+    }
     let (x, y) = (r[0].round(), r[1].round());
     let (w, h) = ((r[2] - r[0]).round().max(1.0), (r[3] - r[1]).round().max(1.0));
     let delete = app.ui.tool_options.crop_delete;
@@ -2919,6 +2975,38 @@ mod tests {
         assert_eq!(items[2].2, json!({}));
         assert!(!tab_context_items(0, 1)[1].3);
         assert!(items.iter().all(|(_, id, _, _)| photocraft_engine::commands::find(id).is_some()));
+    }
+
+    /// Photoshop's document tab × is after the title on Windows and Linux, before it on macOS (#619).
+    #[test]
+    fn document_tab_close_button_sits_on_the_platform_side() {
+        use egui::os::OperatingSystem as Os;
+        use egui_kittest::kittest::Queryable;
+        for (os, after_title) in [(Os::Windows, true), (Os::Nix, true), (Os::Mac, false)] {
+            let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+            app.run("file.new", json!({"width": 8, "height": 8})).unwrap();
+            app.sync_views();
+            // Drawn from the second frame, once the Pro theme is set.
+            let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(600.0, 40.0)).build_ui_state(
+                |ui, (app, ready): &mut (PhotocraftApp, bool)| {
+                    if *ready {
+                        tabs(app, ui);
+                    }
+                },
+                (app, false),
+            );
+            PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::Pro);
+            h.ctx.set_os(os);
+            h.state_mut().1 = true;
+            h.run_steps(2);
+            let tab = h.get_by_label_contains("Untitled @").rect();
+            let x = h.get_by_label("Close").rect();
+            assert!(tab.contains_rect(x), "{os:?}: the × is inside its tab");
+            assert_eq!(x.center().x > tab.center().x, after_title, "{os:?}: × at {x:?} in tab {tab:?}");
+            h.get_by_label("Close").click();
+            h.run_steps(2);
+            assert!(h.state().0.session.documents().is_empty(), "{os:?}: the × closes the document");
+        }
     }
 
     #[test]
