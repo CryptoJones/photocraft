@@ -295,7 +295,7 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             }
             if let Some(i) = app.session.active_index() {
                 if let Some(z) = p.get("zoom").and_then(Value::as_f64) {
-                    app.ui.views[i].zoom = (z as f32).clamp(0.01, 64.0);
+                    app.ui.views[i].zoom = (z as f32).clamp(crate::zoom_tool::MIN_ZOOM, crate::zoom_tool::MAX_ZOOM);
                     app.ui.views[i].fit_pending = false;
                     app.ui.views[i].fill_pending = false;
                 }
