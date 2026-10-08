@@ -736,3 +736,21 @@ fn delete_multiple_layers_selects_next_survivor() {
     s.undo();
     assert_eq!(s.active().unwrap().active_layer, Some(ids[2]));
 }
+
+#[test]
+fn delete_layer_neighbours_follow_group_row_order() {
+    let mut s = session_with_doc();
+    let background = s.active().unwrap().active_layer.unwrap();
+    let lower = LayerId(s.execute("layer.new.layer", json!({"name":"Below group"})).unwrap()["layer"].as_u64().unwrap());
+    let child = LayerId(s.execute("layer.new.layer", json!({"name":"Child"})).unwrap()["layer"].as_u64().unwrap());
+    let group = LayerId(s.execute("layer.groupLayers", json!({"name":"Group"})).unwrap()["layer"].as_u64().unwrap());
+    s.execute("layer.select", json!({"layer":child.0})).unwrap();
+    s.execute("layer.delete", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().active_layer, Some(lower), "the next row below a group's final child is outside the group");
+    s.undo();
+    s.execute("layer.delete", json!({"layer":background.0})).unwrap();
+    s.execute("layer.setExpanded", json!({"layer":group.0,"expanded":false})).unwrap();
+    s.execute("layer.select", json!({"layer":lower.0})).unwrap();
+    s.execute("layer.delete", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().active_layer, Some(group), "fallback above uses the collapsed group header, not its hidden child");
+}

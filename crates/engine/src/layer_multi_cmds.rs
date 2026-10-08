@@ -689,14 +689,38 @@ fn merge_layers(s: &mut Session) -> Result<Value> {
     Ok(json!({ "layer": mid.0 }))
 }
 
+/// Next visible layer row below the deleted target, then rows above in reverse order.
+/// Group headers precede their children in the UI, unlike Document::walk's storage order.
+pub(crate) fn deletion_neighbours(doc: &Document, target: LayerId) -> Vec<LayerId> {
+    let rows = |expand_all: bool| {
+        let mut stack: Vec<&Layer> = doc.layers.iter().collect();
+        let mut order = Vec::new();
+        while let Some(layer) = stack.pop() {
+            order.push(layer.id);
+            if let LayerContent::Group(group) = &layer.content
+                && (expand_all || group.expanded)
+            {
+                stack.extend(group.children.iter());
+            }
+        }
+        order
+    };
+    let mut order = rows(false);
+    if !order.contains(&target) {
+        order = rows(true);
+    }
+    let Some(index) = order.iter().position(|id| *id == target) else {
+        return Vec::new();
+    };
+    order.iter().skip(index + 1).chain(order.iter().take(index).rev()).copied().collect()
+}
+
 /// Delete Layer with several layers selected.
 pub fn delete_selected(s: &mut Session) -> Result<Value> {
     let sel = selected(s);
     s.edit("Delete Layers", |doc, active| {
         let ids = top_level(doc, &sel);
-        let order: Vec<LayerId> = doc.walk().into_iter().map(|(_, _, l)| l.id).collect();
-        let index = active.and_then(|id| order.iter().position(|candidate| *candidate == id)).unwrap_or(0);
-        let neighbours: Vec<_> = order.iter().take(index).rev().chain(order.iter().skip(index + 1)).copied().collect();
+        let neighbours = active.map(|id| deletion_neighbours(doc, id)).unwrap_or_default();
         for id in &ids {
             doc.remove(*id).ok_or(EngineError::NoLayer(*id))?;
         }

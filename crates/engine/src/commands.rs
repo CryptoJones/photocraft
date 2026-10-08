@@ -473,9 +473,7 @@ fn build() -> Vec<CommandSpec> {
             }
             let id = layer_param(s, p)?;
             s.edit("Delete Layer", |doc, active| {
-                let order: Vec<_> = doc.walk().into_iter().map(|(_, _, l)| l.id).collect();
-                let index = order.iter().position(|candidate| *candidate == id).ok_or(EngineError::NoLayer(id))?;
-                let neighbours: Vec<_> = order.iter().take(index).rev().chain(order.iter().skip(index + 1)).copied().collect();
+                let neighbours = crate::layer_multi_cmds::deletion_neighbours(doc, id);
                 doc.remove(id).ok_or(EngineError::NoLayer(id))?;
                 if active.is_some_and(|current| doc.layer(current).is_none()) {
                     *active = neighbours.into_iter().find(|candidate| doc.layer(*candidate).is_some());
