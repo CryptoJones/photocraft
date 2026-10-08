@@ -85,6 +85,7 @@ pub mod menu_catalog;
 pub mod menu_nav;
 pub mod menus;
 pub mod monitor_status;
+pub mod move_lock;
 pub mod move_mods;
 pub mod move_ui;
 pub mod native_menu;
@@ -402,6 +403,9 @@ pub struct PhotocraftApp {
     /// The tool pointer events go to this frame when it isn't the selected one: the Move tool
     /// while ⌘ is held (`hold_keys::cmd_moves`). Set by the canvas for its gestures, never saved.
     pub(crate) tool_override: Option<state::Tool>,
+    /// A Move-tool press landed on a locked layer: the first pointer move shows Photoshop's
+    /// message (`move_lock`), a plain click shows nothing.
+    pub(crate) move_blocked: bool,
     /// Live Layer Style dialog preview: (key over revision + style fields, preview or validation error).
     pub(crate) style_preview: Option<(u64, Result<std::sync::Arc<Document>, String>)>,
     /// Liquify dialog, Puppet Warp and Perspective Warp sessions (distort_ui).
@@ -528,6 +532,7 @@ impl PhotocraftApp {
             transform_preview: None,
             move_mods: Default::default(),
             tool_override: None,
+            move_blocked: false,
             style_preview: None,
             distort: Default::default(),
             gradient: Default::default(),

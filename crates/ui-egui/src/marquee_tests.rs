@@ -388,3 +388,88 @@ fn selection_cursor_follows_the_modifiers_and_the_floating_piece() {
     // No selection tool: nothing.
     assert_eq!(selection_cursor(&app, Tool::Brush, [35.0, 20.0], none), None);
 }
+
+fn error_dialogs(app: &PhotocraftApp) -> Vec<String> {
+    app.ui.dialogs.iter().filter(|d| d.kind == crate::state::DialogKind::Error).filter_map(|d| d.fields.get("message")?.as_str().map(String::from)).collect()
+}
+
+/// The Move tool on the Background with no selection: Photoshop's lock message, nothing moves.
+#[test]
+fn move_on_the_background_without_a_selection_shows_photoshops_lock_message() {
+    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+    app.run("file.new", json!({"width": 80, "height": 60})).unwrap();
+    app.sync_views();
+    app.ui.tool = Tool::Move;
+    app.ui.tool_options.move_auto_select = false;
+    let steps = app.session.active().unwrap().history.past_len();
+    // A click says nothing (Photoshop); a drag shows the message once.
+    use crate::canvas::{ToolEvent, tool_event};
+    tool_event(&mut app, ToolEvent::Down { x: 20.0, y: 20.0, pressure: 1.0 }, Modifiers::NONE);
+    tool_event(&mut app, ToolEvent::Up { x: 20.0, y: 20.0 }, Modifiers::NONE);
+    assert!(error_dialogs(&app).is_empty() && !app.move_blocked);
+    tool_event(&mut app, ToolEvent::Down { x: 20.0, y: 20.0, pressure: 1.0 }, Modifiers::NONE);
+    tool_event(&mut app, ToolEvent::Move { x: 30.0, y: 20.0, pressure: 1.0 }, Modifiers::NONE);
+    tool_event(&mut app, ToolEvent::Move { x: 40.0, y: 20.0, pressure: 1.0 }, Modifiers::NONE);
+    tool_event(&mut app, ToolEvent::Up { x: 40.0, y: 20.0 }, Modifiers::NONE);
+    assert_eq!(error_dialogs(&app), [crate::move_lock::MESSAGE]);
+    assert!(app.drag.is_none(), "no drag started");
+    assert_eq!(app.session.active().unwrap().history.past_len(), steps);
+    // ⌘ with a marquee is the same press.
+    app.ui.dialogs.clear();
+    app.ui.tool = Tool::RectMarquee;
+    drag(&mut app, [20.0, 20.0], [40.0, 20.0], Modifiers::COMMAND);
+    assert_eq!(error_dialogs(&app), [crate::move_lock::MESSAGE]);
+    // A position-locked layer too; an unlocked one moves.
+    app.ui.dialogs.clear();
+    app.run("layer.new.layer", json!({})).unwrap();
+    app.session
+        .edit("lock", |doc, a| {
+            doc.layer_mut(a.unwrap()).unwrap().locks.position = true;
+            Ok(())
+        })
+        .unwrap();
+    drag(&mut app, [20.0, 20.0], [40.0, 20.0], Modifiers::COMMAND);
+    assert_eq!(error_dialogs(&app).len(), 1);
+    app.ui.dialogs.clear();
+    app.session
+        .edit("unlock", |doc, a| {
+            doc.layer_mut(a.unwrap()).unwrap().locks.position = false;
+            Ok(())
+        })
+        .unwrap();
+    drag(&mut app, [20.0, 20.0], [40.0, 20.0], Modifiers::COMMAND);
+    assert!(error_dialogs(&app).is_empty());
+}
+
+/// With a selection, the Background's pixels move after all, and the hole takes the background
+/// colour; a layer locked all over still refuses with the message.
+#[test]
+fn moving_selected_pixels_off_the_background_fills_with_the_background_colour() {
+    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+    app.run("file.new", json!({"width": 80, "height": 60})).unwrap();
+    app.run("tools.setColors", json!({"background": "#0000ff"})).unwrap();
+    app.sync_views();
+    app.ui.extras.snap = false;
+    app.ui.view.show.smart_guides = false;
+    app.ui.tool = Tool::RectMarquee;
+    let layer = app.session.active().unwrap().active_layer.unwrap();
+    app.run("select.rect", json!({"x": 10, "y": 10, "width": 20, "height": 20})).unwrap();
+    drag(&mut app, [20.0, 20.0], [50.0, 20.0], Modifiers::COMMAND);
+    assert!(error_dialogs(&app).is_empty());
+    assert_eq!(offset(&app), Some((30, 0)));
+    crate::menus::invoke(&mut app, &egui::Context::default(), "select.deselect", json!({})).unwrap();
+    let px = |app: &PhotocraftApp, x, y| app.session.active().unwrap().doc.layer(layer).unwrap().surface().unwrap().rgba(x, y);
+    assert_eq!(px(&app, 12, 12), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(px(&app, 42, 12), [1.0, 1.0, 1.0, 1.0]);
+    // Locked all over: the message, and nothing floats.
+    let (mut app, layer) = painted();
+    app.session
+        .edit("lock", |doc, _| {
+            doc.layer_mut(layer).unwrap().locks.all = true;
+            Ok(())
+        })
+        .unwrap();
+    drag(&mut app, [20.0, 20.0], [40.0, 20.0], Modifiers::COMMAND);
+    assert_eq!(error_dialogs(&app), [crate::move_lock::MESSAGE]);
+    assert_eq!(offset(&app), None);
+}

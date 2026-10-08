@@ -2112,3 +2112,4 @@ cameraRaw	Blending	混合
 	Lines +/−	行數 +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login}：{prs} 個 PR，{commits} 次提交，行 +{added} / −{deleted}（Δ {delta}），二進位檔 +{binAdded} / −{binDeleted}，{first} – {last}
 	Apply At Canvas Bounds	套用效果至版面邊界
+	Could not use the move tool because the layer is locked.	無法使用移動工具，因為圖層已鎖定。

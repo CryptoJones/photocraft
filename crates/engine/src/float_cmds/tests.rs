@@ -71,6 +71,49 @@ fn float_copy_lifts_a_copy_and_leaves_the_layer_whole() {
     assert!(s.execute("select.float", json!({"copy": "yes", "dx": "x"})).is_ok());
 }
 
+/// The Background (transparency- and position-locked) floats its selected pixels anyway, and the
+/// hole takes the background colour, as in Photoshop; other locks refuse.
+#[test]
+fn background_floats_and_fills_the_hole_with_the_background_colour() {
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 80, "height": 60})).unwrap();
+    s.execute("tools.setColors", json!({"background": "#0000ff"})).unwrap();
+    let id = s.active().unwrap().active_layer.unwrap();
+    let doc = &s.active().unwrap().doc;
+    let l = doc.layer(id).unwrap();
+    assert!(l.locks.transparency && l.locks.position && !locked_for_float(doc, l));
+    s.execute("select.rect", json!({"x": 10, "y": 10, "width": 20, "height": 20})).unwrap();
+    s.execute("select.float", json!({"dx": 30, "dy": 0})).unwrap();
+    s.execute("select.drop", json!({})).unwrap();
+    let doc = &s.active().unwrap().doc;
+    let px = |x, y| doc.layer(id).unwrap().surface().unwrap().rgba(x, y);
+    assert_eq!(px(12, 12), [0.0, 0.0, 1.0, 1.0], "the hole is the background colour, not transparent");
+    assert_eq!(px(42, 12), [1.0, 1.0, 1.0, 1.0], "the white piece moved");
+    // A copy leaves no hole.
+    s.undo();
+    s.execute("select.float", json!({"dx": 30, "dy": 0, "copy": true})).unwrap();
+    s.execute("select.drop", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().doc.layer(id).unwrap().surface().unwrap().rgba(12, 12), [1.0, 1.0, 1.0, 1.0]);
+    // Locked all over, pixel-locked, or position-locked (not the Background): no float.
+    let (mut s, id) = session();
+    for set in [
+        |l: &mut photocraft_doc::Layer| l.locks.all = true,
+        |l: &mut photocraft_doc::Layer| l.locks.pixels = true,
+        |l: &mut photocraft_doc::Layer| l.locks.position = true,
+    ] {
+        s.edit("lock", |doc, _| {
+            let l = doc.layer_mut(id).unwrap();
+            l.locks = Default::default();
+            set(l);
+            Ok(())
+        })
+        .unwrap();
+        let err = s.execute("select.float", json!({"dx": 5, "dy": 0})).unwrap_err().to_string();
+        assert!(err.contains("locked"), "{err}");
+        assert!(floating(s.active().unwrap()).is_none());
+    }
+}
+
 #[test]
 fn any_other_command_drops_it_and_undo_puts_it_back() {
     let (mut s, id) = session();
@@ -94,9 +137,16 @@ fn needs_a_selection_and_an_unlocked_pixel_layer() {
     s.execute("file.new", json!({"width": 20, "height": 20})).unwrap();
     assert!(!s.is_enabled("select.float"), "no selection");
     s.execute("select.all", json!({})).unwrap();
-    assert!(!s.is_enabled("select.float"), "the Background is locked");
+    assert!(s.is_enabled("select.float"), "the Background's own locks don't stop its selected pixels moving (Photoshop)");
     s.execute("layer.new.layer", json!({})).unwrap();
     assert!(s.is_enabled("select.float"));
+    s.execute("layer.lock", json!({"all": true})).ok();
+    s.edit("lock", |doc, a| {
+        doc.layer_mut(a.unwrap()).unwrap().locks.all = true;
+        Ok(())
+    })
+    .unwrap();
+    assert!(!s.is_enabled("select.float"), "locked all over");
 }
 
 /// `cargo test --release -p photocraft-engine float_drag_bench -- --ignored --nocapture`
