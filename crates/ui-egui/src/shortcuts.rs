@@ -286,7 +286,10 @@ pub fn handle(app: &mut PhotocraftApp, ctx: &egui::Context) {
     if app.ui.pen.as_ref().is_some_and(|pen| !pen.knots.is_empty()) {
         let mods = ctx.input(|i| i.modifiers);
         let command_undo = mods.command && !mods.alt && !mods.shift && ctx.input_mut(|i| i.consume_key(mods, Key::Z));
-        let remove = !mods.command && !mods.ctrl && !mods.shift && !mods.alt
+        let remove = !mods.command
+            && !mods.ctrl
+            && !mods.shift
+            && !mods.alt
             && ctx.input_mut(|i| i.consume_key(mods, Key::Backspace) || i.consume_key(mods, Key::Delete));
         if command_undo || remove {
             crate::vector_ui::pen_undo_last_point(app);
