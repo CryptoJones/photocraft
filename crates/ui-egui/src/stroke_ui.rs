@@ -55,7 +55,8 @@ pub fn fields(app: &PhotocraftApp) -> Map<String, Value> {
 }
 
 pub fn open(app: &mut PhotocraftApp) -> u64 {
-    app.ui.open_dialog(crate::state::DialogKind::Command, fields(app))
+    let f = fields(app);
+    app.ui.open_dialog(crate::state::DialogKind::Command, f)
 }
 
 /// Only Stroke params are passed to the engine; private UI markers are ignored.
