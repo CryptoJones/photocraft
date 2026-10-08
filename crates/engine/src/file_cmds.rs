@@ -940,7 +940,10 @@ fn lut_layers<'a>(doc: &'a Document, ids: Option<&[LayerId]>) -> Result<Vec<&'a 
                 return Err(EngineError::BadParams { cmd: CMD.into(), msg: format!("layer {} is hidden", id.0) });
             }
             if !doc.layers.iter().any(|root| root.id == *id) {
-                return Err(EngineError::BadParams { cmd: CMD.into(), msg: format!("layer {} is nested in a group; export top-level adjustment layers", id.0) });
+                return Err(EngineError::BadParams {
+                    cmd: CMD.into(),
+                    msg: format!("layer {} is nested in a group; export top-level adjustment layers", id.0),
+                });
             }
             selected.push(*id);
         }
