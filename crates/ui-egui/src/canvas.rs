@@ -1867,7 +1867,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
                     if tool == Tool::Move && app.ui.transform.is_none() {
                         begin_transform_controls_at(app, &ctx, &xf, p);
                     }
-                    tool_event(app, ToolEvent::Down { x: d[0], y: d[1], pressure: 1.0 }, click_mods);
+                    tool_event(app, ToolEvent::Down { x: d[0], y: d[1], pressure: app.stylus.pressure() }, click_mods);
                     tool_event(app, ToolEvent::Up { x: d[0], y: d[1] }, click_mods);
                 }
             }
