@@ -1012,7 +1012,10 @@ pub fn bake_cube(doc: &Document, size: usize, title: &str) -> String {
 fn color_lookup_tables(s: &mut Session, p: &Value) -> Result<Value> {
     const CMD: &str = "file.export.colorLookupTables";
     let d = s.active().ok_or(EngineError::NoDocument)?;
-    let size = p.get("size").and_then(Value::as_u64).unwrap_or(33);
+    let size = match p.get("size") {
+        None | Some(Value::Null) => 33,
+        Some(v) => v.as_u64().ok_or_else(|| EngineError::BadParams { cmd: CMD.into(), msg: "size must be an integer".into() })?,
+    };
     if !(2..=photocraft_cms::lutfile::MAX_SIZE as u64).contains(&size) {
         return Err(EngineError::BadParams { cmd: CMD.into(), msg: format!("size must be 2..={}", photocraft_cms::lutfile::MAX_SIZE) });
     }
