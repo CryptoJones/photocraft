@@ -177,6 +177,10 @@ fn on_event(app: &mut PhotocraftApp, e: JobEvent) {
             app.ui.panels.brush_settings = true;
             app.ui.brush_tab = 1;
         }
+        JobOutcome::Done(v) if e.command == "account.chatgpt.signOut" => {
+            app.ui.status = v["message"].as_str().unwrap_or("Signed out of ChatGPT.").to_string();
+            app.ui.status_error = v["remoteRevocationConfirmed"].as_bool() == Some(false);
+        }
         JobOutcome::Done(_) => {
             app.sync_views();
             app.ui.status = e.label;

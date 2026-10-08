@@ -41,6 +41,8 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("window.toggle.layers", "Layers", &["Window"], Some("F7")),
     ("window.toggle.history", "History", &["Window"], None),
     ("window.toggle.properties", "Properties", &["Window"], None),
+    ("window.contextualTaskbar", "Contextual Task Bar", &["Window"], None),
+    ("window.chatgptAccount", "ChatGPT Account…", &["Window"], None),
     ("window.toggle.color", "Color", &["Window"], Some("F6")),
     ("window.toggle.brushSettings", "Brush Settings", &["Window"], Some("F5")),
     ("window.toggle.navigator", "Navigator", &["Window"], None),
@@ -301,6 +303,14 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             }
             app.run("prefs.set", json!({"values": {"interface.language": code}}))
         }
+        "window.contextualTaskbar" => {
+            app.ui.contextual_taskbar.visible = !app.ui.contextual_taskbar.visible;
+            Ok(json!({"visible":app.ui.contextual_taskbar.visible}))
+        }
+        "window.chatgptAccount" => {
+            app.ui.chatgpt_account_open = true;
+            Ok(json!({"open":true}))
+        }
         "edit.search" => {
             app.ui.palette_open = !app.ui.palette_open;
             Ok(Value::Null)
@@ -493,7 +503,14 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
         return e;
     }
     match id {
-        "file.open" | "file.exit" | "file.clearRecent" | "help.about" | "help.systemInfo" | "edit.search" => true,
+        "file.open"
+        | "file.exit"
+        | "file.clearRecent"
+        | "help.about"
+        | "help.systemInfo"
+        | "edit.search"
+        | "window.contextualTaskbar"
+        | "window.chatgptAccount" => true,
         i if i.starts_with("file.openRecent.") => true,
         i if crate::links::url_for(i).is_some() => true,
         i if i.starts_with("window.theme.") => true,
@@ -612,6 +629,7 @@ fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
         "window.toggle.layers" => p.layers,
         "window.toggle.history" => p.history,
         "window.toggle.properties" => p.properties,
+        "window.contextualTaskbar" => app.ui.contextual_taskbar.visible,
         "window.toggle.color" => p.color,
         "window.toggle.navigator" => p.navigator,
         "window.toggle.toolbar" => p.toolbar,

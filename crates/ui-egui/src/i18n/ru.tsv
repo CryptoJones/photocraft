@@ -2437,3 +2437,7 @@ cameraRaw	Roughness	Неровность
 	Remove download	Удалить скачанное
 	Select Subject and Remove Background; detailed, soft edges	Выделение объекта и удаление фона; детализированные мягкие края
 	Object Selection; drag a box around the object	Выделение объекта; обведите объект прямоугольником
+
+# Contextual viewport actions and optional account settings
+	Contextual Task Bar	Контекстная панель задач
+	ChatGPT Account…	Учётная запись ChatGPT…

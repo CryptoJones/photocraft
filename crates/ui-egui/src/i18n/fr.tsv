@@ -2594,3 +2594,7 @@ cameraRaw	Blending	Fusion
 	Remove download	Supprimer le téléchargement
 	Select Subject and Remove Background; detailed, soft edges	Sélectionner le sujet et supprimer l’arrière-plan ; contours fins et doux
 	Object Selection; drag a box around the object	Sélection d’objet ; tracer un cadre autour de l’objet
+
+# Contextual viewport actions and optional account settings
+	Contextual Task Bar	Barre des tâches contextuelle
+	ChatGPT Account…	Compte ChatGPT…

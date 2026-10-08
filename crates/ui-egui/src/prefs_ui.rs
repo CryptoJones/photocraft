@@ -884,6 +884,7 @@ fn prefs_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
                     }
                     if section == "integrations" {
                         local_model_rows(app, ui, obj);
+                        crate::account_ui::settings_link(app, ui);
                     }
                     ui.add_space(8.0);
                 }

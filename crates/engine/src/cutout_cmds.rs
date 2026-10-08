@@ -1,7 +1,7 @@
-//! Remove Background, Photoshop's Quick Action for a pixel layer (Properties › Quick Actions):
-//! Select Subject with a light edge refinement, turned into a layer mask, in one history step.
-//! Like Photoshop it is non-destructive (the pixels stay; the mask hides the background), turns
-//! the Background layer into a normal layer first and has no menu item.
+//! Remove Background for pixel and rendered Smart Object layers. The configured subject
+//! method becomes an editable layer mask in one history step. Classical selection adds light
+//! edge refinement; downloaded matting models preserve their alpha. Pixels and placed source
+//! content stay intact, and a Background layer becomes a normal layer first.
 
 use photocraft_algo::matting::{self, RefineParams};
 use photocraft_algo::segment::subject;
@@ -18,10 +18,14 @@ const CMD: &str = "layer.removeBackground";
 /// edges and hair get partial coverage instead of a hard cut.
 const REFINE: RefineParams = RefineParams { radius: 2.0, smart_radius: true, smooth: 10.0, feather: 0.5, contrast: 10.0, shift_edge: 0.0 };
 
-/// Remove Background needs an unlocked pixel layer.
+/// Placed photos are Smart Objects by default. Their rendered cache has already been placed
+/// in document coordinates; the mask belongs to the layer, preserving the embedded source.
 fn check(doc: &Document, l: &Layer) -> std::result::Result<(), String> {
-    if !matches!(l.content, LayerContent::Raster(_)) {
-        return Err(format!("the layer is a {} layer, not a pixel layer", l.content.kind_name()));
+    if !matches!(l.content, LayerContent::Raster(_) | LayerContent::Smart(_)) {
+        return Err(format!("background removal is unavailable for a {} layer", l.content.kind_name()));
+    }
+    if l.surface().is_none() {
+        return Err("the placed image has no rendered pixels; reload its source first".into());
     }
     let locks = doc.effective_locks(l.id);
     if locks.pixels || locks.all {
@@ -207,6 +211,27 @@ mod tests {
         assert_eq!(l.name, "Layer 0");
         assert!(!l.locks.transparency && !l.locks.position);
         assert!(l.mask.is_some());
+    }
+
+    #[test]
+    fn smart_photo_mask_preserves_source_and_undoes() {
+        for depth in [8, 16, 32] {
+            let (mut s, inside) = disc(depth);
+            s.execute("layer.smartObjects.convertToSmartObject", json!({})).unwrap();
+            let id = active_id(&s);
+            let before = layer(&s, id).content.clone();
+            let steps = s.active().unwrap().history.past_len();
+            assert!(s.is_enabled(CMD));
+            s.execute(CMD, json!({"refine":false})).unwrap();
+            assert_eq!(layer(&s, id).content, before, "embedded source and placed cache must stay intact at depth {depth}");
+            assert_eq!(s.active().unwrap().history.past_len(), steps + 1);
+            assert!(mask_iou(&s, 200, 160, &inside) >= 0.75);
+            s.execute("edit.undo", json!({})).unwrap();
+            assert!(layer(&s, id).mask.is_none());
+            assert_eq!(layer(&s, id).content, before);
+            s.execute("edit.redo", json!({})).unwrap();
+            assert!(layer(&s, id).mask.is_some());
+        }
     }
 
     #[test]

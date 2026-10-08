@@ -2234,3 +2234,7 @@ cameraRaw	Amount	Cantidad
 	Remove download	Eliminar descarga
 	Select Subject and Remove Background; detailed, soft edges	Seleccionar sujeto y eliminar fondo; bordes suaves y detallados
 	Object Selection; drag a box around the object	Selección de objetos; dibuja un recuadro alrededor del objeto
+
+# Contextual viewport actions and optional account settings
+	Contextual Task Bar	Barra de tareas contextual
+	ChatGPT Account…	Cuenta de ChatGPT…

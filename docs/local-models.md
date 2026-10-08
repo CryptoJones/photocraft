@@ -30,8 +30,13 @@ cargo run --release -p photocraft --features local-ml -- photo.png
    independent and does not select a method automatically.
 3. Choose a downloaded model for **Object selection** or **Subject / background removal**, then
    Apply or OK. These preferences are independent; Classical remains available.
-4. Drag an Object Selection rectangle, use Select › Subject, or use the existing **Remove
-   Background** Quick Action in the layer Properties panel.
+4. Drag an Object Selection rectangle, use Select › Subject, or click **Remove Background**
+   in the floating viewport task bar (also available in pixel-layer Properties › Quick Actions).
+   The bar appears for opened photos and placed Smart Object photos. Drag its move handle to
+   reposition it; the position stays within the viewport after resizing. The … menu offers
+   Reset position and Hide; **Window › Contextual Task Bar** restores a hidden bar.
+   Removal replaces the layer mask as one undoable step and preserves the pixels or Smart
+   Object source. It respects locks and the same Subject / background removal preference.
 
 Remove Background replaces the layer's mask, converts a Background to a normal layer when
 needed, and clears the selection in one undo step. Source pixels are preserved. Its `refine`
