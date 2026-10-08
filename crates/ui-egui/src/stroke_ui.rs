@@ -24,9 +24,7 @@ fn hex(c: [f32; 4]) -> String {
 fn valid(key: &str, v: &Value) -> bool {
     match key {
         "width" => v.as_f64().is_some_and(|x| x.is_finite() && (1.0..=250.0).contains(&x)),
-        "color" => v
-            .as_str()
-            .is_some_and(|h| h.len() == 7 && h.starts_with('#') && h[1..].bytes().all(|b| b.is_ascii_hexdigit())),
+        "color" => v.as_str().is_some_and(|h| h.len() == 7 && h.starts_with('#') && h[1..].bytes().all(|b| b.is_ascii_hexdigit())),
         "location" => v.as_str().is_some_and(|s| LOCATIONS.iter().any(|(id, _)| *id == s)),
         _ => crate::dialog_blend_ui::valid(key, v),
     }
