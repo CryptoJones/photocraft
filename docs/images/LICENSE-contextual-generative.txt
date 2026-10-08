@@ -1,0 +1,16 @@
+The contextual-taskbar-*.png, chatgpt-account.png and generative-*.png screenshots
+are original documentation assets by PhotoCraft contributors. Their original
+synthetic red-disc/blue-background artwork contains no personal photograph and
+is included under this repository's MIT OR Apache-2.0 terms, as are the screenshot
+presentation and original UI contributions (LICENSE-MIT / LICENSE-APACHE).
+
+The screenshots display PhotoCraft's existing interface, fonts and icons, which
+retain their original licences listed in ATTRIBUTION.md. Existing brand marks
+and trademarks retain their owners' rights; this notice does not relicense them.
+
+contextual-taskbar-before.png is the earlier contributor build at 6e2b7bc,
+before the contextual task bar and account/generative windows were added. It is
+not a rendering of the current upstream base with new controls hidden.
+
+Generative screenshots show local coming-soon forms, not generated images.
+No model weights, personal photos or account credentials are included.

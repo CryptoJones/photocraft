@@ -98,3 +98,6 @@ cargo test -p photocraft-engine --test panic_hunt -- --ignored
 Live OpenAI authorization and Windows/Linux runtime checks are separate from simulated-flow
 and compile checks. Record their actual results when exercised; passing mocks does not confirm
 account eligibility or platform browser/ACL behavior.
+
+See [contextual-generative-validation.md](contextual-generative-validation.md) for the
+recorded local results and screenshots.

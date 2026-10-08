@@ -61,3 +61,6 @@ not image requests or a complete provider integration.
 
 The backend decision is still deferred in the upstream roadmap (#41); this contributor change
 is draft UX and local validation, with no claim of generative behavior or Photoshop AI parity.
+
+Local checks and before/after screenshots are recorded in
+[contextual-generative-validation.md](contextual-generative-validation.md).
