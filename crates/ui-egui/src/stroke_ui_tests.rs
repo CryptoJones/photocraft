@@ -1,4 +1,4 @@
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::*;
 
@@ -93,6 +93,7 @@ fn preferences_remember_all_choices_and_reject_corrupt_values() {
     restored.load_prefs_json(&saved).unwrap();
     let mut again = PhotocraftApp::new(restored, Default::default());
     again.run("file.new", json!({"width": 40, "height": 30, "background": "transparent"})).unwrap();
+    again.run("tools.setColors", json!({"foreground": "#ff0000"})).unwrap();
     let remembered = fields(&again);
     assert_eq!(remembered["width"], 5);
     assert_eq!(remembered["color"], "#112233");
