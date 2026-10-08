@@ -910,7 +910,10 @@ fn front(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<Val
                 !chosen.is_empty()
                     && chosen
                         .iter()
-                        .all(|id| st.doc.layer(*id).is_some_and(|layer| layer.visible && matches!(layer.content, photocraft_doc::LayerContent::Adjustment(_))))
+                        .all(|id| {
+                            st.doc.layers.iter().any(|root| root.id == *id)
+                                && st.doc.layer(*id).is_some_and(|layer| layer.visible && matches!(layer.content, photocraft_doc::LayerContent::Adjustment(_)))
+                        })
             });
             let scope = if selected_adjustments { "selected" } else { "all" };
             dialog(app, json!({"path": format!("{dir}/{stem}.cube"), "size": 33, "title": stem, "scope": scope}), json!({"scope": ["all", "selected"]}))
