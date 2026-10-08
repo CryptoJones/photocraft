@@ -26,3 +26,6 @@ sync_github_name = false
 real_name = "Gert Pellin"
 display_name = "Gert Pellin"
 sync_github_name = false
+
+[people.mighty-programmer]
+sync_github_name = true
