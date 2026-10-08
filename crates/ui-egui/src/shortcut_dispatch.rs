@@ -175,8 +175,30 @@ pub fn dispatch_pressed(app: &mut PhotocraftApp, ctx: &egui::Context, focus: Foc
         return false;
     }
     const TEXT_OWNED: [&str; 6] = ["edit.copy", "edit.cut", "edit.paste", "edit.copyMerged", "select.all", "edit.pasteSpecial.pasteInPlace"];
-    let table: Vec<(String, KeyboardShortcut)> =
-        bindings(app).into_iter().filter(|(id, sc)| focus.allows(sc) && !(editing && TEXT_OWNED.contains(&id.as_str()))).collect();
+    let pixel_selection_tool = matches!(
+        app.ui.tool,
+        crate::state::Tool::RectMarquee
+            | crate::state::Tool::EllipseMarquee
+            | crate::state::Tool::Lasso
+            | crate::state::Tool::PolygonLasso
+            | crate::state::Tool::MagneticLasso
+            | crate::state::Tool::MagicWand
+            | crate::state::Tool::QuickSelection
+            | crate::state::Tool::ObjectSelection
+    );
+    let table: Vec<(String, KeyboardShortcut)> = bindings(app)
+        .into_iter()
+        .filter(|(id, sc)| focus.allows(sc) && !(editing && TEXT_OWNED.contains(&id.as_str())))
+        .map(|(id, sc)| {
+            // Plain Delete clears pixels with a selection tool; menu/trash deletion still removes the layer.
+            let id = if pixel_selection_tool && id == "layer.delete" && sc.modifiers.is_none() && matches!(sc.logical_key, Key::Delete | Key::Backspace) {
+                "edit.clear".to_string()
+            } else {
+                id
+            };
+            (id, sc)
+        })
+        .collect();
     let command = |e: &egui::Event| match e {
         egui::Event::Key { key, pressed: true, modifiers, .. } => table.iter().find(|(_, sc)| key_matches(sc, *key, *modifiers)).map(|(id, _)| id.clone()),
         _ => None,

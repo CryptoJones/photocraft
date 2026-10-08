@@ -694,18 +694,16 @@ pub fn delete_selected(s: &mut Session) -> Result<Value> {
     let sel = selected(s);
     s.edit("Delete Layers", |doc, active| {
         let ids = top_level(doc, &sel);
-        let below = ids.first().and_then(|id| {
-            let order: Vec<LayerId> = doc.walk().into_iter().map(|(_, _, l)| l.id).collect();
-            let i = order.iter().position(|x| x == id)?;
-            order[..i].iter().rev().find(|x| !sel.contains(x)).copied()
-        });
+        let order: Vec<LayerId> = doc.walk().into_iter().map(|(_, _, l)| l.id).collect();
+        let index = active.and_then(|id| order.iter().position(|candidate| *candidate == id)).unwrap_or(0);
+        let neighbours: Vec<_> = order.iter().take(index).rev().chain(order.iter().skip(index + 1)).copied().collect();
         for id in &ids {
             doc.remove(*id).ok_or(EngineError::NoLayer(*id))?;
         }
         if doc.layers.is_empty() {
             return Err(EngineError::Other("a document must keep at least one layer".into()));
         }
-        *active = below.filter(|b| doc.layer(*b).is_some()).or_else(|| doc.top_layer());
+        *active = neighbours.into_iter().find(|candidate| doc.layer(*candidate).is_some());
         Ok(())
     })?;
     Ok(json!({"deleted": sel.len()}))

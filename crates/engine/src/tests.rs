@@ -699,3 +699,40 @@ fn move_document_reorders_tabs_and_keeps_the_active_one() {
     }
     assert_eq!(names(&s), first);
 }
+
+#[test]
+fn delete_layer_selects_neighbour_and_undo_restores_layer() {
+    for deleted_index in 0..3 {
+        let mut s = session_with_doc();
+        let ids = ["bottom", "middle", "top"].map(|name| LayerId(s.execute("layer.new.layer", json!({"name":name})).unwrap()["layer"].as_u64().unwrap()));
+        if deleted_index == 0 {
+            let background = s.active().unwrap().doc.layers[0].id;
+            s.execute("layer.delete", json!({"layer":background.0})).unwrap();
+        }
+        s.execute("layer.select", json!({"layer":ids[deleted_index].0})).unwrap();
+        s.execute("layer.delete", json!({})).unwrap();
+        let neighbour = if deleted_index == 0 { ids[1] } else { ids[deleted_index - 1] };
+        assert_eq!(s.active().unwrap().active_layer, Some(neighbour));
+        assert_eq!(s.active().unwrap().selected_layers, vec![neighbour]);
+        assert!(s.active().unwrap().doc.layer(ids[deleted_index]).is_none());
+        s.undo();
+        assert!(s.active().unwrap().doc.layer(ids[deleted_index]).is_some());
+        assert!(s.active().unwrap().active_layer.is_some_and(|id| s.active().unwrap().doc.layer(id).is_some()));
+        s.redo();
+        assert_eq!(s.active().unwrap().active_layer, Some(neighbour));
+    }
+}
+
+#[test]
+fn delete_multiple_layers_selects_next_survivor() {
+    let mut s = session_with_doc();
+    let ids = ["bottom", "middle", "top"].map(|name| LayerId(s.execute("layer.new.layer", json!({"name":name})).unwrap()["layer"].as_u64().unwrap()));
+    s.execute("layer.select", json!({"layer":ids[1].0})).unwrap();
+    s.execute("layer.select", json!({"layer":ids[2].0,"mode":"add"})).unwrap();
+    s.execute("layer.delete", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().active_layer, Some(ids[0]));
+    assert!(s.active().unwrap().doc.layer(ids[1]).is_none());
+    assert!(s.active().unwrap().doc.layer(ids[2]).is_none());
+    s.undo();
+    assert_eq!(s.active().unwrap().active_layer, Some(ids[2]));
+}
