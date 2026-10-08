@@ -1022,7 +1022,11 @@ fn color_lookup_tables(s: &mut Session, p: &Value) -> Result<Value> {
     if !(2..=photocraft_cms::lutfile::MAX_SIZE as u64).contains(&size) {
         return Err(EngineError::BadParams { cmd: CMD.into(), msg: format!("size must be 2..={}", photocraft_cms::lutfile::MAX_SIZE) });
     }
-    let scope = p.get("scope").and_then(Value::as_str).unwrap_or("all");
+    let scope = match p.get("scope") {
+        None | Some(Value::Null) => "all",
+        Some(Value::String(s)) => s.as_str(),
+        Some(_) => return Err(EngineError::BadParams { cmd: CMD.into(), msg: "scope must be all or selected".into() }),
+    };
     if !matches!(scope, "all" | "selected") {
         return Err(EngineError::BadParams { cmd: CMD.into(), msg: "scope must be all or selected".into() });
     }
