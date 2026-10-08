@@ -94,6 +94,12 @@ pub struct ViewOptions {
     /// and the Middle Eastern & South Asian composer.
     pub language_features: String,
     pub middle_eastern_composer: bool,
+    /// Parameters from the last successfully applied New Guide Layout dialog.
+    pub guide_layout: Value,
+}
+
+fn default_guide_layout() -> Value {
+    json!({"columns": 8, "gutter": 20, "rows": 0, "rowGutter": 0, "margin": 0, "centerColumns": false, "clearExisting": false})
 }
 
 impl Default for ViewOptions {
@@ -112,6 +118,7 @@ impl Default for ViewOptions {
             font_preview_size: "medium".into(),
             language_features: "defaultFeatures".into(),
             middle_eastern_composer: false,
+            guide_layout: default_guide_layout(),
         }
     }
 }
@@ -704,7 +711,27 @@ fn label_of(key: &str) -> String {
             out.push(c);
         }
     }
-    out
+    let translated = tl!(&out);
+    if translated != out {
+        return translated.to_owned();
+    }
+    // Fall back to the Title Case filter label's translation, but keep the sentence-case
+    // English when that is untranslated too (English and partial catalogs read as before).
+    let title = crate::filter_dialog::label(key);
+    if title == crate::filter_dialog::source_label(key) { out } else { title }
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::label_of;
+
+    #[test]
+    fn untranslated_form_labels_stay_sentence_case() {
+        crate::i18n::with_language(crate::i18n::Lang::EN, || {
+            assert_eq!(label_of("useAntialias"), "Use antialias");
+            assert_eq!(label_of("radius"), "Radius");
+        });
+    }
 }
 
 /// Body of a `__form` dialog: text fields, number fields, checkboxes and `__choices` dropdowns.
@@ -740,11 +767,11 @@ pub fn form_body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                 Value::Number(n) => {
                     ui.label(label_of(&k));
                     if let Some(mut i) = n.as_i64() {
-                        ui.add(egui::DragValue::new(&mut i));
+                        ui.add(egui::DragValue::new(&mut i).custom_parser(crate::widgets::parse_num));
                         json!(i)
                     } else {
                         let mut x = n.as_f64().unwrap_or(0.0);
-                        ui.add(egui::DragValue::new(&mut x).speed(0.5));
+                        ui.add(egui::DragValue::new(&mut x).speed(0.5).custom_parser(crate::widgets::parse_num));
                         json!(x)
                     }
                 }
@@ -805,9 +832,7 @@ fn front(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<Val
                 Err(e) => return Some(Err(e)),
             };
             let linked = (id == "file.placeLinked").then(|| name.clone());
-            let r = photocraft_engine::file_cmds::place_bytes(&mut app.session, &name, bytes, linked, &json!({})).map_err(|e| e.to_string());
-            app.sync_views();
-            Some(r)
+            Some(app.place_bytes(&name, bytes, linked))
         }
         "file.fileInfo" => {
             let info = app.session.execute("file.fileInfo", json!({})).ok()?;
@@ -828,7 +853,8 @@ fn front(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<Val
             json!({"from": ["any", "rgb", "grayscale", "cmyk", "lab", "indexed", "bitmap", "duotone", "multichannel"], "to": ["rgb", "grayscale", "cmyk", "lab"]}),
         ),
         "view.newGuideLayout" => {
-            dialog(app, json!({"columns": 8, "gutter": 20, "rows": 0, "rowGutter": 0, "margin": 0, "centerColumns": false, "clearExisting": false}), json!({}))
+            let fields = app.ui.view.guide_layout.clone();
+            dialog(app, fields, json!({}))
         }
         "type.warpText" => {
             let styles: Vec<&str> = std::iter::once("none").chain(photocraft_text::warp::STYLES.iter().map(|(_, s)| *s)).collect();
@@ -898,12 +924,10 @@ fn front(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<Val
             json!({"format": ["jpg", "png", "psd", "tiff"]}),
         ),
         "file.automate.batch" => {
-            let a = &app.ui.actions;
-            let action = a.selected.and_then(|i| a.list.get(i)).or(a.list.first());
-            let Some(action) = action else {
+            let Some(action) = crate::actions::selected_action(app) else {
                 return Some(Err("record an action in the Actions panel first".into()));
             };
-            let steps: Vec<Value> = action.steps.iter().map(|(id, p)| json!([id, p])).collect();
+            let steps = crate::actions::action_steps(action);
             let name = action.name.clone();
             dialog(
                 app,

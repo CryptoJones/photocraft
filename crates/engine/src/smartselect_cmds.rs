@@ -6,7 +6,7 @@
 use photocraft_algo::matting::{self, RefineParams};
 use photocraft_algo::segment::{Sampler, SurfaceSampler, focus, grabcut, quick, subject};
 use photocraft_algo::selection::{Region, SelectionMode, combine_region};
-use photocraft_doc::{Document, Layer, LayerContent, LayerMask};
+use photocraft_doc::{Document, Layer, LayerContent, LayerId, LayerMask};
 use photocraft_geom::Rect;
 use serde_json::{Value, json};
 
@@ -47,12 +47,16 @@ impl Sampler for CompositeSampler<'_> {
 /// active layer has no pixels).
 fn with_sampler<R>(s: &Session, all_layers: bool, f: impl FnOnce(&dyn Sampler, &Document) -> R) -> Result<R> {
     let d = s.active().ok_or(EngineError::NoDocument)?;
-    let doc = d.doc.clone();
-    let layer = d.active_layer.and_then(|id| doc.layer(id)).and_then(|l| l.surface());
-    Ok(match (all_layers, layer) {
-        (false, Some(surf)) => f(&SurfaceSampler(surf), &doc),
-        _ => f(&CompositeSampler(&doc), &doc),
-    })
+    Ok(with_doc_sampler(&d.doc, d.active_layer, all_layers, f))
+}
+
+/// Runs `f` with a sampler over `layer`'s pixels in `doc` (or the composite with `all_layers`, or
+/// when the layer has no pixels).
+pub(crate) fn with_doc_sampler<R>(doc: &Document, layer: Option<LayerId>, all_layers: bool, f: impl FnOnce(&dyn Sampler, &Document) -> R) -> R {
+    match (all_layers, layer.and_then(|id| doc.layer(id)).and_then(Layer::surface)) {
+        (false, Some(surf)) => f(&SurfaceSampler(surf), doc),
+        _ => f(&CompositeSampler(doc), doc),
+    }
 }
 
 /// Stores `region` combined with the current selection by `m` as one history step.
@@ -187,7 +191,7 @@ fn refine_edge(s: &mut Session, p: &Value) -> Result<Value> {
             let src = src_layer
                 .surface()
                 .ok_or_else(|| EngineError::Other(format!("the active layer is a {} layer without pixels", src_layer.content.kind_name())))?;
-            let name = format!("{} copy", src_layer.name);
+            let name = d.doc.copy_name(&src_layer.name);
             let empty = Region { bbox: Rect::EMPTY, mask: Vec::new() };
             let reg = region.as_ref().unwrap_or(&empty);
             let pixels = if decontaminate { matting::decontaminate(src, reg, params.radius, amount) } else { src.clone() };

@@ -160,13 +160,12 @@ fn presets_store(app: &mut PhotocraftApp) {
 fn display_scale(pref: prefs::UiScale, native: Option<f32>, monitor_px: Option<egui::Vec2>) -> f32 {
     let native = native.filter(|v| v.is_finite() && *v > 0.0).unwrap_or(1.0);
     match pref {
-        prefs::UiScale::P100 => 1.0,
-        prefs::UiScale::P200 => 2.0,
         prefs::UiScale::Auto => {
             // A 4K display needs at least 200%; preserve larger system scales.
             let is_4k = monitor_px.is_some_and(|s| s.x.is_finite() && s.y.is_finite() && s.x.min(s.y) >= 2160.0 && s.x.max(s.y) >= 3840.0);
             if is_4k { native.max(2.0) } else { native }
         }
+        fixed => fixed.name().parse::<f32>().map_or(1.0, |pct| pct / 100.0),
     }
 }
 
@@ -211,6 +210,7 @@ pub fn tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
         app.session.prefs.edit(|p| p.interface.theme = t);
         app.prefs_rt.theme_pref = Some(t);
     }
+    crate::theme::set_ui_font_size(ctx, app.session.prefs().interface.ui_font_size);
     presets_store(app);
     sync_tooltips(app, ctx);
     app.sync_recent();
@@ -756,6 +756,13 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
 }
 
 fn humanize(key: &str) -> String {
+    // These controls appear only for WebP, so reuse the existing translated labels.
+    if key == "webpLossless" {
+        return "Lossless".into();
+    }
+    if key == "webpQuality" {
+        return "Quality".into();
+    }
     let mut s = String::new();
     for (i, ch) in key.chars().enumerate() {
         if i == 0 {
@@ -774,8 +781,7 @@ fn choice_label(v: &str) -> String {
     match v {
         "cm" => "Centimeters".into(),
         "mm" => "Millimeters".into(),
-        "100" => "100%".into(),
-        "200" => "200%".into(),
+        "75" | "100" | "125" | "150" | "175" | "200" | "250" | "300" => format!("{v}%"),
         "8" => "8 Bits/Channel".into(),
         "16" => "16 Bits/Channel".into(),
         "postScript" => "PostScript (72 points/inch)".into(),
@@ -786,6 +792,25 @@ fn choice_label(v: &str) -> String {
         "gl" => "OpenGL".into(),
         "cpu" => "CPU (no GPU acceleration)".into(),
         v => humanize(v),
+    }
+}
+
+/// An editable `#rrggbb` field beside a colour swatch (#668): typing a valid value sets the
+/// colour; while it's being typed a partial value is kept, and it shows the colour otherwise.
+fn hex_field(ui: &mut egui::Ui, key: &str, rgb: &mut [u8; 3]) {
+    let id = egui::Id::new(("pref-hex", key));
+    let shown = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
+    let mut text = ui.data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| shown.clone());
+    let r = ui.add(egui::TextEdit::singleline(&mut text).font(crate::theme::mono(11.5)).desired_width(72.0).char_limit(7));
+    if r.changed()
+        && let Some(c) = prefs::parse_hex(&text)
+    {
+        *rgb = c;
+    }
+    if r.has_focus() {
+        ui.data_mut(|d| d.insert_temp(id, text));
+    } else {
+        ui.data_mut(|d| d.remove::<String>(id));
     }
 }
 
@@ -922,6 +947,17 @@ fn has_visible_fields(values: &Value, section: &str) -> bool {
     values.get(section).and_then(Value::as_object).is_some_and(|o| o.keys().any(|k| !prefs::is_hidden(&format!("{section}.{k}"))))
 }
 
+/// JPEG and WebP have independent settings; unrelated format controls stay out of view.
+fn export_field_visible(obj: &Map<String, Value>, key: &str) -> bool {
+    let format = obj.get("quickExportFormat").and_then(Value::as_str).unwrap_or("png");
+    match key {
+        "jpegQuality" => format == "jpg",
+        "webpLossless" => format == "webp",
+        "webpQuality" => format == "webp" && obj.get("webpLossless").and_then(Value::as_bool) != Some(true),
+        _ => true,
+    }
+}
+
 /// Generic editor for a section's fields: checkboxes, dropdowns for choices, colour swatches,
 /// number fields with the preference's range, text fields.
 fn section_fields(ui: &mut egui::Ui, section: &str, obj: &mut Map<String, Value>, order: &[String], lang: crate::i18n::Lang) {
@@ -936,7 +972,10 @@ fn section_fields(ui: &mut egui::Ui, section: &str, obj: &mut Map<String, Value>
             let path = format!("{section}.{k}");
             // Settings nothing reads yet stay out of the dialog (issue #204); their stored values
             // pass through untouched.
-            if prefs::is_hidden(&path) || (section == "performance" && matches!(k.as_str(), "useGpu" | "gpuBackend" | "renderingMode")) {
+            if prefs::is_hidden(&path)
+                || (section == "performance" && matches!(k.as_str(), "useGpu" | "gpuBackend" | "renderingMode"))
+                || (section == "export" && !export_field_visible(obj, &k))
+            {
                 continue;
             }
             let v = obj.get(&k).cloned().unwrap_or(Value::Null);
@@ -972,7 +1011,7 @@ fn section_fields(ui: &mut egui::Ui, section: &str, obj: &mut Map<String, Value>
                     let mut rgb = c;
                     ui.horizontal(|ui| {
                         ui.color_edit_button_srgb(&mut rgb);
-                        ui.label(RichText::new(format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2])).font(crate::theme::mono(11.5)).color(t.text_dim));
+                        hex_field(ui, &path, &mut rgb);
                     });
                     obj.insert(k, json!(format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2])));
                     let _ = color_of(s);
@@ -988,11 +1027,11 @@ fn section_fields(ui: &mut egui::Ui, section: &str, obj: &mut Map<String, Value>
                     let (lo, hi) = prefs::range(&path).unwrap_or((-1e9, 1e9));
                     if n.is_u64() || n.is_i64() {
                         let mut x = n.as_i64().unwrap_or(0);
-                        ui.add(egui::DragValue::new(&mut x).range(lo as i64..=hi as i64));
+                        ui.add(egui::DragValue::new(&mut x).range(lo as i64..=hi as i64).custom_parser(crate::widgets::parse_num));
                         obj.insert(k, json!(x));
                     } else {
                         let mut x = n.as_f64().unwrap_or(0.0);
-                        ui.add(egui::DragValue::new(&mut x).range(lo..=hi).speed(0.1).max_decimals(3));
+                        ui.add(egui::DragValue::new(&mut x).range(lo..=hi).speed(0.1).max_decimals(3).custom_parser(crate::widgets::parse_num));
                         obj.insert(k, json!(x));
                     }
                 }
@@ -1061,6 +1100,11 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
     let mut capture = f.get("capture").and_then(Value::as_bool).unwrap_or(false);
     let mut message = f.get("message").and_then(Value::as_str).unwrap_or("").to_string();
     let items = shortcut_items(app);
+    // Menu path and command label as shown in the menus, in the UI language.
+    let shown = |id: &str, label: &str, path: &[String]| -> (Vec<String>, String) {
+        let lang = crate::i18n::current();
+        (path.iter().map(|p| crate::i18n::tr(lang, p).to_string()).collect(), crate::i18n::tr_id(lang, id, label).to_string())
+    };
     let eff = |overrides: &BTreeMap<String, String>, id: &str, def: &Option<String>| -> Option<String> {
         match overrides.get(id) {
             Some(s) if s.is_empty() => None,
@@ -1090,7 +1134,10 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
                 let clash: Vec<String> = items
                     .iter()
                     .filter(|(id, _, _, def)| *id != selected && eff(&overrides, id, def).as_deref().and_then(prefs::normalize_shortcut) == Some(sc.clone()))
-                    .map(|(_, label, path, _)| format!("{} › {}", path.join(" › "), label.trim_end_matches('…')))
+                    .map(|(id, label, path, _)| {
+                        let (path, label) = shown(id, label, path);
+                        format!("{} › {}", path.join(" › "), label.trim_end_matches('…'))
+                    })
                     .collect();
                 overrides.insert(selected.clone(), sc.clone());
                 message = if clash.is_empty() {
@@ -1108,14 +1155,16 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
         egui::Grid::new("shortcut-grid").num_columns(3).spacing([12.0, 3.0]).striped(true).show(ui, |ui| {
             for (id, label, path, def) in &items {
                 let cur = eff(&overrides, id, def);
-                let hay = format!("{} {} {}", path.join(" "), label, cur.clone().unwrap_or_default()).to_ascii_lowercase();
+                let (shown_path, shown_label) = shown(id, label, path);
+                // Match what is shown and the English name (commands are documented in English).
+                let hay = format!("{} {} {} {} {}", shown_path.join(" "), shown_label, path.join(" "), label, cur.clone().unwrap_or_default()).to_lowercase();
                 if !needle.is_empty() && !hay.contains(&needle) && !id.to_ascii_lowercase().contains(&needle) {
                     continue;
                 }
                 if tab == 0 && path.is_empty() && def.is_none() && cur.is_none() {
                     continue;
                 }
-                let top = path.first().cloned().unwrap_or_else(|| tl!("Other").into());
+                let top = shown_path.first().cloned().unwrap_or_else(|| tl!("Other").into());
                 if top != last_top {
                     ui.label(RichText::new(&top).font(crate::theme::semibold(12.5)).color(t.text));
                     ui.label("");
@@ -1123,7 +1172,10 @@ fn shortcuts_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String
                     ui.end_row();
                     last_top = top;
                 }
-                let name = if path.len() > 1 { format!("{} › {}", path[1..].join(" › "), label) } else { label.clone() };
+                let name = match shown_path.get(1..) {
+                    Some(rest) if !rest.is_empty() => format!("{} › {}", rest.join(" › "), shown_label),
+                    _ => shown_label,
+                };
                 let sel = selected == *id;
                 if ui.selectable_label(sel, RichText::new(format!("   {name}")).color(t.text_dim)).clicked() {
                     selected = id.clone();
@@ -1374,6 +1426,54 @@ mod shortcut_capture_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn colour_preferences_take_a_typed_hex_value() {
+        // #668: the canvas colour (and every colour preference) showed its hex but couldn't take one.
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::Queryable;
+        let mut h = egui_kittest::Harness::new_ui_state(|ui, rgb: &mut [u8; 3]| super::hex_field(ui, "interface.canvasCustomColor", rgb), [0x28, 0x28, 0x28]);
+        h.run();
+        assert_eq!(h.get_by_role(Role::TextInput).value().as_deref(), Some("#282828"));
+        h.get_by_role(Role::TextInput).click();
+        h.run_steps(1);
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.run_steps(1);
+        for ch in "#80".chars() {
+            h.event(egui::Event::Text(ch.to_string()));
+            h.run_steps(1);
+        }
+        // A partial value stays as typed and leaves the colour alone.
+        assert_eq!(h.get_by_role(Role::TextInput).value().as_deref(), Some("#80"));
+        assert_eq!(*h.state(), [0x28, 0x28, 0x28]);
+        for ch in "8080".chars() {
+            h.event(egui::Event::Text(ch.to_string()));
+            h.run_steps(1);
+        }
+        assert_eq!(*h.state(), [0x80, 0x80, 0x80]);
+    }
+
+    #[test]
+    fn quick_export_controls_match_selected_format() {
+        let mut obj = serde_json::to_value(photocraft_engine::prefs::Export::default()).unwrap().as_object().unwrap().clone();
+        assert!(!export_field_visible(&obj, "jpegQuality"));
+        assert!(!export_field_visible(&obj, "webpLossless"));
+        assert!(!export_field_visible(&obj, "webpQuality"));
+
+        obj.insert("quickExportFormat".into(), json!("jpg"));
+        assert!(export_field_visible(&obj, "jpegQuality"));
+        assert!(!export_field_visible(&obj, "webpLossless"));
+        assert!(!export_field_visible(&obj, "webpQuality"));
+
+        obj.insert("quickExportFormat".into(), json!("webp"));
+        assert!(!export_field_visible(&obj, "jpegQuality"));
+        assert!(export_field_visible(&obj, "webpLossless"));
+        assert!(!export_field_visible(&obj, "webpQuality"), "lossless WebP does not have a quality setting");
+
+        obj.insert("webpLossless".into(), json!(false));
+        assert!(export_field_visible(&obj, "webpQuality"));
+        assert_eq!(humanize("webpLossless"), "Lossless");
+        assert_eq!(humanize("webpQuality"), "Quality");
+    }
 
     #[test]
     fn rendering_mode_display_respects_explicit_mode_and_legacy_disable() {
@@ -1582,7 +1682,7 @@ mod tests {
             step(vec2(1920.0, 1080.0), 1.0, 1.0);
             step(vec2(3840.0, 2160.0), 1.5, 2.0);
         }
-        for (pref, expected) in [("200", 2.0), ("100", 1.0), ("auto", 1.5)] {
+        for (pref, expected) in [("200", 2.0), ("125", 1.25), ("150", 1.5), ("100", 1.0), ("auto", 1.5)] {
             app.run("prefs.set", json!({"values": {"interface.uiScale": pref}})).unwrap();
             let mut input = egui::RawInput::default();
             input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(1.5);
@@ -1590,6 +1690,31 @@ mod tests {
             ctx.run_ui(input, |ui| tick(&mut app, ui.ctx())).textures_delta.clear();
             assert!((ctx.pixels_per_point() - expected).abs() < 1e-4);
         }
+    }
+
+    #[test]
+    fn ui_font_size_commands_follow_themes_and_dpi_and_reset_live() {
+        let (mut app, _) = app_with_store();
+        let ctx = egui::Context::default();
+        PhotocraftApp::setup_context(&ctx, ThemeKind::Pro);
+        let mut input = egui::RawInput::default();
+        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(1.5);
+        for (theme, scale, expected) in
+            [("pro", "100", 1.0), ("studio", "auto", 1.5), ("studioLight", "200", 2.0), ("proMedium", "100", 1.0), ("classic", "auto", 1.5)]
+        {
+            app.run("prefs.set", json!({"values": {"interface.uiFontSize": "large", "interface.theme": theme, "interface.uiScale": scale}})).unwrap();
+            for _ in 0..3 {
+                ctx.run_ui(input.clone(), |ui| tick(&mut app, ui.ctx())).textures_delta.clear();
+            }
+            assert!((ctx.pixels_per_point() - expected).abs() < 1e-4);
+            assert_eq!(ctx.fonts(|f| f.definitions().font_data["Inter"].tweak.scale), 16.0 / 12.0);
+        }
+        app.run("prefs.reset", json!({"path": "interface.uiFontSize"})).unwrap();
+        for _ in 0..2 {
+            ctx.run_ui(input.clone(), |ui| tick(&mut app, ui.ctx())).textures_delta.clear();
+        }
+        assert_eq!(ctx.fonts(|f| f.definitions().font_data["Inter"].tweak.scale), 1.0);
+        assert!((ctx.pixels_per_point() - 1.5).abs() < 1e-4, "resetting font size keeps UI Scale");
     }
 
     #[test]
@@ -1653,6 +1778,7 @@ mod tests {
         assert!(prefs::is_hidden("rawDefaults.applyAutoTone"));
         assert!(!prefs::is_hidden("general.autoShowHomeScreen"));
         assert!(!prefs::is_hidden("interface.uiScale"));
+        assert!(!prefs::is_hidden("interface.uiFontSize"));
         // Hidden values still round-trip through the dialog untouched.
         let (mut app, _) = app_with_store();
         app.run("prefs.set", json!({"values": {"type.smartQuotes": false}})).unwrap();
@@ -1749,6 +1875,7 @@ mod tests {
 
         let values = h.state_mut().ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap();
         values["interface"]["theme"] = json!("studioLight");
+        values["interface"]["uiFontSize"] = json!("large");
         values["performance"]["historyStates"] = json!(12);
         h.run_steps(2);
         assert!(!h.get_by_label("Apply").accesskit_node().is_disabled());
@@ -1757,6 +1884,7 @@ mod tests {
 
         assert_eq!(h.state().session.prefs().performance.history_states, 12);
         assert_eq!(h.state().ui.theme, ThemeKind::StudioLight);
+        assert_eq!(h.ctx.fonts(|f| f.definitions().font_data["Inter"].tweak.scale), 16.0 / 12.0);
         assert!(!h.state().session.prefs().type_.smart_quotes, "hidden settings round-trip unchanged");
         let d = h.state().ui.dialogs.iter().find(|d| d.id == id).unwrap();
         assert_eq!(d.fields["section"], "interface");
@@ -1765,6 +1893,7 @@ mod tests {
         let saved: Value = serde_json::from_str(store.lock().unwrap().as_ref().unwrap()).unwrap();
         assert_eq!(saved["performance"]["historyStates"], 12);
         assert_eq!(saved["interface"]["theme"], "studioLight");
+        assert_eq!(saved["interface"]["uiFontSize"], "large");
 
         // Repeated Apply starts from the validated values, not the dialog's original snapshot.
         h.state_mut().ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap()["performance"]["historyStates"] = json!(22);
@@ -1773,16 +1902,19 @@ mod tests {
         h.run_steps(4);
         assert_eq!(h.state().session.prefs().performance.history_states, 22);
         h.state_mut().ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap()["performance"]["historyStates"] = json!(33);
+        h.state_mut().ui.dialog_mut(id).unwrap().fields.get_mut("values").unwrap()["interface"]["uiFontSize"] = json!("tiny");
         h.run_steps(2);
         h.get_by_label("Cancel").click();
         h.run_steps(4);
         assert!(h.state().ui.dialogs.iter().all(|d| d.id != id));
         assert_eq!(h.state().session.prefs().performance.history_states, 22);
+        assert_eq!(h.ctx.fonts(|f| f.definitions().font_data["Inter"].tweak.scale), 16.0 / 12.0);
         let saved = store.lock().unwrap().clone().unwrap();
         let (mut restarted, _) = app_with_saved(Some(saved));
         tick(&mut restarted, &egui::Context::default());
         assert_eq!(restarted.session.prefs().performance.history_states, 22);
         assert_eq!(restarted.ui.theme, ThemeKind::StudioLight);
+        assert_eq!(restarted.session.prefs().interface.ui_font_size, prefs::UiFontSize::Large);
     }
 
     #[test]

@@ -102,6 +102,21 @@ fn blob_session(depth: u32) -> Session {
 }
 
 #[test]
+fn content_aware_fill_huge_area_neither_panics_nor_wraps() {
+    let mut s = blob_session(8);
+    // `[1e30, 0, 1e30, 10]` overflowed the i32 additions in the area parser (a debug-build
+    // panic, a garbage sampling window in release); the additions saturate now, so this is
+    // simply a whole-canvas window.
+    let r = s.execute("edit.contentAwareFill", json!({"sampling": "custom", "area": [1e30, 0.0, 1e30, 10.0], "colorAdaptation": "none"})).unwrap();
+    assert!(r["filled"].as_u64().unwrap() > 100);
+    // A malformed area names the problem instead of silently falling back.
+    for area in [json!([0.0, 0.0, null, 10.0]), json!([0.0, 0.0, 10.0]), json!("nope")] {
+        let err = s.execute("edit.contentAwareFill", json!({"sampling": "custom", "area": area})).unwrap_err();
+        assert!(err.to_string().contains("`area`"), "{err}");
+    }
+}
+
+#[test]
 fn content_aware_fill_removes_object_at_all_depths() {
     for depth in [8, 16, 32] {
         let mut s = blob_session(depth);
@@ -118,6 +133,30 @@ fn content_aware_fill_removes_object_at_all_depths() {
         s.undo();
         assert_eq!(px(&s, 30, 20)[1], 0.0, "undo restores the blob");
     }
+}
+
+#[test]
+fn delete_and_fill_selection_removes_the_object_in_one_step() {
+    // #1286: Content-Aware Fill's defaults, no dialog, one history step named for the command.
+    for depth in [8, 16, 32] {
+        let mut s = blob_session(depth);
+        let base = s.active().unwrap().active_layer.unwrap();
+        assert!(s.is_enabled("edit.deleteAndFillSelection"));
+        let r = s.execute("edit.deleteAndFillSelection", json!({})).unwrap();
+        assert_eq!(r["layer"].as_u64(), Some(base.0), "fills the layer itself");
+        assert!(r["filled"].as_u64().unwrap() > 100);
+        let v = px(&s, 30, 20);
+        assert!(!(v[0] > 0.9 && v[1] < 0.1), "depth {depth}: red left: {v:?}");
+        assert_eq!(s.active().unwrap().history.undo_label(), Some("Delete and Fill Selection"));
+        s.undo();
+        assert_eq!(px(&s, 30, 20)[1], 0.0, "undo restores the blob");
+    }
+    // Parameters are ignored, never a crash; nothing selected greys it out and refuses.
+    let mut s = blob_session(8);
+    assert!(s.execute("edit.deleteAndFillSelection", json!({"output": 7, "sampling": [1]})).is_ok());
+    s.execute("select.deselect", json!({})).unwrap();
+    assert!(!s.is_enabled("edit.deleteAndFillSelection"));
+    assert!(s.execute("edit.deleteAndFillSelection", json!({})).is_err());
 }
 
 #[test]
@@ -302,4 +341,27 @@ fn find_and_replace_across_type_layers() {
     assert_eq!(f2["found"]["text"], "world");
     assert_ne!(f2["found"]["layer"], f2["changed"]["layer"]);
     assert!(s.execute("edit.findAndReplaceText", json!({"find": ""})).is_err());
+}
+
+#[test]
+fn find_in_the_active_layer_finds_nothing_when_it_is_not_type() {
+    // #703: `allLayers: false` with a raster layer active leaves nothing to search.
+    let mut s = session(8);
+    let id = s.execute("type.create", json!({"text": "abc def", "x": 2, "y": 12})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("layer.new.layer", json!({"name": "raster"})).unwrap();
+    let steps = s.active().unwrap().history.entries().len();
+    for action in ["find", "change", "changeFind"] {
+        for forward in [true, false] {
+            let r =
+                s.execute("edit.findAndReplaceText", json!({"find": "abc", "replace": "x", "allLayers": false, "action": action, "forward": forward})).unwrap();
+            assert!(r["found"].is_null() && r["changed"].is_null(), "{action} {forward}: {r}");
+        }
+    }
+    let r = s.execute("edit.findAndReplaceText", json!({"find": "abc", "replace": "x", "allLayers": false})).unwrap();
+    assert_eq!(r["count"].as_u64(), Some(0));
+    assert_eq!(s.active().unwrap().history.entries().len(), steps);
+    // With the type layer active, the same search finds it.
+    s.execute("layer.select", json!({"layer": id})).unwrap();
+    let r = s.execute("edit.findAndReplaceText", json!({"find": "abc", "allLayers": false, "action": "find"})).unwrap();
+    assert_eq!((r["found"]["layer"].as_u64(), r["found"]["text"].as_str()), (Some(id), Some("abc")));
 }

@@ -164,13 +164,16 @@ fn apply_to_doc(doc: &mut Document, vars: &Variables, set: &DataSet) -> Result<(
                 }
             }
             (VarKind::TextReplacement, VarValue::Text(text)) => {
+                let snapshot = doc.clone();
                 if let Some(l) = doc.layer_mut(def.layer)
                     && let LayerContent::Text(t) = &mut l.content
                 {
                     t.text = text.clone();
-                    t.cache = None; // force re-render
                     t.runs.clear(); // re-flow as one run from the summary style
                     t.paragraphs.clear();
+                    // The compositor draws a type layer from its cache: clearing it left the
+                    // layer blank until some other edit re-rendered it (#990).
+                    crate::type_cmds::refresh(&snapshot, t);
                 }
             }
             (VarKind::PixelReplacement { method, align, clip }, VarValue::Pixels(path)) => {
@@ -234,6 +237,14 @@ fn replace_pixels(doc: &mut Document, layer: LayerId, path: &str, method: PixelM
 fn apply_data_set(s: &mut Session, p: &Value) -> Result<Value> {
     let (set, idx) = resolve_set(s, p, "image.applyDataSet")?;
     let vars = s.active().ok_or(EngineError::NoDocument)?.doc.variables.clone();
+    // Pixel Replacement reads image files, so an untrusted session's gate judges each path.
+    if let Some(auth) = s.authorize {
+        for dv in &set.values {
+            if let VarValue::Pixels(path) = &dv.value {
+                auth("image.applyDataSet", &json!({"path": path}))?;
+            }
+        }
+    }
     s.edit(&format!("Apply Data Set \"{}\"", set.name), |doc, _| apply_to_doc(doc, &vars, &set))?;
     set_vars(s, |v| v.active = Some(idx))?;
     Ok(json!({"applied": set.name, "index": idx}))

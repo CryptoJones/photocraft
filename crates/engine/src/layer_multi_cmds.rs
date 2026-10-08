@@ -10,7 +10,7 @@ use photocraft_doc::{Document, Layer, LayerContent, LayerId};
 use photocraft_geom::Rect;
 use serde_json::{Value, json};
 
-use crate::commands::{CommandSpec, int};
+use crate::commands::{CommandSpec, int_i32};
 use crate::{DocState, EngineError, Result, Session};
 
 // ---------- selection state ----------
@@ -60,7 +60,7 @@ pub fn set_selection(s: &mut Session, ids: Vec<LayerId>, active: Option<LayerId>
 
 /// After a structural edit, make `ids` the selection (dropping any that no longer exist), which
 /// is also what the edit's history state targets.
-fn reselect(s: &mut Session, ids: Vec<LayerId>, active: Option<LayerId>) {
+pub(crate) fn reselect(s: &mut Session, ids: Vec<LayerId>, active: Option<LayerId>) {
     if let Some(st) = s.active_mut() {
         st.selected_layers = ids;
         if let Some(a) = active {
@@ -148,7 +148,7 @@ fn select_linked(s: &mut Session) -> Result<Value> {
     let d = s.active().ok_or(EngineError::NoDocument)?;
     let groups = link_groups(&d.doc, &d.selected_layers());
     let ids: Vec<LayerId> = d.doc.walk().into_iter().filter(|(_, _, l)| l.link_group.is_some_and(|g| groups.contains(&g))).map(|(_, _, l)| l.id).collect();
-    let active = d.active_layer;
+    let active = d.active_layer.filter(|a| ids.contains(a)).or(ids.last().copied());
     let n = ids.len();
     set_selection(s, ids, active, active)?;
     Ok(json!({"selected": n}))
@@ -225,8 +225,9 @@ pub(crate) fn move_layers(doc: &mut Document, moves: &[(LayerId, i32, i32)]) -> 
         if dx == 0 && dy == 0 {
             continue;
         }
+        let locks = doc.effective_locks(id);
         let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
-        if l.locks.position || l.locks.all {
+        if locks.position || locks.all {
             return Err(EngineError::Other(format!("layer \"{}\" is position-locked", l.name)));
         }
         crate::commands::translate_layer(&snapshot, l, dx, dy);
@@ -237,8 +238,8 @@ pub(crate) fn move_layers(doc: &mut Document, moves: &[(LayerId, i32, i32)]) -> 
 
 /// `layer.translate`: the explicit layer, or every selected layer, plus their linked layers.
 pub fn translate(s: &mut Session, p: &Value) -> Result<Value> {
-    let dx = int(p, "dx").unwrap_or(0) as i32;
-    let dy = int(p, "dy").unwrap_or(0) as i32;
+    let dx = int_i32("layer.translate", p, "dx")?.unwrap_or(0);
+    let dy = int_i32("layer.translate", p, "dy")?.unwrap_or(0);
     if dx == 0 && dy == 0 {
         return Ok(Value::Null);
     }
@@ -276,8 +277,9 @@ pub fn move_targets(doc: &Document, roots: &[LayerId]) -> Vec<LayerId> {
 pub fn moved(doc: &Document, ids: &[LayerId], dx: i32, dy: i32) -> Result<Document> {
     let mut out = doc.clone();
     for &id in ids {
+        let locks = doc.effective_locks(id);
         let l = out.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
-        if l.locks.position || l.locks.all {
+        if locks.position || locks.all {
             return Err(EngineError::Other(format!("layer \"{}\" is position-locked", l.name)));
         }
         shift_shown(doc, l, dx, dy);
@@ -533,8 +535,12 @@ fn link_layers(s: &mut Session) -> Result<Value> {
     let linked = s.edit("Link Layers", |doc, _| {
         let groups: Vec<Option<u64>> = sel.iter().map(|id| doc.layer(*id).and_then(|l| l.link_group)).collect();
         // Already one link group (or a single linked layer): unlink, like Photoshop's toggle.
-        let unlink = groups[0].is_some() && groups.iter().all(|g| *g == groups[0]);
-        let next = doc.walk().iter().filter_map(|(_, _, l)| l.link_group).max().unwrap_or(0) + 1;
+        let first = groups.first().copied().flatten();
+        let unlink = first.is_some() && groups.iter().all(|g| *g == first);
+        // A fresh id: one past the largest, or (a stored document already uses u64::MAX) the
+        // smallest unused one, never an existing group that would join unrelated layers.
+        let used: std::collections::HashSet<u64> = doc.walk().iter().filter_map(|(_, _, l)| l.link_group).collect();
+        let next = used.iter().max().map_or(Some(1), |m| m.checked_add(1)).or_else(|| (1..=u64::MAX).find(|g| !used.contains(g))).unwrap_or(1);
         for id in &sel {
             let l = doc.layer_mut(*id).ok_or(EngineError::NoLayer(*id))?;
             l.link_group = if unlink { None } else { Some(next) };
@@ -612,6 +618,16 @@ fn reverse(s: &mut Session) -> Result<Value> {
     Ok(Value::Null)
 }
 
+/// Refuses an edit that left `doc` nested deeper than [`photocraft_doc::MAX_GROUP_DEPTH`]
+/// groups. Called at the end of a `Session::edit` closure, so an `Err` leaves the document and
+/// history untouched.
+pub(crate) fn check_group_depth(doc: &Document, what: &str) -> Result<()> {
+    if doc.max_group_depth() > photocraft_doc::MAX_GROUP_DEPTH {
+        return Err(EngineError::Other(format!("{what} would nest layers deeper than {} groups", photocraft_doc::MAX_GROUP_DEPTH)));
+    }
+    Ok(())
+}
+
 /// Group Layers (⌘G) / Group from Layers: the explicit layer, or every selected layer, moves
 /// into a new group placed where the top-most of them was. Bottom-to-top order is preserved.
 pub fn group_layers(s: &mut Session, p: &Value) -> Result<Value> {
@@ -633,6 +649,7 @@ pub fn group_layers(s: &mut Session, p: &Value) -> Result<Value> {
             children.push(doc.remove(*id).ok_or(EngineError::NoLayer(*id))?);
         }
         *doc.layer_mut(gid).and_then(Layer::children_mut).ok_or(EngineError::NoLayer(gid))? = children;
+        check_group_depth(doc, "Group Layers")?;
         *active = Some(gid);
         Ok(gid)
     })?;
@@ -708,7 +725,7 @@ pub fn duplicate_selected(s: &mut Session) -> Result<Value> {
         let mut new_active = None;
         for id in top_level(doc, &sel) {
             let mut dup = doc.layer(id).ok_or(EngineError::NoLayer(id))?.duplicate();
-            dup.name = format!("{} copy", dup.name);
+            dup.name = doc.copy_name(&dup.name);
             let nid = doc.insert_above(Some(id), dup);
             if Some(id) == old_active {
                 new_active = Some(nid);
@@ -815,6 +832,29 @@ pub fn specs() -> Vec<CommandSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn duplicates_are_numbered_not_stacked() {
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width": 20, "height": 20})).unwrap();
+        s.execute("layer.new.layer", json!({"name": "Layer 1"})).unwrap();
+        let name = |s: &Session| {
+            let st = s.active().unwrap();
+            st.doc.layer(st.active_layer.unwrap()).unwrap().name.clone()
+        };
+        s.execute("layer.duplicate", json!({})).unwrap();
+        assert_eq!(name(&s), "Layer 1 copy");
+        // Duplicating the copy (the active layer) numbers it rather than adding "copy" again.
+        s.execute("layer.duplicate", json!({})).unwrap();
+        assert_eq!(name(&s), "Layer 1 copy 2");
+        s.execute("layer.duplicate", json!({})).unwrap();
+        assert_eq!(name(&s), "Layer 1 copy 3");
+        let doc = &s.active().unwrap().doc;
+        assert_eq!(doc.copy_name("Layer 1"), "Layer 1 copy 4");
+        // Names that merely contain "copy" keep it.
+        assert_eq!(doc.copy_name("Copywriting"), "Copywriting copy");
+        assert_eq!(doc.copy_name("A copyedit"), "A copyedit copy");
+    }
 
     fn session(depth: u32) -> Session {
         let mut s = Session::new();
@@ -1109,6 +1149,46 @@ mod tests {
     }
 
     #[test]
+    fn a_locked_group_locks_its_contents() {
+        let mut s = session(8);
+        let a = rect_layer(&mut s, Rect::new(0, 0, 5, 5));
+        let g = s.execute("layer.new.groupFromLayers", json!({})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("layer.setProps", json!({"layer": g, "locked": true})).unwrap();
+        s.execute("layer.select", json!({"layer": a.0})).unwrap();
+        for (cmd, p) in [
+            ("layer.translate", json!({"dx": 1})),
+            ("paint.stroke", json!({"points": [[2, 2], [4, 4]]})),
+            ("edit.fill", json!({"color": "#00ff00"})),
+            ("edit.transform.flipHorizontal", json!({})),
+        ] {
+            assert!(s.execute(cmd, p).is_err(), "{cmd} edited a layer in a locked group");
+        }
+        // Unlocking the group releases its contents.
+        s.execute("layer.setProps", json!({"layer": g, "locked": false})).unwrap();
+        s.execute("layer.translate", json!({"dx": 1})).unwrap();
+        assert_eq!(bounds(&s, a), Rect::new(1, 0, 6, 5));
+    }
+
+    #[test]
+    fn a_locked_group_keeps_a_grouped_background_locked() {
+        let mut s = session(8);
+        let bg = doc(&s).layers[0].id;
+        s.execute("layer.select", json!({"layer": bg.0})).unwrap();
+        let g = s.execute("layer.new.groupFromLayers", json!({})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("layer.setProps", json!({"layer": g, "locked": true})).unwrap();
+        s.execute("layer.select", json!({"layer": bg.0})).unwrap();
+        for (cmd, p) in [
+            ("edit.transform.flipHorizontal", json!({})),
+            ("edit.transform.warp", json!({"style": "flag", "bend": 50})),
+            ("edit.puppetWarp", json!({"pins": [{"src": [30, 25], "dst": [36, 29]}]})),
+        ] {
+            let e = s.execute(cmd, p).unwrap_err().to_string();
+            assert!(e.contains("locked"), "{cmd}: {e}");
+            assert_eq!(doc(&s).layer(bg).unwrap().name, "Background", "{cmd}");
+        }
+    }
+
+    #[test]
     fn group_from_layers_preserves_order() {
         let mut s = session(8);
         let a = rect_layer(&mut s, Rect::new(0, 0, 5, 5));
@@ -1130,6 +1210,133 @@ mod tests {
         select_all(&mut s, &[b, d]);
         s.execute("layer.groupLayers", json!({})).unwrap();
         assert_eq!(doc(&s).layers.len(), 4);
+    }
+
+    #[test]
+    fn grouping_is_capped_at_the_document_nesting_limit() {
+        let mut s = session(8);
+        let a = rect_layer(&mut s, Rect::new(0, 0, 5, 5));
+        select_all(&mut s, &[a]);
+        for _ in 0..photocraft_doc::MAX_GROUP_DEPTH {
+            s.execute("layer.groupLayers", json!({})).unwrap();
+        }
+        assert_eq!(doc(&s).max_group_depth(), photocraft_doc::MAX_GROUP_DEPTH);
+        // One more wrapping group would pass the cap: rejected, document untouched.
+        let err = s.execute("layer.groupLayers", json!({})).unwrap_err();
+        assert!(err.to_string().contains("deeper than 100"), "{err}");
+        assert_eq!(doc(&s).max_group_depth(), photocraft_doc::MAX_GROUP_DEPTH);
+        // The rejected call recorded no history step: undo still lands one grouping earlier.
+        s.undo();
+        assert_eq!(doc(&s).max_group_depth(), photocraft_doc::MAX_GROUP_DEPTH - 1);
+    }
+
+    #[test]
+    fn select_linked_layers_excludes_an_unlinked_active_layer() {
+        for depth in [8, 16, 32] {
+            let mut s = session(depth);
+            let a = rect_layer(&mut s, Rect::new(0, 0, 10, 10));
+            let b = rect_layer(&mut s, Rect::new(20, 20, 30, 30));
+            let other = rect_layer(&mut s, Rect::new(50, 50, 60, 60));
+            select_all(&mut s, &[a, b]);
+            s.execute("layer.linkLayers", json!({})).unwrap();
+            s.execute("layer.select", json!({"layer": a.0})).unwrap();
+            s.execute("layer.select", json!({"layer": other.0, "mode": "toggle"})).unwrap();
+            assert_eq!(sel(&s), vec![a, other]);
+            assert_eq!(s.active().unwrap().active_layer, Some(other));
+            let past = s.active().unwrap().history.past_len();
+            let dirty = s.active().unwrap().is_dirty();
+
+            let result = s.execute("layer.selectLinkedLayers", json!({})).unwrap();
+            assert_eq!(sel(&s), vec![a, b]);
+            assert_eq!(result["selected"], sel(&s).len());
+            assert_eq!(s.active().unwrap().active_layer, Some(b));
+            assert_eq!(s.active().unwrap().layer_anchor, Some(b));
+            assert_eq!(s.active().unwrap().history.past_len(), past);
+            assert_eq!(s.active().unwrap().is_dirty(), dirty);
+
+            // A following multi-layer delete must leave the unrelated layer intact.
+            s.execute("layer.delete", json!({})).unwrap();
+            assert!(doc(&s).layer(a).is_none() && doc(&s).layer(b).is_none());
+            assert!(doc(&s).layer(other).is_some());
+            s.undo();
+            assert!(doc(&s).layer(a).is_some() && doc(&s).layer(b).is_some());
+            assert!(doc(&s).layer(other).is_some());
+        }
+    }
+
+    #[test]
+    fn select_linked_layers_preserves_a_linked_active_layer() {
+        for depth in [8, 16, 32] {
+            let mut s = session(depth);
+            let a = rect_layer(&mut s, Rect::new(0, 0, 10, 10));
+            let b = rect_layer(&mut s, Rect::new(20, 20, 30, 30));
+            select_all(&mut s, &[a, b]);
+            s.execute("layer.linkLayers", json!({})).unwrap();
+            for active in [a, b] {
+                s.execute("layer.select", json!({"layer": active.0})).unwrap();
+                let st = s.active_mut().unwrap();
+                st.saved_revision = st.revision;
+                let past = st.history.past_len();
+                for _ in 0..2 {
+                    let result = s.execute("layer.selectLinkedLayers", json!({})).unwrap();
+                    assert_eq!(sel(&s), vec![a, b]);
+                    assert_eq!(result["selected"], sel(&s).len());
+                    assert_eq!(s.active().unwrap().active_layer, Some(active));
+                    assert_eq!(s.active().unwrap().layer_anchor, Some(active));
+                    assert_eq!(s.active().unwrap().history.past_len(), past);
+                    assert!(!s.active().unwrap().is_dirty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn select_linked_layers_requires_a_linked_selection() {
+        let mut s = Session::new();
+        assert!(!s.is_enabled("layer.selectLinkedLayers"));
+        assert!(s.execute("layer.selectLinkedLayers", json!({})).is_err());
+        let mut s = session(8);
+        let before = sel(&s);
+        assert!(!s.is_enabled("layer.selectLinkedLayers"));
+        assert!(s.execute("layer.selectLinkedLayers", json!({})).is_err());
+        assert_eq!(sel(&s), before);
+    }
+
+    #[test]
+    fn translate_rejects_offsets_that_would_wrap() {
+        let mut s = session(8);
+        let a = rect_layer(&mut s, Rect::new(0, 0, 5, 5));
+        select_all(&mut s, &[a]);
+        // 2^32 + 50 wrapped to `dx = 50` and 3e9 to a negative offset through `as i32`.
+        for dx in [4_294_967_346_i64, 3_000_000_000_i64] {
+            let err = s.execute("layer.translate", json!({"dx": dx, "dy": 0})).unwrap_err();
+            assert!(err.to_string().contains("32-bit"), "{err}");
+        }
+        assert_eq!(bounds(&s, a), Rect::new(0, 0, 5, 5), "the layer never moved");
+        // Large in-range offsets still work.
+        s.execute("layer.translate", json!({"dx": -200_000, "dy": 200_000})).unwrap();
+    }
+
+    #[test]
+    fn link_layers_never_reuses_a_group_when_the_largest_id_is_u64_max() {
+        let mut s = session(8);
+        let a = rect_layer(&mut s, Rect::new(0, 0, 10, 10));
+        let b = rect_layer(&mut s, Rect::new(20, 20, 30, 30));
+        let c = rect_layer(&mut s, Rect::new(50, 50, 60, 60));
+        let d = rect_layer(&mut s, Rect::new(70, 70, 80, 80));
+        // A stored document can carry any id; `max + 1` once overflowed here.
+        let st = s.active_mut().unwrap();
+        for id in [c, d] {
+            std::sync::Arc::make_mut(&mut st.doc).layer_mut(id).unwrap().link_group = Some(u64::MAX);
+        }
+        select_all(&mut s, &[a, b]);
+        assert_eq!(s.execute("layer.linkLayers", json!({})).unwrap()["linked"], true);
+        let g = doc(&s).layer(a).unwrap().link_group;
+        assert_eq!(g, Some(1));
+        assert_eq!(doc(&s).layer(b).unwrap().link_group, g);
+        for id in [c, d] {
+            assert_eq!(doc(&s).layer(id).unwrap().link_group, Some(u64::MAX), "the existing group is untouched");
+        }
     }
 
     #[test]

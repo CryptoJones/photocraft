@@ -11,7 +11,7 @@ use crate::state::DialogKind;
 use crate::theme::Tokens;
 use crate::{ExportSettings, PhotocraftApp};
 
-const FORMATS: [(&str, &str); 5] = [("png", "PNG"), ("jpg", "JPG"), ("webp", "WebP (lossless)"), ("tif", "TIFF"), ("tga", "TGA")];
+const FORMATS: [(&str, &str); 5] = [("png", "PNG"), ("jpg", "JPG"), ("webp", "WebP"), ("tif", "TIFF"), ("tga", "TGA")];
 
 pub fn open(app: &mut PhotocraftApp) -> Result<u64, String> {
     let st = app.session.active().ok_or("no document")?;
@@ -19,9 +19,11 @@ pub fn open(app: &mut PhotocraftApp) -> Result<u64, String> {
     f.insert("__export".into(), json!(true));
     f.insert("__label".into(), json!("Export As"));
     f.insert("format".into(), json!("png"));
-    f.insert("quality".into(), json!(85));
+    f.insert("quality".into(), json!(app.session.prefs().export.jpeg_quality));
+    f.insert("lossless".into(), json!(app.session.prefs().export.webp_lossless));
     f.insert("transparency".into(), json!(true));
     f.insert("scale".into(), json!(100));
+    f.insert("metadata".into(), json!("none"));
     f.insert("__w".into(), json!(st.doc.size.width));
     f.insert("__h".into(), json!(st.doc.size.height));
     Ok(app.ui.open_dialog(DialogKind::Command, f))
@@ -90,13 +92,41 @@ fn export_document(doc: &Document, f: &Map<String, Value>, max_side: Option<u32>
     s.active().map(|d| (*d.doc).clone()).ok_or_else(|| "export failed".into())
 }
 
+/// Export As already supports lossy WebP; reuse the Quick Export defaults when
+/// choosing that format so both flows expose the same quality and lossless options.
+fn set_format_defaults(f: &mut Map<String, Value>, fmt: &str, prefs: &photocraft_engine::prefs::Export) {
+    f.insert("format".into(), json!(fmt));
+    match fmt {
+        "jpg" => {
+            f.insert("quality".into(), json!(prefs.jpeg_quality));
+        }
+        "webp" => {
+            f.insert("quality".into(), json!(prefs.webp_quality));
+            f.insert("lossless".into(), json!(prefs.webp_lossless));
+        }
+        _ => {}
+    }
+}
+
 fn s_fmt(f: &Map<String, Value>) -> String {
     let v = s(f, "format");
     if v.is_empty() { "png".into() } else { v }
 }
 
+fn lossless(f: &Map<String, Value>) -> bool {
+    f.get("lossless").and_then(Value::as_bool).unwrap_or(false)
+}
+
 fn settings(f: &Map<String, Value>) -> ExportSettings {
-    ExportSettings { jpeg_quality: (s_fmt(f) == "jpg").then(|| n(f, "quality", 85.0).clamp(1.0, 100.0) as u8) }
+    let fmt = s_fmt(f);
+    let quality = n(f, "quality", 85.0).clamp(1.0, 100.0) as u8;
+    ExportSettings {
+        jpeg_quality: (fmt == "jpg").then_some(quality),
+        webp_lossless: fmt != "webp" || lossless(f),
+        webp_quality: (fmt == "webp" && !lossless(f)).then_some(quality),
+        xmp_all: s(f, "metadata") == "all",
+        ..Default::default()
+    }
 }
 
 /// Estimated size (bytes) from a ≤512 px proxy encode, scaled by pixel count.
@@ -123,19 +153,33 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                 let mut fmt = s_fmt(f);
                 let opts: Vec<(String, &str)> = FORMATS.iter().map(|(k, l)| (k.to_string(), *l)).collect();
                 if crate::widgets::dropdown(ui, "export-format", &mut fmt, &opts, 130.0) {
-                    f.insert("format".into(), json!(fmt));
+                    set_format_defaults(f, &fmt, &app.session.prefs().export);
                 }
             });
             let fmt = s_fmt(f);
-            if fmt == "jpg" {
+            if fmt == "webp" {
+                let mut ll = lossless(f);
+                crate::widgets::checkbox(ui, &mut ll, tl!("Lossless"));
+                f.insert("lossless".into(), json!(ll));
+            }
+            if fmt == "jpg" || (fmt == "webp" && !lossless(f)) {
                 let mut q = n(f, "quality", 85.0) as f32;
                 crate::widgets::slider_row(ui, tl!("Quality"), &mut q, 1.0..=100.0, "%", None);
                 f.insert("quality".into(), json!(q.round()));
-            } else {
+            }
+            if fmt != "jpg" {
                 let mut tr = f.get("transparency").and_then(Value::as_bool).unwrap_or(true);
                 crate::widgets::checkbox(ui, &mut tr, tl!("Transparency"));
                 f.insert("transparency".into(), json!(tr));
             }
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(tl!("Metadata")).color(t.text_dim));
+                let mut m = s(f, "metadata");
+                let opts: Vec<(String, &str)> = vec![("none".into(), tl!("None")), ("all".into(), tl!("All"))];
+                if crate::widgets::dropdown(ui, "export-metadata", &mut m, &opts, 130.0) {
+                    f.insert("metadata".into(), json!(m));
+                }
+            });
             ui.add_space(8.0);
             ui.label(egui::RichText::new(tl!("Image Size")).font(crate::theme::semibold(12.0)).color(t.text));
             let mut sc = n(f, "scale", 100.0) as f32;
@@ -153,8 +197,15 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
         ui.vertical(|ui| {
             let layer = f.get("__layer").and_then(Value::as_u64);
             let key = egui::Id::new(("export-preview", doc.id.0, app.session.active().map_or(0, |s| s.revision), layer));
-            let sig =
-                format!("{}{}{}{}", s_fmt(f), n(f, "quality", 85.0), f.get("transparency").map(|v| v.to_string()).unwrap_or_default(), n(f, "scale", 100.0));
+            let sig = format!(
+                "{}{}{}{}{}{}",
+                s_fmt(f),
+                n(f, "quality", 85.0),
+                lossless(f),
+                f.get("transparency").map(|v| v.to_string()).unwrap_or_default(),
+                n(f, "scale", 100.0),
+                s(f, "metadata")
+            );
             let cached: Option<(String, Option<u64>, Arc<egui::TextureHandle>)> = ui.data(|d| d.get_temp(key));
             let (size, tex) = match cached.filter(|c| c.0 == sig) {
                 Some((_, size, tex)) => (size, tex),
@@ -250,5 +301,44 @@ mod tests {
         let proxy = export_document(&doc, &f, Some(40)).unwrap();
         assert_eq!(proxy.size.width, 40);
         assert_eq!(settings(&f).jpeg_quality, Some(85));
+    }
+
+    #[test]
+    fn switching_export_formats_uses_independent_quality_preferences() {
+        let prefs = photocraft_engine::prefs::Export { jpeg_quality: 43, webp_quality: 72, webp_lossless: false, ..Default::default() };
+        let mut fields = Map::new();
+        set_format_defaults(&mut fields, "webp", &prefs);
+        assert_eq!(fields["quality"], 72);
+        assert_eq!(fields["lossless"], false);
+        let s = settings(&fields);
+        assert!(!s.webp_lossless);
+        assert_eq!(s.webp_quality, Some(72));
+        assert_eq!(s.jpeg_quality, None);
+
+        set_format_defaults(&mut fields, "jpg", &prefs);
+        assert_eq!(fields["quality"], 43);
+        assert_eq!(settings(&fields).jpeg_quality, Some(43));
+        assert_eq!(settings(&fields).webp_quality, None);
+
+        set_format_defaults(&mut fields, "webp", &photocraft_engine::prefs::Export::default());
+        assert!(settings(&fields).webp_lossless, "default WebP Quick Export mode is lossless");
+        assert_eq!(settings(&fields).webp_quality, None);
+    }
+
+    #[test]
+    fn webp_settings_follow_the_lossless_switch() {
+        let mut f = Map::new();
+        f.insert("format".into(), json!("webp"));
+        f.insert("quality".into(), json!(70));
+        let s = settings(&f);
+        assert!(!s.webp_lossless, "Export As writes lossy WebP unless asked");
+        assert_eq!(s.webp_quality, Some(70));
+        assert_eq!(s.jpeg_quality, None);
+        f.insert("lossless".into(), json!(true));
+        let s = settings(&f);
+        assert!(s.webp_lossless);
+        assert_eq!(s.webp_quality, None);
+        f.insert("format".into(), json!("png"));
+        assert!(settings(&f).webp_lossless, "other formats leave the WebP default alone");
     }
 }

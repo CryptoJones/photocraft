@@ -101,6 +101,26 @@ pub fn px_value(px: f32) -> Value {
     json!(if px.is_finite() { px.round().clamp(1.0, 300_000.0) as u32 } else { 1 })
 }
 
+/// Name of the preset that takes the clipboard image's size.
+pub const CLIPBOARD: &str = "Clipboard";
+
+/// Offer the Clipboard preset (`w` × `h` px, at 72 ppi) first under the Recent presets, and
+/// select it.
+pub fn set_clipboard(f: &mut Map<String, Value>, w: u32, h: u32) {
+    if w == 0 || h == 0 {
+        return;
+    }
+    f.insert("__clipboard".into(), json!([w, h]));
+    apply_preset(f, &(CLIPBOARD, w, h, 72.0));
+}
+
+/// The clipboard image's size, when the dialog offers the Clipboard preset.
+fn clipboard_preset(f: &Map<String, Value>) -> Option<Preset> {
+    let size = f.get("__clipboard")?.as_array()?;
+    let dim = |i: usize| size.get(i)?.as_u64().and_then(|v| u32::try_from(v).ok()).filter(|v| *v > 0);
+    Some((CLIPBOARD, dim(0)?, dim(1)?, 72.0))
+}
+
 /// Apply a preset to the dialog fields.
 pub fn apply_preset(f: &mut Map<String, Value>, p: &Preset) {
     f.insert("width".into(), json!(p.1));
@@ -114,6 +134,22 @@ pub fn apply_preset(f: &mut Map<String, Value>, p: &Preset) {
 /// Fields `file.new` takes (drops the dialog's `__` UI keys).
 pub fn command_params(f: &Map<String, Value>) -> Value {
     Value::Object(f.iter().filter(|(k, _)| !k.starts_with("__")).map(|(k, v)| (k.clone(), v.clone())).collect())
+}
+
+/// Set the resolution (pixels/inch) the way Photoshop's New Document does (#758): with Width/Height
+/// in a physical unit the physical size is kept and the pixel count changes; in pixels the pixels
+/// are kept.
+pub fn set_resolution(f: &mut Map<String, Value>, new_ppi: f32) {
+    let old_ppi = get_f(f, "resolution", 72.0);
+    f.insert("resolution".into(), json!(new_ppi));
+    if get_s(f, "__unit", "px") == "px" || !(old_ppi > 0.0 && new_ppi > 0.0) || old_ppi == new_ppi {
+        return;
+    }
+    let scale = new_ppi / old_ppi;
+    let (w, h) = (get_f(f, "width", 1920.0), get_f(f, "height", 1080.0));
+    f.insert("width".into(), px_value(w * scale));
+    f.insert("height".into(), px_value(h * scale));
+    f.remove("__preset");
 }
 
 fn get_f(f: &Map<String, Value>, k: &str, d: f32) -> f32 {
@@ -157,6 +193,8 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
     widgets::hairline(ui);
     ui.add_space(8.0);
     let presets = CATEGORIES.iter().find(|c| c.0 == cat).map_or(CATEGORIES[0].1, |c| c.1);
+    // The clipboard image's size comes first among the Recent presets.
+    let presets: Vec<Preset> = clipboard_preset(f).filter(|_| cat == CATEGORIES[0].0).into_iter().chain(presets.iter().copied()).collect();
     let chosen = get_s(f, "__preset", "");
     ui.horizontal_top(|ui| {
         // Left: preset grid.
@@ -255,7 +293,7 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                 let per_cm = get_s(f, "__resUnit", "in") == "cm";
                 let mut r = if per_cm { ppi / 2.54 } else { ppi };
                 if widgets::value_field(ui, &mut r, 1.0..=30_000.0, "", 110.0).changed() {
-                    f.insert("resolution".into(), json!(if per_cm { r * 2.54 } else { r }));
+                    set_resolution(f, if per_cm { r * 2.54 } else { r });
                 }
                 let mut ru = get_s(f, "__resUnit", "in");
                 if widgets::dropdown(ui, "nd-resunit", &mut ru, &[("in".to_string(), tl!("Pixels/Inch")), ("cm".to_string(), tl!("Pixels/Centimeter"))], 120.0)
@@ -316,6 +354,25 @@ mod tests {
     }
 
     #[test]
+    fn resolution_keeps_physical_size_in_physical_units_and_pixels_in_px() {
+        let a4 = CATEGORIES.iter().find(|c| c.0 == "Print").unwrap().1.iter().find(|p| p.0 == "A4").unwrap();
+        let mut f = crate::state::UiState::new_document_fields();
+        apply_preset(&mut f, a4);
+        f.insert("__unit".into(), json!("in"));
+        set_resolution(&mut f, 150.0);
+        let p = command_params(&f);
+        assert_eq!((p["width"].clone(), p["height"].clone(), p["resolution"].clone()), (json!(1240), json!(1754), json!(150.0)));
+        assert!(!f.contains_key("__preset"));
+
+        let mut f = crate::state::UiState::new_document_fields();
+        apply_preset(&mut f, a4);
+        f.insert("__unit".into(), json!("px"));
+        set_resolution(&mut f, 150.0);
+        let p = command_params(&f);
+        assert_eq!((p["width"].clone(), p["height"].clone(), p["resolution"].clone()), (json!(2480), json!(3508), json!(150.0)));
+    }
+
+    #[test]
     fn new_document_depth_labels_and_tooltips_are_translated() {
         for lang in crate::i18n::Lang::all().filter(|lang| lang.code() != "en") {
             for (_, label, tooltip) in DEPTH_OPTIONS {
@@ -323,6 +380,25 @@ mod tests {
                 assert_ne!(crate::i18n::tr(lang, tooltip), *tooltip, "{}: {tooltip}", lang.code());
             }
         }
+    }
+
+    #[test]
+    fn clipboard_preset_comes_first_and_is_selected() {
+        // Nothing on the clipboard: the dialog opens as before.
+        let mut app = crate::PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let f = app.new_document_fields();
+        assert_eq!(f, crate::state::UiState::new_document_fields());
+        assert!(clipboard_preset(&f).is_none());
+        // Pixels copied in the app: the Clipboard preset takes their size, at 72 ppi, selected.
+        app.run("file.new", json!({"width": 200, "height": 100})).unwrap();
+        app.run("select.rect", json!({"x": 10, "y": 20, "width": 123, "height": 45})).unwrap();
+        app.run("edit.copy", json!({})).unwrap();
+        let f = app.new_document_fields();
+        assert_eq!(clipboard_preset(&f), Some((CLIPBOARD, 123, 45, 72.0)));
+        assert_eq!((f["width"].as_u64(), f["height"].as_u64(), f["__preset"].as_str()), (Some(123), Some(45), Some(CLIPBOARD)));
+        let p = command_params(&f);
+        assert!(p.get("__clipboard").is_none(), "file.new never sees the dialog's keys");
+        assert_eq!((p["width"].as_u64(), p["height"].as_u64(), p["resolution"].as_f64()), (Some(123), Some(45), Some(72.0)));
     }
 
     #[test]
@@ -435,6 +511,24 @@ mod tests {
             assert!(fields(&h).get("__preset").is_none(), "typing deselects the preset");
             enter(&mut h);
             assert_eq!(created(&h), (512, 512, 72.0));
+        }
+
+        #[test]
+        fn the_clipboard_card_is_first_and_creates_the_clipboard_size() {
+            let mut h = harness();
+            let mut f = fields(&h);
+            super::super::set_clipboard(&mut f, 640, 360);
+            set_fields(&mut h, f);
+            // Recent lists the Clipboard card first: three presets instead of two.
+            assert!(h.query_by_label_contains("BLANK DOCUMENT PRESETS (3)").is_some());
+            let heading = h.get_by_label_contains("BLANK DOCUMENT PRESETS").rect();
+            // Pick the second card, then the first (Clipboard) again.
+            click_at(&mut h, heading.left_bottom() + egui::vec2(80.0 + 172.0, 60.0));
+            assert_eq!(fields(&h).get("__preset").and_then(|v| v.as_str()), Some("Default Photoshop Size"));
+            click_at(&mut h, heading.left_bottom() + egui::vec2(80.0, 60.0));
+            assert_eq!(fields(&h).get("__preset").and_then(|v| v.as_str()), Some(super::super::CLIPBOARD));
+            enter(&mut h);
+            assert_eq!(created(&h), (640, 360, 72.0));
         }
 
         #[test]
