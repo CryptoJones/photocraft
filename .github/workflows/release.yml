@@ -262,8 +262,10 @@ jobs:
           repository: storytold/craft-fonts
           ref: ${{ env.CRAFT_FONTS_REF }}
           path: craft-fonts
-      - name: Install nfpm on host runner
+      - name: Install packaging tools on host runner
         run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsync
           curl -fsSL -o "$RUNNER_TEMP/nfpm.deb" \
             "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_amd64.deb"
           sudo dpkg -i "$RUNNER_TEMP/nfpm.deb"
@@ -291,14 +293,20 @@ jobs:
               packaging/linux/package.sh --formats "tar"
               chmod -R a+rwX dist/ target/
             '
-      - name: Package deb and rpm on host runner
+      - name: Package AppImage, deb and rpm on host runner
         run: |
           sudo chown -R "$(id -u)":"$(id -g)" target/ dist/
-          PHOTOCRAFT_ARCH=i686 packaging/linux/package.sh --skip-build --formats "deb rpm"
+          PHOTOCRAFT_ARCH=i686 packaging/linux/package.sh --skip-build --formats "appimage deb rpm"
       - name: Check the packages
         run: |
           dpkg-deb --info dist/release/*.deb
           dpkg-deb --contents dist/release/*.deb | grep -E 'usr/bin/photocraft$|metainfo|applications'
+          for appimage in dist/release/*.AppImage; do
+            chmod +x "$appimage"
+            # Update information (#349) is embedded, and the .zsync for delta updates sits beside it.
+            "$appimage" --appimage-updateinformation | grep -F 'gh-releases-zsync|'
+            test -s "$appimage.zsync"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: release-linux-i686

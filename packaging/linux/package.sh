@@ -37,9 +37,6 @@ case "$ARCH" in
   i686 | i386)
     ARCH=i686
     DEB_ARCH=i386
-    if [ "$FORMATS" = "appimage deb rpm tar" ]; then
-      FORMATS="deb rpm tar"
-    fi
     ;;
   *) echo "unsupported architecture $ARCH" >&2; exit 2 ;;
 esac
@@ -149,6 +146,10 @@ if has appimage; then
   fi
 fi
 
-"$STAGE/usr/bin/photocraft-cli" --version 2>/dev/null || true
+# Validate the CLI binary
+# i686 is compiled in a container, so skip validation for that architecture
+if [ "$ARCH" != "i686" ]; then
+  "$STAGE/usr/bin/photocraft-cli" --version
+fi
 echo "==> done"
 ls -lh "$DIST"
