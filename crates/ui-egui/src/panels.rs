@@ -36,7 +36,7 @@ const TOOL_SECTIONS: &[&[&[Tool]]] = &[
     &[
         &[Tool::Pen],
         &[Tool::Type, Tool::VerticalType],
-        &[Tool::PathSelection],
+        &[Tool::PathSelection, Tool::DirectSelection],
         &[Tool::Rectangle, Tool::EllipseShape, Tool::Triangle, Tool::Polygon, Tool::Line, Tool::CustomShape],
     ],
     &[&[Tool::Hand], &[Tool::Zoom]],
@@ -297,12 +297,17 @@ fn color_chips(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 
 // ----------------------------------------------------------------------------- title bar
 
+/// The app's top bar: brand mark, menus, the document title and the workspace controls. With
+/// [`PhotocraftApp::custom_titlebar`] (Windows and Linux) it is also the window's title bar, as in
+/// Photoshop on Windows: the caption buttons take its right end (`titlebar`).
 pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
+    let custom = app.custom_titlebar;
     let left = if cfg!(target_os = "macos") && app.integrated_titlebar { 78 } else { 10 };
-    egui::Panel::top("title_bar")
+    let right = if custom { 0 } else { 10 };
+    let bar = egui::Panel::top("title_bar")
         .exact_size(if t.pro { 32.0 } else { 38.0 })
-        .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin { left, right: 10, top: 0, bottom: 0 }))
+        .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin { left, right, top: 0, bottom: 0 }))
         .show(ui, |ui| {
             let full = ui.max_rect();
             // Only the free gap between the menus and the right-hand controls drags the window: a
@@ -324,33 +329,57 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             // whatever room is left between them, shortened or dropped rather than drawn over them.
             let (mut menus_right, mut controls_left) = (full.left(), full.right());
             ui.horizontal_centered(|ui| {
+                let side = if t.pro { 18.0 } else { 20.0 };
+                let (mark, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
+                crate::brand::paint_mark(ui, mark);
+                ui.add_space(6.0);
                 menus_right = crate::menus::menu_bar(app, ui);
-                controls_left = ui
-                    .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        let mut ws = app.ui.workspace.clone();
-                        let opts = [
-                            // Keys stay English (`apply_workspace` matches them); the dropdown
-                            // shows the labels in the UI language.
-                            ("Essentials".to_string(), tl!("Essentials")),
-                            ("Photography".to_string(), tl!("Photography")),
-                            ("Painting".to_string(), tl!("Painting")),
-                            ("Graphic and Web".to_string(), tl!("Graphic and Web")),
-                        ];
-                        if widgets::dropdown(ui, "workspace", &mut ws, &opts, 130.0) {
-                            app.ui.workspace = ws;
-                            crate::menus::apply_workspace(app);
-                        }
-                        if icons::button(ui, "search", 28.0, app.ui.palette_open, &crate::shortcuts::tip_label(app, "Search commands", "edit.search")).clicked()
-                        {
-                            app.ui.palette_open = !app.ui.palette_open;
-                        }
-                        let theme_icon = if t.dark() { "sun" } else { "moon" };
-                        if icons::button(ui, theme_icon, 28.0, false, tl!("Switch theme")).clicked() {
-                            let next = app.ui.theme.next();
-                            app.set_theme(ui.ctx(), next);
-                        }
-                        // Always one click away: the community Discord.
+                // The menu bar takes the whole row, so the right-hand group gets its own rect:
+                // from the menus to the bar's end, or to the caption buttons.
+                let right_edge = if custom { full.right() - crate::titlebar::WIDTH - 4.0 } else { full.right() };
+                let group = egui::Rect::from_min_max(egui::pos2((menus_right + TITLE_GAP).min(right_edge), full.top()), egui::pos2(right_edge, full.bottom()));
+                let mut group_ui = ui.new_child(egui::UiBuilder::new().max_rect(group).layout(egui::Layout::right_to_left(egui::Align::Center)));
+                controls_left = {
+                    let ui = &mut group_ui;
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let mut ws = app.ui.workspace.clone();
+                    let opts = [
+                        // Keys stay English (`apply_workspace` matches them); the dropdown
+                        // shows the labels in the UI language.
+                        ("Essentials".to_string(), tl!("Essentials")),
+                        ("Photography".to_string(), tl!("Photography")),
+                        ("Painting".to_string(), tl!("Painting")),
+                        ("Graphic and Web".to_string(), tl!("Graphic and Web")),
+                    ];
+                    // A narrow bar drops what is also in a menu, Discord first (below), then
+                    // the theme toggle (Preferences), then search (Edit › Search), and narrows
+                    // the switcher (Window › Workspace) before anything runs over.
+                    let room = ui.available_width();
+                    let icons_shown: u8 = if room >= WORKSPACE_MIN + 2.0 * ICON_SLOT {
+                        2
+                    } else if room >= WORKSPACE_MIN + ICON_SLOT {
+                        1
+                    } else {
+                        0
+                    };
+                    let ws_width = (room - f32::from(icons_shown) * ICON_SLOT - 6.0).clamp(WORKSPACE_MIN, 130.0);
+                    if room >= WORKSPACE_MIN && widgets::dropdown(ui, "workspace", &mut ws, &opts, ws_width) {
+                        app.ui.workspace = ws;
+                        crate::menus::apply_workspace(app);
+                    }
+                    if icons_shown >= 1
+                        && icons::button(ui, "search", 28.0, app.ui.palette_open, &crate::shortcuts::tip_label(app, "Search commands", "edit.search")).clicked()
+                    {
+                        app.ui.palette_open = !app.ui.palette_open;
+                    }
+                    let theme_icon = if t.dark() { "sun" } else { "moon" };
+                    if icons_shown >= 2 && icons::button(ui, theme_icon, 28.0, false, tl!("Switch theme")).clicked() {
+                        let next = app.ui.theme.next();
+                        app.set_theme(ui.ctx(), next);
+                    }
+                    // The community Discord, one click away while the bar has room for it
+                    // (narrow windows drop it first; it is also Help › Discord).
+                    if ui.available_width() >= DISCORD_ROOM {
                         let discord = egui::Button::image_and_text(
                             icons::image("message-square", 14.0, t.text_dim),
                             egui::RichText::new(tl!("Discord")).color(t.text_dim).size(12.0),
@@ -359,9 +388,9 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         if ui.add(discord).on_hover_text(format!("Join the ArtCraft Discord ({})", crate::links::DISCORD)).clicked() {
                             crate::links::open(app, ui.ctx(), crate::links::DISCORD);
                         }
-                        ui.min_rect().left()
-                    })
-                    .inner;
+                    }
+                    ui.min_rect().left()
+                };
             });
             ui.ctx().data_mut(|d| d.insert_temp(span_id, (menus_right, controls_left)));
             let font = theme::medium(13.0);
@@ -377,10 +406,18 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 ui.painter().galley(egui::pos2(menus_right + TITLE_GAP, full.center().y - g.size().y / 2.0), g, t.text_dim);
             }
         });
+    if custom {
+        crate::titlebar::caption_buttons(app, ui, bar.response.rect);
+    }
 }
 
 /// Minimum space kept between the window title and the menus or controls beside it.
 const TITLE_GAP: f32 = 16.0;
+/// Free room the title bar needs after its other controls to show the Discord button.
+const DISCORD_ROOM: f32 = 120.0;
+/// The workspace switcher's narrowest width, and one 28 pt title-bar icon with its spacing.
+const WORKSPACE_MIN: f32 = 90.0;
+const ICON_SLOT: f32 = 34.0;
 
 /// Left edge for a title `width` wide: centred on `center` when it fits between the menus
 /// (ending at `menus_right`) and the right-hand controls (starting at `controls_left`), else
@@ -1489,6 +1526,12 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 actions.push(done);
             }
         });
+    // A layer being dragged can also be dropped on the footer's Delete, New Layer and Group
+    // buttons (#736); read the drag before it ends.
+    let footer_drag = ctx.data(|d| d.get_temp::<u64>(egui::Id::new("layer-drag"))).map(|id| {
+        let in_selection = selection.iter().any(|s| s.0 == id);
+        (id, in_selection)
+    });
     // End any layer drag after every row has had a chance to accept the drop.
     if ctx.input(|i| i.pointer.any_released()) {
         ctx.data_mut(|d| d.remove::<u64>(egui::Id::new("layer-drag")));
@@ -1499,15 +1542,21 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if icons::button(ui, "trash", 26.0, false, tl!("Delete layer")).clicked() {
+            let trash = icons::button(ui, "trash", 26.0, false, tl!("Delete layer"));
+            if trash.clicked() {
                 actions.push(("layer.delete".into(), json!({})));
             }
-            if icons::button(ui, "square-plus", 26.0, false, &crate::shortcuts::tip_label(app, "Create a new layer", "layer.new.layer")).clicked() {
+            actions.extend(footer_drop(ui, &trash, footer_drag, "layer.delete"));
+            let new_layer = icons::button(ui, "square-plus", 26.0, false, &crate::shortcuts::tip_label(app, "Create a new layer", "layer.new.layer"));
+            if new_layer.clicked() {
                 actions.push(("layer.new.layer".into(), json!({})));
             }
-            if icons::button(ui, "folder", 26.0, false, tl!("Create a new group")).clicked() {
+            actions.extend(footer_drop(ui, &new_layer, footer_drag, "layer.duplicate"));
+            let group = icons::button(ui, "folder", 26.0, false, tl!("Create a new group"));
+            if group.clicked() {
                 actions.push(("layer.new.group".into(), json!({})));
             }
+            actions.extend(footer_drop(ui, &group, footer_drag, "layer.groupLayers"));
             let adj = icons::button(ui, "contrast", 26.0, false, tl!("Create new fill or adjustment layer"));
             egui::Popup::menu(&adj).show(|ui| {
                 ui.set_min_width(190.0);
@@ -1582,6 +1631,34 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             continue;
         }
         let _ = app.run(&id, p);
+    }
+}
+
+/// A layer row dragged onto a Layers panel footer button, as in Photoshop: onto Delete deletes it,
+/// onto New Layer duplicates it, onto New Group groups it. A row that is part of the selection
+/// carries the whole selection; any other row goes alone. Highlights the button while over it and
+/// returns the command on release.
+fn footer_drop(ui: &egui::Ui, button: &egui::Response, drag: Option<(u64, bool)>, command: &str) -> Option<(String, Value)> {
+    // Named for screen readers (and tests) after the command a drop runs.
+    button.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, footer_label(command)));
+    let (layer, in_selection) = drag?;
+    let p = ui.ctx().input(|i| i.pointer.interact_pos())?;
+    if !button.rect.contains(p) {
+        return None;
+    }
+    let t = Tokens::get(ui.ctx());
+    ui.painter().rect_stroke(button.rect, t.radius_sm, Stroke::new(2.0, t.accent), StrokeKind::Inside);
+    if !ui.ctx().input(|i| i.pointer.any_released()) {
+        return None;
+    }
+    Some((command.into(), if in_selection { json!({}) } else { json!({"layer": layer}) }))
+}
+
+fn footer_label(command: &str) -> &'static str {
+    match command {
+        "layer.delete" => tl!("Delete layer"),
+        "layer.duplicate" => tl!("Create a new layer"),
+        _ => tl!("Create a new group"),
     }
 }
 
@@ -1677,6 +1754,9 @@ fn layer_row(
     let row_h = if t.pro { 32.0 } else { 46.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click_and_drag());
     layer_drag_and_drop(ctx, ui, l, rect, &resp, actions);
+    if resp.drag_started() {
+        crate::layer_transfer::begin_from_panel(app, ctx, l.id);
+    }
     // Rows are painted: name them for screen readers and UI tests.
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, &l.name));
     // A row scrolled out of view only keeps its place (#125): a layout's hundreds of rows would
@@ -2415,13 +2495,7 @@ fn layer_drag_and_drop(ctx: &egui::Context, ui: &egui::Ui, l: &Layer, rect: Rect
     if dragged == l.id.0 {
         // Ghost label following the pointer.
         if let Some(p) = pointer {
-            let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("layer-drag-ghost"));
-            let painter = ctx.layer_painter(layer);
-            let g = painter.layout_no_wrap(l.name.clone(), egui::FontId::proportional(12.0), t.text);
-            let r = Rect::from_min_size(p + vec2(12.0, -10.0), g.size() + vec2(16.0, 8.0));
-            painter.rect_filled(r, t.radius_sm, t.card.gamma_multiply(0.95));
-            painter.rect_stroke(r, t.radius_sm, Stroke::new(1.0, t.accent), StrokeKind::Inside);
-            painter.galley(r.min + vec2(8.0, 4.0), g, t.text);
+            crate::layer_transfer::ghost(ctx, p, &l.name);
         }
         return;
     }
