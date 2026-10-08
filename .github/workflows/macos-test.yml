@@ -1,0 +1,48 @@
+name: macOS test DMG
+
+on:
+  push:
+    branches: [test/macos-report-issue]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-test-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Apple silicon test DMG
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      PHOTOCRAFT_BUILD_SHA: ${{ github.sha }}
+      MACOS_SIGN_IDENTITY: "-"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test-macos-aarch64
+      - name: Build and package
+        run: packaging/macos/package.sh --arch aarch64
+      - name: Verify package
+        run: packaging/macos/verify.sh --arch aarch64
+      - name: Calculate checksum
+        run: |
+          cd dist/release
+          shasum -a 256 ./*.dmg > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photocraft-macos-aarch64-test
+          path: |
+            dist/release/*.dmg
+            dist/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
