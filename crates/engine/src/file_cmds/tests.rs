@@ -407,10 +407,17 @@ fn selected_cube_validation_is_explicit_and_never_mutates_the_document() {
     let valid = s.execute("file.export.colorLookupTables", json!({"size": 3, "layers": [a]})).unwrap();
     assert_eq!(valid["layerCount"], 1);
     for params in [
-        json!({"size": 1}), json!({"size": 130}), json!({"size": 1.5}), json!({"size": -3}),
-        json!({"scope": "unknown"}), json!({"scope": "selected", "layers": [a]}),
-        json!({"layers": []}), json!({"layers": 42}), json!({"layers": [a, a]}),
-        json!({"layers": [a, "oops"]}), json!({"layers": [u64::MAX]}),
+        json!({"size": 1}),
+        json!({"size": 130}),
+        json!({"size": 1.5}),
+        json!({"size": -3}),
+        json!({"scope": "unknown"}),
+        json!({"scope": "selected", "layers": [a]}),
+        json!({"layers": []}),
+        json!({"layers": 42}),
+        json!({"layers": [a, a]}),
+        json!({"layers": [a, "oops"]}),
+        json!({"layers": [u64::MAX]}),
         json!({"layers": [raster]}),
     ] {
         assert!(s.execute("file.export.colorLookupTables", params.clone()).is_err(), "{params}");
