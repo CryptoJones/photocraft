@@ -412,6 +412,7 @@ fn selected_cube_validation_is_explicit_and_never_mutates_the_document() {
         json!({"size": 1.5}),
         json!({"size": -3}),
         json!({"scope": "unknown"}),
+        json!({"scope": 42}),
         json!({"scope": "selected", "layers": [a]}),
         json!({"layers": []}),
         json!({"layers": 42}),
