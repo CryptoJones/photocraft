@@ -28,4 +28,5 @@ display_name = "Gert Pellin"
 sync_github_name = false
 
 [people.mighty-programmer]
+real_name = "John Pantrakis"
 sync_github_name = true
