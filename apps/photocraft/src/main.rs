@@ -221,6 +221,14 @@ fn main() -> eframe::Result {
     // Brush presets load in the background; the app attaches them when they arrive.
     let presets = services::presets_dir().map(photocraft_engine::preset_store::open_dir_async);
     let mut options = native_options();
+    // winit 0.30 has no file drag-and-drop on Wayland: run on Xwayland when it's there.
+    #[cfg(target_os = "linux")]
+    if linux_libs::use_xwayland(|k| std::env::var(k).ok()) {
+        options.event_loop_builder = Some(Box::new(|builder| {
+            use winit::platform::x11::EventLoopBuilderExtX11;
+            builder.with_x11();
+        }));
+    }
     // eframe restores the saved window layout before our code runs; drop values that would crash it.
     ui_state::sanitize(options.persistence_path.as_deref());
     // Crash-safe GPU startup (#4): pick the backend (a marker left by a start that died in the

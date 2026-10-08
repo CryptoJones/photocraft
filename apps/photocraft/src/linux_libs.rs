@@ -39,6 +39,14 @@ pub fn session_from_env(var: impl Fn(&str) -> Option<String>) -> DisplaySession 
     }
 }
 
+/// Whether to run on X11 through Xwayland although the session is Wayland: winit 0.30 has no
+/// file drag-and-drop on Wayland, so we use Xwayland whenever `DISPLAY` is set.
+/// `PHOTOCRAFT_WAYLAND=1` keeps native Wayland (without drag-and-drop).
+pub fn use_xwayland(var: impl Fn(&str) -> Option<String>) -> bool {
+    let native_wayland = var("PHOTOCRAFT_WAYLAND").is_some_and(|v| !v.is_empty() && v != "0");
+    !native_wayland && session_from_env(&var) == DisplaySession::Wayland && var("DISPLAY").is_some_and(|v| !v.is_empty())
+}
+
 /// A runtime-loaded library and the package that provides it on each distro family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Lib {
@@ -263,7 +271,8 @@ pub fn preflight() -> Result<(), String> {
     if std::env::var_os("PHOTOCRAFT_SKIP_LIB_CHECK").is_some_and(|v| !v.is_empty() && v != "0") {
         return Ok(());
     }
-    let session = session_from_env(|k| std::env::var(k).ok());
+    let var = |k: &str| std::env::var(k).ok();
+    let session = if use_xwayland(var) { DisplaySession::X11 } else { session_from_env(var) };
     if session == DisplaySession::None {
         return Ok(());
     }
@@ -298,6 +307,16 @@ mod tests {
         assert_eq!(session_from_env(env(&[("WAYLAND_DISPLAY", "wayland-0"), ("DISPLAY", ":0")])), DisplaySession::Wayland);
         assert_eq!(session_from_env(env(&[("WAYLAND_SOCKET", "3")])), DisplaySession::Wayland);
         assert_eq!(session_from_env(env(&[("WAYLAND_DISPLAY", ""), ("DISPLAY", ":99")])), DisplaySession::X11);
+    }
+
+    #[test]
+    fn wayland_with_xwayland_runs_on_x11_unless_opted_out() {
+        assert!(use_xwayland(env(&[("WAYLAND_DISPLAY", "wayland-0"), ("DISPLAY", ":0")])));
+        assert!(!use_xwayland(env(&[("WAYLAND_DISPLAY", "wayland-0"), ("DISPLAY", ":0"), ("PHOTOCRAFT_WAYLAND", "1")])));
+        assert!(use_xwayland(env(&[("WAYLAND_DISPLAY", "wayland-0"), ("DISPLAY", ":0"), ("PHOTOCRAFT_WAYLAND", "0")])));
+        // No Xwayland: stay on Wayland. Plain X11 needs no override.
+        assert!(!use_xwayland(env(&[("WAYLAND_DISPLAY", "wayland-0")])));
+        assert!(!use_xwayland(env(&[("DISPLAY", ":0")])));
         assert_eq!(session_from_env(env(&[("DISPLAY", "")])), DisplaySession::None);
         assert_eq!(session_from_env(env(&[])), DisplaySession::None);
     }
