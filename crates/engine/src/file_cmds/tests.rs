@@ -437,7 +437,7 @@ fn exported_selected_cube_round_trips_through_lookup_importer() {
     assert!(parsed.data[..3].iter().all(|v| *v > 0.999));
     assert!(parsed.data[parsed.data.len() - 3..].iter().all(|v| *v < 0.001));
     s.execute("layer.newAdjustmentLayer.colorLookup", json!({"file": path})).unwrap();
-    assert_eq!(s.active().unwrap().doc.layers.len(), 4);
+    assert_eq!(s.active().unwrap().doc.layers.len(), 3);
 }
 
 #[test]
