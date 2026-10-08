@@ -11,10 +11,7 @@ use crate::theme::Tokens;
 /// Validate a persisted blending choice before restoring it from Preferences.
 pub fn valid(key: &str, v: &Value) -> bool {
     match key {
-        "mode" => v
-            .as_str()
-            .and_then(photocraft_engine::commands::blend_from_str)
-            .is_some_and(|m| m != photocraft_color::BlendMode::PassThrough),
+        "mode" => v.as_str().and_then(photocraft_engine::commands::blend_from_str).is_some_and(|m| m != photocraft_color::BlendMode::PassThrough),
         "opacity" => v.as_f64().is_some_and(|o| o.is_finite() && (0.0..=100.0).contains(&o)),
         "preserveTransparency" => v.is_boolean(),
         _ => false,
