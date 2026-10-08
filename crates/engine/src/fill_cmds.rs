@@ -180,13 +180,7 @@ pub(crate) fn blend_color_mask(
     opacity: f32,
     preserve_transparency: bool,
 ) {
-    blend_into(
-        surf,
-        area,
-        &Source::Color(color),
-        Some(coverage),
-        Blend { mode, opacity, keep_alpha: preserve_transparency, restore: false },
-    );
+    blend_into(surf, area, &Source::Color(color), Some(coverage), Blend { mode, opacity, keep_alpha: preserve_transparency, restore: false });
 }
 
 /// The selection filled from its surroundings (`photocraft_algo::content_aware`), as straight
