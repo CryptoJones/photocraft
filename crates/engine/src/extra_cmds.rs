@@ -126,10 +126,13 @@ fn stroke(s: &mut Session, p: &Value) -> Result<Value> {
     };
     let opacity = match p.get("opacity") {
         None | Some(Value::Null) => 1.0,
-        Some(v) => (v.as_f64().filter(|x| x.is_finite()).ok_or_else(|| EngineError::BadParams {
-            cmd: "edit.stroke".into(),
-            msg: "opacity must be a finite number from 0 to 100".into(),
-        })?.clamp(0.0, 100.0) / 100.0) as f32,
+        Some(v) => {
+            (v.as_f64()
+                .filter(|x| x.is_finite())
+                .ok_or_else(|| EngineError::BadParams { cmd: "edit.stroke".into(), msg: "opacity must be a finite number from 0 to 100".into() })?
+                .clamp(0.0, 100.0)
+                / 100.0) as f32
+        }
     };
     let preserve = match p.get("preserveTransparency") {
         None | Some(Value::Null) => false,
