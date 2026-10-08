@@ -2529,5 +2529,13 @@ cameraRaw	Whites	Brancos
 	Variations…	Variações…
 	Composite	Imagem composta
 	Prompt	Comando de texto
+
+# Layer Style dialog: style presets and per-effect defaults
+	Style {name} saved	Estilo {name} salvo
+	Make Default	Definir como padrão
+	Reset to Default	Restaurar padrão
 	Couldn't place {name}: {error}	Não foi possível inserir {name}: {error}
 	Full-resolution preview unavailable	Pré-visualização em resolução total indisponível
+	Magnetic Lasso Tool	Ferramenta Laço magnético
+	Frequency	Frequência
+	Use tablet pressure to change pen width	Usar a pressão da mesa digitalizadora para alterar a largura da caneta
