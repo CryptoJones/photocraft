@@ -42,7 +42,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 ui.label(RichText::new("Sign in with ChatGPT").font(crate::theme::semibold(16.0)).color(t.text));
                 ui.label("Connect your ChatGPT account through OpenAI in your system browser.");
                 ui.add_space(6.0);
-                ui.label(RichText::new("This build connects your account but sends no AI requests. Image generation is unavailable. Background removal and object selection use local algorithms or your downloaded models.").color(t.text_dim));
+                ui.label(RichText::new("This build connects your account but sends no AI requests. Generative image features are coming soon. Background removal and object selection use local algorithms or your downloaded models.").color(t.text_dim));
                 ui.add_space(8.0);
                 if let Some(a) = active {
                     ui.label(format!("Connected: {}", a.label));

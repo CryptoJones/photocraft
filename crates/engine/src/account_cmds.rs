@@ -251,6 +251,8 @@ mod tests {
         let mut s = Session::new();
         s.chatgpt_accounts = Some(Arc::new(Fake::new()));
         assert_eq!(s.execute("account.chatgpt.signIn", json!({})).unwrap()["active"], "saved");
+        assert_eq!(s.execute("generative.capabilities", json!({})).unwrap()["available"], false);
+        assert!(!s.is_enabled("generative.run"), "connecting an account must not enable unsupported image generation");
         s.execute("file.new", json!({"width":16,"height":16})).unwrap();
         s.execute("layer.new.layer", json!({"name":"Photo"})).unwrap();
         s.execute("select.rect", json!({"x":2,"y":2,"width":8,"height":8})).unwrap();

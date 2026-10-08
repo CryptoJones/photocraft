@@ -43,6 +43,7 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("window.toggle.properties", "Properties", &["Window"], None),
     ("window.contextualTaskbar", "Contextual Task Bar", &["Window"], None),
     ("window.chatgptAccount", "ChatGPT Account…", &["Window"], None),
+    ("window.generativeAI", "Generative AI…", &["Window"], None),
     ("window.toggle.color", "Color", &["Window"], Some("F6")),
     ("window.toggle.brushSettings", "Brush Settings", &["Window"], Some("F5")),
     ("window.toggle.navigator", "Navigator", &["Window"], None),
@@ -311,6 +312,14 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
             app.ui.chatgpt_account_open = true;
             Ok(json!({"open":true}))
         }
+        "window.generativeAI" => {
+            let operation = match params.get("operation") {
+                Some(v) => serde_json::from_value(v.clone()).map_err(|_| "operation must be generate, extend, reframe or editSelection")?,
+                None => photocraft_engine::generative_cmds::Operation::Generate,
+            };
+            crate::generative_ui::open(app, operation);
+            Ok(json!({"open":true,"operation":operation,"status":"comingSoon"}))
+        }
         "edit.search" => {
             app.ui.palette_open = !app.ui.palette_open;
             Ok(Value::Null)
@@ -510,7 +519,8 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
         | "help.systemInfo"
         | "edit.search"
         | "window.contextualTaskbar"
-        | "window.chatgptAccount" => true,
+        | "window.chatgptAccount"
+        | "window.generativeAI" => true,
         i if i.starts_with("file.openRecent.") => true,
         i if crate::links::url_for(i).is_some() => true,
         i if i.starts_with("window.theme.") => true,

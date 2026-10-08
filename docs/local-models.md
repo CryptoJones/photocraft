@@ -38,6 +38,10 @@ cargo run --release -p photocraft --features local-ml -- photo.png
    Removal replaces the layer mask as one undoable step and preserves the pixels or Smart
    Object source. It respects locks and the same Subject / background removal preference.
 
+The bar's **…** menu also opens the [coming-soon generative draft forms](generative-editing.md).
+With a selection, **Edit object · Coming soon** opens its floating prompt form. These forms
+perform local validation only; they do not change the downloaded selection models or generate images.
+
 Remove Background replaces the layer's mask, converts a Background to a normal layer when
 needed, and clears the selection in one undo step. Source pixels are preserved. Its `refine`
 option affects the classical method only: applying classical refinement to BiRefNet's alpha

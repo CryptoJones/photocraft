@@ -6,9 +6,10 @@ native integration, built with `chatgpt`; ordinary and web builds do not initial
 OpenAI preview currently requires an eligible ChatGPT account (see the [preview
 limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)).
 
-**This change provides account connection only.** It makes no inference requests and consumes
-no ChatGPT plan usage. Image generation, extension, reframing and prompted object edits are
-not implemented: the documented ChatGPT-plan preview excludes image generation. Remove
+**This change provides account connection and coming-soon generative draft interfaces.** It makes no inference requests and consumes
+no ChatGPT plan usage. Image generation, extension, reframing and prompted object edits have
+editable local forms, but generation is disabled: the documented ChatGPT-plan preview excludes image generation. See
+[Generative editing drafts](generative-editing.md) for what is implemented and what remains. Remove
 Background, Select Subject and Object Selection continue to run on the device, with the
 classical methods or separately downloaded models. Signing in does not change those methods.
 

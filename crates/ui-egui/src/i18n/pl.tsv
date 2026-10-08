@@ -3203,3 +3203,8 @@ cameraRaw	Roughness	Chropowatość
 	Remove download	Usuń pobrany model
 	Select Subject and Remove Background; detailed, soft edges	Zaznacz temat i Usuń tło; szczegółowe, miękkie krawędzie
 	Object Selection; drag a box around the object	Zaznaczanie obiektów; przeciągnij prostokąt wokół obiektu
+
+# Contextual viewport actions and optional account settings
+	Contextual Task Bar	Kontekstowy pasek zadań
+	ChatGPT Account…	Konto ChatGPT…
+	Generative AI…	Generatywna AI…

@@ -62,6 +62,7 @@ pub mod file_ui;
 pub mod fill_ui;
 pub mod filter_dialog;
 pub mod gallery_ui;
+pub mod generative_ui;
 pub mod gpu_canvas;
 pub mod gpu_status;
 pub mod gradient_ui;
@@ -1118,6 +1119,7 @@ impl eframe::App for PhotocraftApp {
         panels::properties_window(self, &ctx);
         contextual_taskbar::show(self, &ctx);
         account_ui::show(self, &ctx);
+        generative_ui::show(self, &ctx);
         brush_panel::window(self, &ctx);
         preset_panels::windows(self, &ctx);
         type_panels_ui::windows(self, &ctx);

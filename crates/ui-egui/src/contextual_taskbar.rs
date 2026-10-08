@@ -35,7 +35,7 @@ fn normalized(viewport: Rect, size: Vec2, at: Pos2) -> [f32; 2] {
 }
 
 pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
-    if !app.ui.contextual_taskbar.visible || app.ui.view.hides_chrome() || app.jobs.focus.is_some() {
+    if !app.ui.contextual_taskbar.visible || app.ui.view.hides_chrome() || app.jobs.focus.is_some() || app.ui.generative.open {
         return;
     }
     let Some(st) = app.session.active() else { return };
@@ -43,6 +43,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
     if !matches!(layer.content, photocraft_doc::LayerContent::Raster(_) | photocraft_doc::LayerContent::Smart(_)) {
         return;
     }
+    let has_selection = st.doc.selection.is_some();
     let enabled = menus::is_enabled(app, "layer.removeBackground");
     let viewport = app.last_canvas_rect.intersect(ctx.content_rect()).shrink(10.0);
     if viewport.width() < 220.0 || viewport.height() < 60.0 {
@@ -54,6 +55,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let mut remove = false;
     let mut movement = Vec2::ZERO;
+    let mut generative = None;
     let response = Area::new(Id::new("contextual-taskbar")).order(Order::Foreground).fixed_pos(at).movable(false).constrain_to(viewport).show(ctx, |ui| {
         egui::Frame::new().fill(t.card).stroke(Stroke::new(1.0, t.card_border)).corner_radius(t.radius).inner_margin(8).show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -70,6 +72,20 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                     .on_hover_text("Hide the background with an editable layer mask. Uses the subject model selected in Preferences › Integrations.")
                     .clicked();
                 ui.menu_button("…", |ui| {
+                    use photocraft_engine::generative_cmds::Operation;
+                    for operation in [Operation::Generate, Operation::Extend, Operation::Reframe, Operation::EditSelection] {
+                        if ui
+                            .add_enabled(
+                                operation != Operation::EditSelection || has_selection,
+                                egui::Button::new(format!("{} · Coming soon", operation.label())),
+                            )
+                            .clicked()
+                        {
+                            generative = Some(operation);
+                            ui.close();
+                        }
+                    }
+                    ui.separator();
                     if ui.button("Reset position").clicked() {
                         app.ui.contextual_taskbar.position = None;
                         ui.close();
@@ -82,6 +98,9 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 .response
                 .on_hover_text("Contextual task bar options");
             });
+            if has_selection && widgets::secondary_button(ui, "Edit object · Coming soon", 200.0).clicked() {
+                generative = Some(photocraft_engine::generative_cmds::Operation::EditSelection);
+            }
         });
     });
     let rect = response.response.rect;
@@ -91,6 +110,12 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         ctx.request_repaint();
     }
     if remove && let Err(error) = menus::invoke(app, ctx, "layer.removeBackground", json!({})) {
+        app.ui.status = error;
+        app.ui.status_error = true;
+    }
+    if let Some(operation) = generative
+        && let Err(error) = menus::invoke(app, ctx, "window.generativeAI", json!({"operation":operation}))
+    {
         app.ui.status = error;
         app.ui.status_error = true;
     }
@@ -127,6 +152,14 @@ mod tests {
         h.state_mut().session.execute("select.rect", json!({"x":10,"y":20,"width":80,"height":60})).unwrap();
         h.run_steps(8);
         assert!(h.query_by_label("Remove Background").is_some());
+        h.get_by_label("Edit object · Coming soon").click();
+        h.run_steps(8);
+        assert_eq!(h.state().ui.generative.operation, photocraft_engine::generative_cmds::Operation::EditSelection);
+        assert!(h.query_by_label("Generate · Coming soon").is_some());
+        assert!(h.query_by_label("Drag contextual task bar").is_none(), "the bar must not cover the prompt form's controls");
+        h.state_mut().ui.generative.open = false;
+        h.run_steps(4);
+        assert!(h.query_by_label("Drag contextual task bar").is_some());
         h.state_mut().session.execute("layer.smartObjects.convertToSmartObject", json!({})).unwrap();
         h.run_steps(8);
         assert!(h.query_by_label("Remove Background").is_some());
