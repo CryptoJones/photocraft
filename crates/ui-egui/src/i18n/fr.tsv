@@ -515,6 +515,7 @@
 	Flame…	Flamme…
 	Lens Flare…	Reflet d'objectif…
 	Lighting Effects…	Effets d'éclairage…
+	Relight…	Rééclairage…
 	Picture Frame…	Cadre d'image…
 	Tree…	Arbre…
 	Sharpen	Netteté
@@ -888,8 +889,6 @@
 	Create new pattern from the selection	Créer un nouveau motif à partir de la sélection
 	Create new shape from the current path	Créer une nouvelle forme à partir du tracé actif
 	Create new snapshot	Créer un nouvel instantané
-	Create new style (from the selected type)	Créer un nouveau style (d'après le texte sélectionné)
-	Create new style from the selected layer	Créer un nouveau style d'après le calque sélectionné
 	Create new tool preset	Créer un nouveau préréglage d'outil
 	Crop Factor	Facteur de recadrage
 	Ctrl	Ctrl
@@ -950,6 +949,8 @@
 	Divide…	Diviser…
 	Document	Document
 	Don't Save	Ne pas enregistrer
+	No	Non
+	Yes	Oui
 	Done	Terminé
 	Dots	Points
 	Drag a rectangle around the object	Tracez un rectangle autour de l'objet
@@ -1766,6 +1767,7 @@
 	Light gray	Gris clair
 	Line	Ligne
 	Lines	Lignes
+	Lossless	Sans perte
 	Lowercase extension	Extension en minuscules
 	Maximize psd compatibility	Maximiser la compatibilité PSD
 	Medium gray	Gris moyen
@@ -2340,7 +2342,6 @@
 	Auto Erase	Effacement automatique
 	Color Adaptation	Adaptation des couleurs
 	Preserve Transparency	Préserver la transparence
-	New Style…	Nouveau style…
 	shortcut	raccourci
 	Go to Layer	Aller au calque
 	Saved	Enregistré
@@ -2497,3 +2498,63 @@ cameraRaw	Blending	Fusion
 	5 x 5	5 × 5
 	Grid:	Grille :
 	Edit Type	Modifier le texte
+
+
+	New Style…	Nouveau style…
+	Style {name} saved	Style {name} enregistré
+
+	Create new style (from the selected type)	Créer un nouveau style (à partir du texte sélectionné)
+	Create new style from the selected layer	Créer un nouveau style à partir du calque sélectionné
+
+	Make Default	Définir par défaut
+	Reset to Default	Rétablir par défaut
+	Full-resolution preview unavailable	Aperçu en pleine résolution indisponible
+	No patterns	Aucun motif
+	Enable {name}	Activer {name}
+	Hold Alt while drawing for straight segments	Maintenez Alt en dessinant pour des segments droits
+	Drag or click polygon points · hold Alt during lasso for straight segments · {add} add · {sub} before drawing subtracts	Faites glisser ou cliquez des points de polygone · maintenez Alt pendant le lasso pour des segments droits · {add} ajouter · {sub} avant de dessiner soustrait
+	Extend	Extension
+	Structure:	Structure :
+	Content-Aware Move Tool	Outil Déplacement selon le contenu
+	TIFF Options	Options TIFF
+	Including layers will increase file size.	L'inclusion des calques augmentera la taille du fichier.
+	Discard Layers and Save a Copy	Supprimer les calques et enregistrer une copie
+	Don't show again	Ne plus afficher
+	Save failed: {error}	Échec de l'enregistrement : {error}
+	Save cancelled	Enregistrement annulé
+	Couldn't place {name}: {error}	Impossible d'importer {name} : {error}
+	Magnetic Lasso Tool	Outil Lasso magnétique
+	Frequency	Fréquence
+	Use tablet pressure to change pen width	Utiliser la pression de la tablette pour modifier la largeur de la plume
+
+# About ▸ Contributors / Models (credits, craftrules standards/contributors.md)
+	About	À propos
+	Contributors	Contributeurs
+	Models	Modèles
+	Sort	Trier
+	Username	Nom d'utilisateur
+	Display name	Nom affiché
+	Real name	Nom réel
+	Reverse the order	Inverser l'ordre
+	Grab bag	Vrac
+	Table	Tableau
+	Name (A–Z)	Nom (A–Z)
+	Merged PRs	PR fusionnées
+	Commits	Commits
+	Lines added	Lignes ajoutées
+	Lines deleted	Lignes supprimées
+	Line delta	Solde de lignes
+	Binary assets added	Fichiers binaires ajoutés
+	Binary assets removed	Fichiers binaires supprimés
+	First commit	Premier commit
+	First	Premier
+	Last commit	Dernier commit
+	Last	Dernier
+	Contributors: {contributors} · Commits: {commits}	Contributeurs : {contributors} · Commits : {commits}
+	No contributor data was built into this copy.	Aucune donnée de contributeurs n'est incluse dans cette copie.
+	No model credits were built into this copy.	Aucun crédit de modèle n'est inclus dans cette copie.
+	Company	Société
+	Version	Version
+	% of all commits	% de tous les commits
+	Lines +/−	Lignes +/−
+	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login} : {prs} PR, {commits} commits, +{added} / −{deleted} lignes (Δ {delta}), +{binAdded} / −{binDeleted} fichiers binaires, {first} – {last}

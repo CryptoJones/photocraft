@@ -23,15 +23,16 @@ pub mod orientation;
 pub mod web;
 
 pub use crate::codecs::png::encode_indexed as encode_png_indexed;
+pub use crate::codecs::tiff::{PhotoshopTags as TiffPhotoshopTags, photoshop_tags as tiff_photoshop_tags, writes_little_endian as tiff_writes_little_endian};
 pub use crate::error::CodecError;
 pub use crate::fidelity::{FidelityWarning, fidelity_warnings, fidelity_warnings_with};
 pub use crate::format::{ASYMMETRIC_EXCEPTIONS, Format, FormatCaps, caps, detect, from_extension};
-pub use crate::image::{ChannelLayout, DecodeWarning, Image, Metadata, SampleType};
+pub use crate::image::{ChannelLayout, DecodeWarning, DeepChannel, DeepImage, Image, Metadata, SampleType};
 pub use crate::options::{DecodeOptions, EncodeOptions, ExrCompression, Limits, PngCompression, TiffCompression};
 pub use crate::orientation::{exif_orientation, upright_exif, upright_xmp};
 pub use half::f16;
 
-use crate::codecs::{exr, jpeg, png, pnm, tiff, via_image, webp};
+use crate::codecs::{exr, heif, jpeg, png, pnm, tiff, via_image, webp};
 
 /// Detect the format and decode with default [`Limits`].
 pub fn decode(bytes: &[u8]) -> Result<Image, CodecError> {
@@ -51,7 +52,8 @@ pub fn decode_as(format: Format, bytes: &[u8]) -> Result<Image, CodecError> {
 
 /// Decode as a specific format.
 pub fn decode_as_with(format: Format, bytes: &[u8], opts: &DecodeOptions) -> Result<Image, CodecError> {
-    if !caps(format).read {
+    // HEIF without the `heif` feature: its decoder stub says what is missing from this build.
+    if !caps(format).read && format != Format::Heif {
         return Err(CodecError::unsupported(format, "decoding is not available for this format"));
     }
     let l = &opts.limits;
@@ -62,6 +64,7 @@ pub fn decode_as_with(format: Format, bytes: &[u8], opts: &DecodeOptions) -> Res
         Format::WebP => webp::decode(bytes, l),
         Format::Pnm => pnm::decode(bytes, l),
         Format::OpenExr => exr::decode(bytes, l),
+        Format::Heif => heif::decode(bytes, l, opts.keep_orientation),
         Format::Gif | Format::Bmp | Format::Tga | Format::Ico | Format::Qoi | Format::Hdr | Format::Avif => via_image::decode(format, bytes, l),
     }?;
     // Final guard for decoders whose header we could not pre-inspect.
@@ -70,9 +73,11 @@ pub fn decode_as_with(format: Format, bytes: &[u8], opts: &DecodeOptions) -> Res
         return Ok(img);
     }
     // Turn the pixels upright, like Photoshop: a TIFF records it in its own IFD0, the others
-    // in their EXIF block. The metadata is rewritten to Orientation = 1 on the way.
+    // in their EXIF block. The metadata is rewritten to Orientation = 1 on the way. HEIF keeps it
+    // in its container, and its decoder has already applied it.
     let o = match format {
         Format::Tiff => exif_orientation(bytes),
+        Format::Heif => 1,
         _ => img.meta.exif.as_deref().map_or(1, exif_orientation),
     };
     // Orientations 5–8 swap width and height: with asymmetric limits a stored landscape
@@ -81,6 +86,16 @@ pub fn decode_as_with(format: Format, bytes: &[u8], opts: &DecodeOptions) -> Res
         l.check(img.height(), img.width(), img.layout(), img.sample_type())?;
     }
     img.oriented(o)
+}
+
+/// Deep OpenEXR samples (`deepscanline`/`deeptile`): the structured per-pixel sample lists
+/// (colour, alpha and Z per sample), for callers that composite deep data themselves —
+/// [`decode_as_with`] instead flattens a deep file into a normal [`Image`] with a
+/// [`DecodeWarning::DeepFlattened`]. `Err(Unsupported)` when the file has no deep part.
+pub fn decode_deep_exr(bytes: &[u8], limits: &Limits) -> Result<DeepImage, CodecError> {
+    let mut cur = std::io::Cursor::new(bytes);
+    let meta = ::exr::meta::MetaData::read_from_buffered(&mut cur, false).map_err(|e| CodecError::malformed(Format::OpenExr, e))?;
+    codecs::deep_exr::decode_deep(&meta, bytes, limits)
 }
 
 /// Encode `image` as `format`. Conversions follow the same plan that
@@ -106,6 +121,7 @@ pub fn encode(image: &Image, format: Format, opts: &EncodeOptions) -> Result<Vec
         Format::WebP => webp::encode(image, plan, opts),
         Format::Pnm => pnm::encode(image, plan, opts),
         Format::OpenExr => exr::encode(image, plan, opts),
+        Format::Heif => Err(CodecError::unsupported(format, "encoding is not available in this build")),
         Format::Gif | Format::Bmp | Format::Tga | Format::Ico | Format::Qoi | Format::Hdr | Format::Avif => via_image::encode(format, image, plan, opts),
     }
 }

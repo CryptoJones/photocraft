@@ -2031,6 +2031,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "heic-rs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adf9dde634bb6d5b718bacd01bef80192f2334306b2f785519a0136cca7b9618"
+dependencies = [
+ "rayon",
+]
+
+[[package]]
 name = "hermit-abi"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3419,6 +3428,9 @@ dependencies = [
  "egui",
  "fmv-macos-events",
  "log",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "open",
  "photocraft-automation",
  "photocraft-codecs",
@@ -3436,6 +3448,8 @@ dependencies = [
  "ron",
  "serde_json",
  "winresource",
+ "winsafe",
+ "x11rb",
 ]
 
 [[package]]
@@ -3503,6 +3517,7 @@ dependencies = [
  "image",
  "image-webp",
  "jpeg-encoder",
+ "photocraft-heif",
  "png 0.18.1",
  "proptest",
  "rayon",
@@ -3616,6 +3631,13 @@ dependencies = [
  "pollster 1.0.1",
  "rayon",
  "wgpu",
+]
+
+[[package]]
+name = "photocraft-heif"
+version = "0.3.0"
+dependencies = [
+ "heic-rs",
 ]
 
 [[package]]
@@ -3772,6 +3794,8 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "sys-locale",
+ "toml",
 ]
 
 [[package]]
@@ -4930,6 +4954,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "sys-locale"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -6226,6 +6259,12 @@ dependencies = [
  "toml",
  "version_check",
 ]
+
+[[package]]
+name = "winsafe"
+version = "0.0.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ef0ffc427f045c0cc9ebffd6f4f91153dcd2a1547b5c3c29ee3f541e16e95c6"
 
 [[package]]
 name = "winx"

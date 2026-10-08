@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod actions_cmds;
 pub mod adjust_cmds;
 pub mod adjust_params;
 pub mod align_cmds;
@@ -21,6 +22,7 @@ pub mod channel_cmds;
 pub mod color_cmds;
 pub mod commands;
 pub mod comps_cmds;
+pub mod cutout_cmds;
 pub mod display_color;
 pub mod distort_cmds;
 pub mod edit_cmds;
@@ -32,6 +34,7 @@ pub mod fill_cmds;
 pub mod fill_key_cmds;
 pub mod filters;
 pub mod filters_ext;
+pub mod float_cmds;
 mod frame_cmds;
 pub mod fx_view_cmds;
 pub mod gallery_cmds;
@@ -45,6 +48,7 @@ pub mod layer_multi_cmds;
 pub mod layer_nav_cmds;
 pub mod layer_style;
 pub mod lens_cmds;
+pub mod magnetic_cmds;
 pub mod mask_view_cmds;
 mod migrate_cmds;
 pub mod mode_cmds;
@@ -75,6 +79,7 @@ pub mod symmetry_cmds;
 mod timeline_cmds;
 pub mod transform_cmds;
 mod trap_cmds;
+pub mod type_caret_cmds;
 pub mod type_cmds;
 pub mod type_extra_cmds;
 pub mod type_spell_cmds;
@@ -163,6 +168,12 @@ pub struct DocState {
     /// Layers panel: layers whose effects list is collapsed under their row (the fx triangle;
     /// view state, not history). Effects lists start open.
     pub fx_collapsed: Vec<LayerId>,
+    /// ⌥-click on a layer's eye (`layer.showOnly`): the layer shown alone and every layer's
+    /// visibility before, so the next ⌥-click restores it (view state, not history).
+    pub show_only: Option<(LayerId, Vec<(LayerId, bool)>)>,
+    /// A floating selection (`select.float`): the cut piece and where it floats, until dropped
+    /// (view state: the document is unchanged until `select.drop`).
+    pub floating: Option<float_cmds::Floating>,
 }
 
 impl DocState {
@@ -185,6 +196,8 @@ impl DocState {
             isolated_layers: Vec::new(),
             symmetry_path: None,
             fx_collapsed: Vec::new(),
+            show_only: None,
+            floating: None,
         }
     }
     /// The selected layers in bottom-to-top document order, always including the active layer.
@@ -283,10 +296,28 @@ pub struct Session {
     /// event log (see `automate_cmds`).
     pub file_menu: automate_cmds::FileMenuState,
     /// Persistent brush preset store (desktop only; `None` keeps presets session-only, as in
-    /// headless and test sessions). See `preset_store`.
+    /// headless and test sessions). See `preset_store`. The same store holds the Actions list.
     pub preset_store: Option<preset_store::PresetStore>,
+    /// Window › Actions. The list persists with the preset store when one is attached.
+    pub actions: actions_cmds::ActionState,
+    /// Per-step gate for `actions.play`. Untrusted sessions (MCP, the control channel) install
+    /// the same check a top-level command sees. `None` runs every step, which is what a local
+    /// UI and `photocraft-cli run` do.
+    pub authorize: Option<fn(&str, &serde_json::Value) -> Result<()>>,
     /// Background jobs (see [`jobs`]).
     jobs: jobs::Jobs,
+}
+
+/// Move item `i` of `v` to position `to`, clamped to the end. Returns where it went; `None` when
+/// `i` is out of range.
+pub fn move_item<T>(v: &mut Vec<T>, i: usize, to: usize) -> Option<usize> {
+    if i >= v.len() {
+        return None;
+    }
+    let x = v.remove(i);
+    let to = to.min(v.len());
+    v.insert(to, x);
+    Some(to)
 }
 
 impl Session {
@@ -313,6 +344,15 @@ impl Session {
         } else {
             false
         }
+    }
+
+    /// Move the document at `from` to tab position `to` (clamped to the last), keeping the active
+    /// document active. Returns its new index; `None` when `from` is out of range.
+    pub fn move_document(&mut self, from: usize, to: usize) -> Option<usize> {
+        let active = self.active().map(|d| d.doc.id);
+        let to = move_item(&mut self.docs, from, to)?;
+        self.active = active.and_then(|id| self.docs.iter().position(|d| d.doc.id == id));
+        Some(to)
     }
 
     /// Add a document (from File → New, an import, etc.) and make it active.
