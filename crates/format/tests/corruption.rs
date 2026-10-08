@@ -5,6 +5,7 @@ use common::*;
 use photocraft_color::{ColorMode, SampleType};
 use photocraft_format::*;
 use proptest::prelude::*;
+use std::io::Read;
 
 fn sample() -> Vec<u8> {
     save_to_bytes(&rich_doc(ColorMode::Rgb, SampleType::U8), &SaveOptions::default()).unwrap()
@@ -77,6 +78,22 @@ fn bad_manifest_json() {
     assert!(matches!(load_from_bytes(&b), Err(FormatError::Json(_))));
 }
 
+/// Hostile nesting fails with an error instead of overflowing the stack; nesting as deep as the
+/// deepest groups a bundle may hold (three JSON levels each) parses, and is then rejected for
+/// lacking a format version.
+#[test]
+fn over_deep_manifest_fails_cleanly() {
+    let nested = |n: usize| format!("{}{}", "[".repeat(n), "]".repeat(n)).into_bytes();
+    let with_manifest = |m: Vec<u8>| rebuild(&sample(), |n, d| Some(if n == "manifest.json" { m.clone() } else { d }));
+    let e = load_from_bytes(&with_manifest(nested(100_000))).unwrap_err();
+    assert!(matches!(e, FormatError::LimitExceeded(_)), "{e}");
+    let e = load_from_bytes(&with_manifest(nested(3 * MAX_GROUP_DEPTH))).unwrap_err();
+    assert!(matches!(e, FormatError::Corrupt(_)), "{e}");
+    // Brackets inside strings (escaped quotes included) don't count.
+    let e = load_from_bytes(&with_manifest(format!(r#"{{"x":"{}\"{}"}}"#, "[".repeat(100_000), "{".repeat(10)).into_bytes())).unwrap_err();
+    assert!(matches!(e, FormatError::Corrupt(_)), "{e}");
+}
+
 #[test]
 fn too_new_version_rejected() {
     let b = rebuild(&sample(), |n, d| {
@@ -122,13 +139,110 @@ fn total_size_limit() {
 }
 
 #[test]
-fn directory_bundle_tampered_tile() {
+fn directory_bundle_resave_repairs_tampered_objects() {
     let doc = rich_doc(ColorMode::Rgb, SampleType::U8);
     let dir = temp_dir("tamper");
-    PcraftWriter::new().save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
-    let tile = std::fs::read_dir(dir.join("tiles")).unwrap().next().unwrap().unwrap().path();
-    std::fs::write(&tile, b"garbage").unwrap();
-    assert!(load_path(&dir).is_err());
+    let mut writer = PcraftWriter::new();
+    writer.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+
+    for object_dir in ["tiles", "blobs"] {
+        let object = std::fs::read_dir(dir.join(object_dir)).unwrap().next().unwrap().unwrap().path();
+        let original = std::fs::read(&object).unwrap();
+        let mut decoder = ruzstd::decoding::StreamingDecoder::new(&original[..]).unwrap();
+        let mut decoded = Vec::new();
+        decoder.read_to_end(&mut decoded).unwrap();
+        if let Some(first) = decoded.first_mut() {
+            *first ^= 1;
+        } else {
+            decoded.push(1);
+        }
+        let hash_mismatched = ruzstd::encoding::compress_to_vec(decoded.as_slice(), ruzstd::encoding::CompressionLevel::Fastest);
+
+        for damaged in [hash_mismatched, b"garbage".to_vec()] {
+            std::fs::write(&object, damaged).unwrap();
+            assert!(load_path(&dir).is_err());
+
+            let stats = writer.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+            if object_dir == "tiles" {
+                assert_eq!(stats.tiles_written, 1);
+            } else {
+                assert_eq!(stats.blobs_written, 1);
+            }
+            assert_eq!(load_path(&dir).unwrap(), doc);
+        }
+    }
+
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// Damages one object in place without changing its length or modification time, the case a
+/// size-and-mtime cache alone would trust. Returns the damaged file's path.
+fn damage_in_place_keeping_size_and_mtime(dir: &std::path::Path) -> std::path::PathBuf {
+    let object = std::fs::read_dir(dir.join("tiles")).unwrap().next().unwrap().unwrap().path();
+    let original = std::fs::read(&object).unwrap();
+    let mtime = std::fs::metadata(&object).unwrap().modified().unwrap();
+    // Flip one byte of the compressed payload; try positions until the bundle no longer loads.
+    for at in (original.len() / 2..original.len()).chain(0..original.len() / 2) {
+        let mut damaged = original.clone();
+        damaged[at] ^= 0x5a;
+        std::fs::write(&object, &damaged).unwrap();
+        std::fs::File::options().write(true).open(&object).unwrap().set_modified(mtime).unwrap();
+        if load_path(dir).is_err() {
+            assert_eq!(std::fs::metadata(&object).unwrap().len(), original.len() as u64);
+            assert_eq!(std::fs::metadata(&object).unwrap().modified().unwrap(), mtime);
+            return object;
+        }
+    }
+    panic!("no single-byte change made the bundle fail to load");
+}
+
+#[test]
+fn same_size_same_mtime_tamper_is_repaired_on_the_next_save() {
+    let doc = rich_doc(ColorMode::Rgb, SampleType::U8);
+    let dir = temp_dir("tamper-same-size");
+    let mut writer = PcraftWriter::new();
+    writer.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+    // A second save trusts every object it verified in the first one.
+    writer.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+
+    damage_in_place_keeping_size_and_mtime(&dir);
+    // The sample bundle is far below DEFAULT_REVERIFY_BUDGET, so the rolling re-check reads
+    // every cached object again (and on Unix the change time differs as well).
+    let stats = writer.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+    assert_eq!(stats.tiles_written, 1);
+    assert_eq!(load_path(&dir).unwrap(), doc);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn rolling_reverify_reaches_every_object_with_a_tiny_budget() {
+    let doc = rich_doc(ColorMode::Rgb, SampleType::U8);
+    let dir = temp_dir("tamper-rolling");
+    let mut writer = PcraftWriter::new();
+    writer.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+    let objects = ["tiles", "blobs"].iter().map(|d| std::fs::read_dir(dir.join(d)).unwrap().count()).sum::<usize>();
+
+    // One object per save: the oldest-checked one.
+    writer.set_reverify_budget(1);
+    damage_in_place_keeping_size_and_mtime(&dir);
+    let mut repaired = false;
+    for _ in 0..=objects {
+        let stats = writer.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+        if stats.tiles_written == 1 {
+            repaired = true;
+            break;
+        }
+    }
+    assert!(repaired, "a damaged object was not re-verified within {objects} saves");
+    assert_eq!(load_path(&dir).unwrap(), doc);
+
+    // A zero budget re-reads nothing whose signature is unchanged; a fresh writer still verifies
+    // everything on its first save.
+    let mut fresh = PcraftWriter::new();
+    fresh.set_reverify_budget(0);
+    damage_in_place_keeping_size_and_mtime(&dir);
+    assert_eq!(fresh.save_dir(&doc, &dir, &SaveOptions::default()).unwrap().tiles_written, 1);
+    assert_eq!(load_path(&dir).unwrap(), doc);
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -214,4 +328,46 @@ proptest! {
 fn sample_cached() -> &'static [u8] {
     static S: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     S.get_or_init(sample)
+}
+
+/// Moves the first tile of the first top-level layer that has pixels to `(tx, ty)`; returns that
+/// layer's index.
+fn move_first_tile(v: &mut serde_json::Value, tx: i64, ty: i64) -> Option<usize> {
+    let layers = v["document"]["layers"].as_array_mut()?;
+    let (i, tile) = layers.iter_mut().enumerate().find_map(|(i, l)| l["content"]["surface"]["tiles"].get_mut(0).map(|t| (i, t)))?;
+    tile["tx"] = tx.into();
+    tile["ty"] = ty.into();
+    Some(i)
+}
+
+#[test]
+fn tile_coordinates_outside_the_i32_pixel_range_are_rejected() {
+    // #938: a tile index whose rectangle overflows i32 loaded fine and panicked later, in
+    // `TileCoord::rect`, wherever the layer's bounds were asked for (wrapping in release).
+    let with_tile_at = |tx: i64, ty: i64| {
+        let layer = std::cell::Cell::new(None);
+        let b = rebuild(&sample(), |n, d| {
+            Some(if n == "manifest.json" {
+                let mut v: serde_json::Value = serde_json::from_slice(&d).unwrap();
+                layer.set(move_first_tile(&mut v, tx, ty));
+                serde_json::to_vec(&v).unwrap()
+            } else {
+                d
+            })
+        });
+        (b, layer.get().expect("the sample has a raster layer with a tile"))
+    };
+    let (lo, hi) = (i64::from(i32::MIN / 256), i64::from(i32::MAX / 256 - 1));
+    for (tx, ty) in [(hi + 1, 0), (0, hi + 1), (lo - 1, 0), (0, lo - 1), (i64::from(i32::MAX), 0), (0, i64::from(i32::MIN))] {
+        let err = load_from_bytes(&with_tile_at(tx, ty).0).unwrap_err();
+        assert!(err.to_string().contains("outside the coordinate range"), "({tx}, {ty}): {err}");
+    }
+    // The extreme valid indices still load, and the layer's bounds can be computed.
+    for (tx, ty) in [(hi, hi), (lo, lo), (hi, lo)] {
+        let (b, i) = with_tile_at(tx, ty);
+        let doc = load_from_bytes(&b).unwrap_or_else(|e| panic!("({tx}, {ty}): {e}"));
+        let s = doc.layers[i].surface().expect("raster layer");
+        assert!(s.tiles().any(|(c, _)| (i64::from(c.tx), i64::from(c.ty)) == (tx, ty)), "({tx}, {ty})");
+        assert!(!s.content_bounds().is_empty());
+    }
 }

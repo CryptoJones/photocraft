@@ -124,7 +124,14 @@ impl Mapping {
         for (x, y) in pts {
             (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
         }
-        Rect::new(x0.floor() as i32 - 2, y0.floor() as i32 - 2, x1.ceil() as i32 + 2, y1.ceil() as i32 + 2)
+        // Input-derived coordinates can be arbitrarily large (issue #716): clamp to the
+        // i32 range before casting (an out-of-range `as` cast saturates, and the apron
+        // add would then overflow), and apply the apron with saturating arithmetic.
+        let apron = |v: f64, pad: i32| {
+            let v = v.clamp(i32::MIN as f64, i32::MAX as f64);
+            (v as i32).saturating_add(pad)
+        };
+        Rect::new(apron(x0.floor(), -2), apron(y0.floor(), -2), apron(x1.ceil(), 2), apron(y1.ceil(), 2))
     }
 }
 
@@ -149,6 +156,16 @@ fn pt(p: &Value, k: &str) -> Option<(f64, f64)> {
 /// stroke's first point. With `"aligned"` strokes the slot remembers the anchor so later
 /// strokes keep sampling relative to the original pairing.
 pub fn mapping(s: &mut Session, p: &Value, first: (f64, f64), cmd: &str) -> Result<Mapping> {
+    let (m, anchor) = resolve(s, p, first, cmd)?;
+    if let Some(a) = anchor {
+        s.presets.clone.active_mut().anchor = Some(a);
+    }
+    Ok(m)
+}
+
+/// [`mapping`] without remembering anything: the mapping, and the anchor an aligned stroke from
+/// the slot stores (a live preview resolves the same mapping the commit will).
+pub fn resolve(s: &Session, p: &Value, first: (f64, f64), cmd: &str) -> Result<(Mapping, Option<[f64; 2]>)> {
     let aligned = p.get("aligned").and_then(Value::as_bool).unwrap_or(true);
     let slot = s.presets.clone.active().clone();
     let explicit_tf = ["scale", "rotation", "flipH", "flipV"].iter().any(|k| p.get(*k).is_some());
@@ -165,10 +182,10 @@ pub fn mapping(s: &mut Session, p: &Value, first: (f64, f64), cmd: &str) -> Resu
     let anchor_param = pt(p, "anchor");
     if let Some(off) = pt(p, "offset") {
         let a = anchor_param.unwrap_or(first);
-        return Ok(Mapping { source: (a.0 + off.0, a.1 + off.1), anchor: a, m });
+        return Ok((Mapping { source: (a.0 + off.0, a.1 + off.1), anchor: a, m }, None));
     }
     if let Some(src) = pt(p, "source") {
-        return Ok(Mapping { source: src, anchor: anchor_param.unwrap_or(first), m });
+        return Ok((Mapping { source: src, anchor: anchor_param.unwrap_or(first), m }, None));
     }
     let Some(src) = slot.source else { return Err(bad(cmd, "missing `source` ([x,y]) or `offset` ([dx,dy]); or set one with cloneSource.set")) };
     let src = (src[0], src[1]);
@@ -176,10 +193,7 @@ pub fn mapping(s: &mut Session, p: &Value, first: (f64, f64), cmd: &str) -> Resu
         (true, Some(a)) => (a[0], a[1]),
         _ => first,
     };
-    if aligned {
-        s.presets.clone.active_mut().anchor = Some([anchor.0, anchor.1]);
-    }
-    Ok(Mapping { source: src, anchor, m })
+    Ok((Mapping { source: src, anchor, m }, aligned.then_some([anchor.0, anchor.1])))
 }
 
 /// Bilinear resample of `src` (covering [`Mapping::source_rect`]) onto `dst`, interpolating
@@ -393,4 +407,28 @@ pub fn specs() -> Vec<CommandSpec> {
             journal: true,
         },
     ]
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_rect_clamps_huge_sources() {
+        // Issue repro: a 3e9 source with a rotation makes the mapping a resample,
+        // so source_rect sees mapped coordinates far outside i32. Must clamp, not
+        // overflow (debug panic) or wrap (release, inverted rect).
+        let m = Mapping { source: (3_000_000_000.0, 0.0), anchor: (10.0, 10.0), m: transform_matrix([100.0, 100.0], 45.0, false, false) };
+        let r = m.source_rect(Rect::new(0, 0, 24, 16));
+        assert!(r.x0 <= r.x1 && r.y0 <= r.y1, "rect must stay ordered: {r:?}");
+        // A negative source must clamp the same way.
+        let m = Mapping { source: (-3_000_000_000.0, 0.0), anchor: (10.0, 10.0), m: transform_matrix([100.0, 100.0], 45.0, false, false) };
+        let r = m.source_rect(Rect::new(0, 0, 24, 16));
+        assert!(r.x0 <= r.x1 && r.y0 <= r.y1, "rect must stay ordered: {r:?}");
+    }
+
+    #[test]
+    fn source_rect_normal_case_unchanged() {
+        let m = Mapping { source: (200.0, 0.0), anchor: (10.0, 10.0), m: [1.0, 0.0, 0.0, 1.0] };
+        assert_eq!(m.source_rect(Rect::new(0, 0, 24, 16)), Rect::new(188, -12, 216, 8));
+    }
 }

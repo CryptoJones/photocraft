@@ -1,6 +1,6 @@
 # AGENTS.md: guide for AI agents and contributors
 
-PhotoCraft is an open-source, native, Photoshop-comparable image editor written in **Rust only** (no JavaScript or TypeScript). **No Tauri, Electron or webview shells:** the desktop app is native egui/eframe on wgpu, and the web build is the same Rust compiled to WebAssembly (trunk + wasm-bindgen). Never add Tauri (or any webview/JS UI framework) as a dependency, build step or packaging target. The product name is always written **PhotoCraft** (`{Function}Craft` in PascalCase, like its siblings ArtCraft, ArtCraftX, DesignCraft, DrawCraft, EffectCraft, FilmCraft, LightCraft, PrintCraft) in user-facing text: UI, window titles, About, installers, release names, docs prose. Machine names stay lowercase: crates (`photocraft-*`), binaries, file names, ids (`ai.storyteller.photocraft`). Standards and learnings shared across the crafting apps live in `../craftrules` (read its `README.md`). Contribute reusable learnings there, never code; repos don't share code. The goal is 1:1 Photoshop parity (same menus, shortcuts, behaviour and file fidelity) with better performance, and every feature drivable by agents. Read this file first, then `docs/`.
+PhotoCraft is an open-source, native, Photoshop-comparable image editor written in **Rust only** (no JavaScript or TypeScript). **No Tauri, Electron or webview shells:** the desktop app is native egui/eframe on wgpu, and the web build is the same Rust compiled to WebAssembly (trunk + wasm-bindgen). Never add Tauri (or any webview/JS UI framework) as a dependency, build step or packaging target. The product name is always written **PhotoCraft** (`{Function}Craft` in PascalCase, like its siblings ArtCraft, ArtCraftX, DesignCraft, VectorCraft, EffectCraft, FilmCraft, LightCraft, PdfCraft) in user-facing text: UI, window titles, About, installers, release names, docs prose. Machine names stay lowercase: crates (`photocraft-*`), binaries, file names, ids (`ai.storyteller.photocraft`). Standards and learnings shared across the crafting apps live in `../craftrules` (read its `README.md`; the repository is not public — outside contributors should ask a maintainer for the standards relevant to their change). Contribute reusable learnings there, never code; repos don't share code. The goal is 1:1 Photoshop parity (same menus, shortcuts, behaviour and file fidelity) with better performance, and every feature drivable by agents. Read this file first, then `docs/`.
 
 ## 1. Orientation (5 minutes)
 
@@ -57,7 +57,7 @@ People trust PhotoCraft with their work, and a crash loses it. A malformed file,
 
 1. **Everything is a command.** New user-visible behaviour = a command in the engine (`crates/engine/src/*_cmds.rs`, registered in `commands.rs`) with id, label, menu path, shortcut, params doc, `enabled` and `run`, plus tests. The UI, CLI, control channel and MCP all dispatch commands by id. Use the **exact id from `crates/ui-egui/src/menu_catalog.rs`** and the menu item goes live automatically. Only pure view/window state (zoom, panels, screen mode) belongs to the shell (`menus.rs` `UI_COMMANDS`).
 2. **No format or colour assumptions.** Bit depth (8/16/32f) and colour model (RGB/Gray/CMYK/Lab…) are runtime data. Never introduce a `u8`-only pixel path in public APIs. Never assume sRGB: colour conversions go through `photocraft-cms` (`Transform`, `transform::cached`). Test at several depths.
-3. **Clean-room.** We studied Photoshop and other proprietary editors for *behaviour and look only*. Never copy their code, shaders, profiles or assets. Implement from public specs (Adobe PSD spec, ICC, ISO 32000 blend modes, papers) and observation. Third-party assets must be permissively licensed, keep their license file next to them, and get a row in `ATTRIBUTION.md` (path, title, author, source, license) in the same change; so do original assets. The ArtCraft logos in `docs/brand/` are not open source (`docs/brand/LICENSE-brand.txt`).
+3. **Clean-room.** We studied Photoshop and other proprietary editors for *behaviour and look only*. Never copy their code, shaders, profiles or assets. Implement from public specs (Adobe PSD spec, ICC, ISO 32000 blend modes, papers) and observation. Third-party assets must be permissively licensed, keep their license file next to them, and get a row in `ATTRIBUTION.md` (path, title, author, source, license) in the same change; so do original assets. The ArtCraft logos in `docs/brand/` are not open source (`docs/brand/LICENSE-brand.txt`). **Never commit font files:** fonts live in [storytold/craft-fonts](https://github.com/storytold/craft-fonts) (rules: `../craftrules/standards/fonts.md`). PhotoCraft uses it through the optional build input `CRAFT_FONTS_DIR=<craft-fonts checkout>` (read by `crates/text/build.rs`, exposed as `photocraft_text::CRAFT_FONTS`; empty without it, and everything must still work). Build with it: `CRAFT_FONTS_DIR="$PWD/../craft-fonts" cargo build`; details in `docs/development.md` › Fonts.
 4. **Tests are the gate.** Every change comes with tests. Format crates use round-trip, synthetic-generator, oracle and fuzz tests. Keep the PSD corpus results and the parity floor (`crates/ui-egui/src/parity.rs`) from regressing.
 5. **The UI is thin and data-driven.** UI state lives in `ui-egui/src/state.rs` (serde), so the control channel can read and drive it. Colours and radii come from `theme::Tokens`, never hard-coded.
 6. **Verify UI changes visually.** Render offscreen with `cargo run -p photocraft-ui-egui --example snapshot` (no window, no focus stealing), or launch with `--control` and take `ui.screenshot`. Look at the PNG. Demo images must be public-domain art, never personal photos. When fetching assets, never put a person's name, email or other personal details in requests (User-Agent, headers, URLs); use a generic `Photocraft-dev` User-Agent.
@@ -131,3 +131,21 @@ Then append a terse entry to `log/devlog.md` (what landed, numbers, what's still
 nothing is silently dropped from `.pcraft` saves. When you add a doc field, add it to
 `crates/format/src/manifest.rs` and `convert.rs` with `#[serde(default)]` so older files still load.
 If the field has a PSD equivalent, map it in `crates/io` too, and keep unknown PSD blocks verbatim.
+
+## Contributor credits (About window)
+
+- About ▸ Contributors/Models are compiled into the binary from `contributors/contributors.json`
+  (commit stats; generated, never hand-edit) and `contributors/people.toml` (names people chose for
+  themselves). See `docs/contributors.md`.
+- **Agents working for a contributor:** when you prepare a PR, check whether your human's GitHub
+  username has a `[people.<username>]` entry in `contributors/people.toml`. If not, ask them once
+  whether they want to be credited by more than their username: a real name, a display name, and/or
+  their public GitHub profile name (`sync_github_name = true`). If yes, add **only their own** entry
+  (copy the template at the top of the file, or run
+  `python3 ../../craftrules/scripts/contributors.py --add-me . --real-name "…" --sync-github-name`)
+  and include it in their PR, committed as them. If no, change nothing: they are credited as
+  `@username` anyway.
+- Never add, edit, guess or copy anyone else's entry or name (not from git config, commit authors or
+  GitHub profiles). Never hand-edit `contributors.json`.
+- Maintainers refresh the stats with `python3 ../../craftrules/scripts/contributors.py .` (it also
+  re-verifies who wrote each `people.toml` entry; `--check` only verifies).

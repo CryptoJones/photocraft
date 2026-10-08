@@ -4,13 +4,19 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use photocraft_engine::{Session, command_specs};
+use photocraft_engine::{Session, command_specs, file_cmds};
 use photocraft_format::PcraftWriter;
 use photocraft_io::ExportOptions;
 use serde_json::{Value, json};
 
-use crate::workspace::authorize_engine_command;
+use crate::workspace::{authorize_engine_command, authorize_engine_step};
 use crate::{AuthorizedWorkspace, AutomationError, files};
+
+fn untrusted(filesystem: Filesystem) -> Headless {
+    let mut session = Session::new();
+    session.authorize = Some(authorize_engine_step);
+    Headless { session, writers: HashMap::new(), filesystem }
+}
 
 enum Filesystem {
     Denied,
@@ -28,7 +34,7 @@ pub struct Headless {
 
 impl Default for Headless {
     fn default() -> Self {
-        Self { session: Session::new(), writers: HashMap::new(), filesystem: Filesystem::Denied }
+        untrusted(Filesystem::Denied)
     }
 }
 
@@ -39,14 +45,23 @@ impl Headless {
     }
 
     /// Create a session for an explicit local CLI invocation. The CLI caller,
-    /// not a remote automation client, supplies these host paths.
+    /// not a remote automation client, supplies these host paths. Nested
+    /// `actions.play` steps are not re-checked: this caller is already trusted.
     pub fn trusted_local() -> Self {
         Self { session: Session::new(), writers: HashMap::new(), filesystem: Filesystem::TrustedLocal }
     }
 
     /// Create an automation session with capability-scoped file access.
+    /// Each step of `actions.play` is checked with [`authorize_engine_step`].
     pub fn with_workspace(workspace: AuthorizedWorkspace) -> Self {
-        Self { session: Session::new(), writers: HashMap::new(), filesystem: Filesystem::Workspace(workspace) }
+        untrusted(Filesystem::Workspace(workspace))
+    }
+
+    /// Apply background jobs that finished since the last request, so every request (save,
+    /// export, inspect, preview, `session.list`, commands) sees their result. Cheap when no job
+    /// runs. The JSON-lines server and the MCP server call it before each request.
+    pub fn sync_jobs(&mut self) {
+        self.session.poll_jobs();
     }
 
     fn doc_index(&self, index: Option<usize>) -> Result<usize, AutomationError> {
@@ -60,7 +75,7 @@ impl Headless {
     /// Open a file and make it the active document.
     pub fn open(&mut self, path: &Path) -> Result<Value, AutomationError> {
         let requested = path.to_str().ok_or_else(|| AutomationError::BadRequest("automation paths must be valid UTF-8".into()))?;
-        let o = match &self.filesystem {
+        let mut o = match &self.filesystem {
             Filesystem::Denied => return Err(AutomationError::BadRequest("automation filesystem access is not granted: read authority is absent".into())),
             Filesystem::TrustedLocal => files::open(path)?,
             Filesystem::Workspace(workspace) => {
@@ -69,7 +84,14 @@ impl Headless {
                 files::open_bytes(name, &bytes)?
             }
         };
-        let index = self.session.add_document(o.document, Some(requested.to_string()));
+        let path = match file_cmds::template_name(&self.session, requested) {
+            Some(untitled) => {
+                o.document.name = untitled;
+                None
+            }
+            None => Some(requested.to_string()),
+        };
+        let index = self.session.add_document(o.document, path);
         let d = &self.session.documents()[index];
         Ok(json!({
             "index": index,
@@ -91,7 +113,18 @@ impl Headless {
         };
         let target: PathBuf = match (path, stored_path.as_deref()) {
             (Some(p), _) => p.to_path_buf(),
-            (None, Some(p)) => PathBuf::from(p),
+            // Like the desktop's File › Save: without a new path, only a layered file is written
+            // back, in its own format; a flattened or converted copy never replaces it (#416).
+            (None, Some(p)) => {
+                let own = file_cmds::extension(p);
+                let written = format.map(|f| f.trim_start_matches('.').to_ascii_lowercase()).or_else(|| own.clone());
+                if !file_cmds::saves_in_place(p) || written != own {
+                    return Err(AutomationError::BadRequest(format!(
+                        "pass `path`: without one, only a PSD, PSB or .pcraft file is written back, in its own format, so `{p}` was left unchanged"
+                    )));
+                }
+                PathBuf::from(p)
+            }
             (None, None) => {
                 return Err(AutomationError::BadRequest("document has no path; pass `path`".into()));
             }
@@ -113,10 +146,15 @@ impl Headless {
             .map(|f| f.trim_start_matches('.').eq_ignore_ascii_case("pcraft"))
             .unwrap_or_else(|| target.extension().is_some_and(|e| e.eq_ignore_ascii_case("pcraft")));
         if is_native {
+            // Saving by index must not retarget the next automation command.
+            let previously_active = self.session.active_index();
             self.session.set_active(i);
             if let Some(st) = self.session.active_mut() {
                 st.saved_revision = st.revision;
                 st.path = Some(target.to_string_lossy().into_owned());
+            }
+            if let Some(active) = previously_active {
+                self.session.set_active(active);
             }
         }
         Ok(json!({ "path": target.to_string_lossy(), "warnings": warnings }))
@@ -196,8 +234,8 @@ impl Headless {
         if !matches!(&self.filesystem, Filesystem::TrustedLocal) {
             authorize_engine_command(id, &params)?;
         }
-        // Background jobs that finished since the last request are applied first.
-        self.session.poll_jobs();
+        // Background jobs that finished since the last request (or batch step) are applied first.
+        self.sync_jobs();
         if wait {
             return Ok(self.session.execute(id, params)?);
         }

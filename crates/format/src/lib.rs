@@ -12,8 +12,10 @@
 //!
 //! A bundle is either a ZIP archive (STORE entries) or a directory with the
 //! same layout. Saving is incremental: [`PcraftWriter`] remembers what it
-//! already compressed/wrote, so only new tiles are encoded, and directory
-//! saves write only missing files and garbage-collect unreferenced ones.
+//! already compressed/wrote, so only new tiles are encoded. Directory saves
+//! verify existing content-addressed objects once per writer and folder,
+//! rechecking files whose size or modification time changes; they replace
+//! damaged or missing objects and garbage-collect unreferenced ones.
 //!
 //! This crate sits at L3 next to the compositor, so it does not render.
 //! Callers pass previews in [`SaveOptions`]; `photocraft-io` does that.
@@ -23,8 +25,10 @@
 pub mod atomic;
 pub mod autosave;
 mod convert;
+mod finite;
 pub mod manifest;
 mod migrate;
+pub mod read;
 mod store;
 pub mod zip;
 
@@ -34,9 +38,13 @@ use photocraft_doc::Document;
 use photocraft_raster::Rgba8Image;
 
 pub use atomic::atomic_write;
+#[cfg(not(target_arch = "wasm32"))]
+pub use autosave::RecoveryStore;
 pub use autosave::{Autosaver, RecoveryEntry, discard_recovery, list_recovery, recover};
+pub use convert::MAX_GROUP_DEPTH;
 pub use manifest::{FORMAT_VERSION, Manifest};
-pub use store::{PcraftWriter, SaveStats};
+pub use read::read_file;
+pub use store::{DEFAULT_REVERIFY_BUDGET, PcraftWriter, SaveStats};
 
 /// File extension of the native format.
 pub const EXTENSION: &str = "pcraft";
@@ -51,6 +59,8 @@ pub enum FormatError {
     TooNew { found: u32, supported: u32 },
     #[error("limit exceeded: {0}")]
     LimitExceeded(String),
+    #[error("`{path}` is NaN or infinite, which a .pcraft manifest cannot hold; reset that value and save again")]
+    NonFinite { path: String },
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
     #[error("manifest JSON: {0}")]
@@ -134,7 +144,7 @@ pub fn load_path_with(path: &Path, opts: &LoadOptions) -> Result<Document> {
     if path.is_dir() {
         store::load(&store::DirSource { root: path.to_path_buf() }, opts)
     } else {
-        let bytes = std::fs::read(path)?;
+        let bytes = read::read_file(path)?;
         load_from_bytes_with(&bytes, opts)
     }
 }

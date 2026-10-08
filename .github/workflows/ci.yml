@@ -17,25 +17,66 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Debug and test builds keep line tables (file:line in panic backtraces) but drop the rest of the
+  # debug info: faster codegen and links (Windows PDBs most of all), and a target dir small enough
+  # for the Linux job's second, craft-fonts build (it ran out of disk with full debug info).
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
+# A newer push to a PR branch cancels its older run. Runs on main are never cancelled: a merge
+# that lands while main's run is in progress waits for it, so every main state that gets a run is
+# checked to the end. (Cancelling here left main unverified whenever merges came close together.)
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Which OSes the test job runs on. main, manual runs and PRs labelled `full-ci` get all three.
+  # Other PRs get Linux, plus macOS and Windows when they touch code whose behaviour differs by
+  # platform: the app shell, UI, text and fonts, GPU, pen input, build scripts or the lockfile.
+  platforms:
+    name: select platforms
+    runs-on: ubuntu-latest
+    outputs:
+      os: ${{ steps.pick.outputs.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: pick
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          FULL: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        run: |
+          all='["ubuntu-latest","macos-latest","windows-latest"]'
+          if [ "$EVENT" != pull_request ] || [ "$FULL" = true ]; then
+            echo "os=$all" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE" HEAD | grep -Eq '^(apps/|crates/(ui-egui|text|gpu|tablet|heif)/|Cargo\.lock$|(.*/)?build\.rs$|\.github/workflows/ci\.yml$)'; then
+            echo "os=$all" >> "$GITHUB_OUTPUT"
+          else
+            echo 'os=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     name: test (${{ matrix.os }})
+    needs: platforms
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(needs.platforms.outputs.os) }}
     steps:
       - uses: actions/checkout@v4
 
+      # Unused toolchains in the image (Android SDK, .NET, GHC, CodeQL) are deleted in the
+      # background: the space is free before the craft-fonts build needs it, and nothing waits.
       - name: Install Linux system dependencies (egui/winit/rfd)
         if: runner.os == 'Linux'
         run: |
+          nohup sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL </dev/null >/dev/null 2>&1 &
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev \
@@ -45,17 +86,50 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      # Only main saves caches; PRs restore main's. Every PR used to save its own set (up to
+      # 3.8 GB), usable by that PR only, so the repo's 10 GB cache budget kept evicting main's.
+      # A failing test still saves: the cache holds compiled dependencies, not test results.
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: Format
         if: runner.os == 'Linux'
         run: cargo fmt --all -- --check
 
+      # `--features heif`: official builds open HEIC photos via the optional photocraft-heif crate.
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --features heif
+
+      # The same codecs without the optional decoder: HEIC must stay a clear "not in this build"
+      # error for distributors who leave it out.
+      - name: Test without heif
+        if: runner.os == 'Linux'
+        run: cargo test -p photocraft-heif -p photocraft-codecs -p photocraft-io --locked
+
+      # The same tests built with the optional craft-fonts input (crates/text/build.rs), so the
+      # Japanese font tests that skip without it run here. Linux only. Keep the exact `--workspace
+      # --features heif` of the Test step: any other package or feature selection resolves a
+      # different feature set, recompiles the whole dependency graph into the same target dir and
+      # runs the runner out of disk (as `-p photocraft-text -p photocraft-ui-egui` did after #800).
+      - name: Check out craft-fonts
+        if: runner.os == 'Linux'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: storytold/craft-fonts
+          ref: abb83316d96aa59c1cf64784289e378fe9fa5695
+          path: craft-fonts
+
+      - name: Test with craft-fonts
+        if: runner.os == 'Linux'
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: cargo test --workspace --locked --features heif
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked --features heif -- -D warnings
 
       - name: Dependency layering
         run: cargo xtask layers
@@ -73,12 +147,21 @@ jobs:
     # pin or manifest does, so normally this restores in seconds (fork PRs read the base cache).
     name: corpus tests
     runs-on: ubuntu-latest
+    env:
+      # test-corpus builds with --release, but here without the release profile's thin LTO and
+      # single codegen unit: they ran LTO over the dependency graph for each of the ~95 corpus test
+      # binaries, so building took 23.5 of the job's 37 minutes while the tests ran for 1.5.
+      # Turning them off builds 2.7x faster; the code under test is the same.
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           key: corpus
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
       - name: Restore test corpora
         uses: actions/cache@v4
         with:
@@ -100,6 +183,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: wasm32
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
       - name: Check wasm-safe crates
         run: cargo xtask wasm
 
@@ -114,11 +199,13 @@ jobs:
         target:
           - { crate: psd, name: parse }
           - { crate: psd, name: descriptor }
+          - { crate: psd, name: image_source_data }
           - { crate: codecs, name: decode_any }
           - { crate: codecs, name: decode_png }
           - { crate: codecs, name: decode_jpeg }
           - { crate: codecs, name: decode_tiff }
           - { crate: codecs, name: decode_exr }
+          - { crate: codecs, name: decode_heif }
           - { crate: format, name: load }
     steps:
       - uses: actions/checkout@v4

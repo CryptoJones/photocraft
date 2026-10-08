@@ -394,6 +394,35 @@ fn apply_lut(m: Map, l: Option<Vec<f32>>) -> Map {
     }
 }
 
+/// Deterministic per-pixel value in 0..=1, hashed from document coordinates
+/// (the same hash as the GPU's `dissolve_noise`), so the speckle is stable
+/// across renders, frames and tiles.
+pub fn hash_noise(x: i64, y: i64) -> f32 {
+    let mut h = (x as i32 as u32).wrapping_mul(0x8da6_b343) ^ (y as i32 as u32).wrapping_mul(0xd816_3841) ^ 0x9e37_79b9;
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2c1b_3c6d);
+    h ^= h >> 12;
+    (h & 0xffff) as f32 / 65536.0
+}
+
+/// Effect noise (Photoshop's Noise slider): monochrome speckle in the coverage,
+/// applied after the contour. `amount` is 0..=1; 0 leaves the map untouched.
+fn noise(m: &mut Map, amount: f32, x0: i32, y0: i32) {
+    if !amount.is_finite() || amount <= 0.0 {
+        return;
+    }
+    for y in 0..m.h {
+        for x in 0..m.w {
+            let v = &mut m.v[y * m.w + x];
+            if *v <= 0.0 {
+                continue;
+            }
+            let n = hash_noise(i64::from(x0 + x as i32), i64::from(y0 + y as i32));
+            *v = (*v + (n - 0.5) * 2.0 * amount).clamp(0.0, 1.0);
+        }
+    }
+}
+
 fn apply_contour(m: Map, c: &Contour) -> Map {
     match contour_lut(c) {
         None => m,
@@ -528,7 +557,7 @@ pub fn spread_split(size: f32, spread: f32) -> (f32, f32) {
     ((size * spread).round(), size * (1.0 - spread))
 }
 
-fn shadow_map(shape: &Map, s: &Shadow, light: &GlobalLight, inner: bool) -> Map {
+fn shadow_map(shape: &Map, s: &Shadow, light: &GlobalLight, inner: bool, origin: (i32, i32)) -> Map {
     let angle = if s.use_global_light { light.angle } else { s.angle };
     let (dx, dy) = offset(angle, s.distance);
     let src = if inner { shape.clone().map(|a| 1.0 - a) } else { shape.clone() };
@@ -537,6 +566,7 @@ fn shadow_map(shape: &Map, s: &Shadow, light: &GlobalLight, inner: bool) -> Map 
     m = dilate(&m, r);
     blur(&mut m, bw);
     let mut m = apply_contour(m, &s.contour);
+    noise(&mut m, s.noise, origin.0, origin.1);
     if inner {
         for (v, a) in m.v.iter_mut().zip(&shape.v) {
             *v *= a;
@@ -545,7 +575,7 @@ fn shadow_map(shape: &Map, s: &Shadow, light: &GlobalLight, inner: bool) -> Map 
     m
 }
 
-fn glow_map(shape: &Map, g: &Glow, inner: bool) -> Map {
+fn glow_map(shape: &Map, g: &Glow, inner: bool, origin: (i32, i32)) -> Map {
     let src = if inner {
         match g.source {
             GlowSource::Edge => shape.clone().map(|a| 1.0 - a),
@@ -582,6 +612,7 @@ fn glow_map(shape: &Map, g: &Glow, inner: bool) -> Map {
         }
     };
     m = apply_lut(m, glow_lut(g));
+    noise(&mut m, g.noise, origin.0, origin.1);
     if inner {
         for (v, a) in m.v.iter_mut().zip(&shape.v) {
             *v *= a;
@@ -653,10 +684,39 @@ fn paint_fx(
     }
 }
 
+/// The opacity gain of a gradient glow: it is opaque from strength `range²` on (see [`paint_glow`]).
+pub fn glow_gradient_gain(range: f32) -> f32 {
+    let r = if range.is_finite() { range.clamp(0.01, 1.0) } else { 1.0 };
+    1.0 / (r * r)
+}
+
+/// A glow's paint over its map `m`. A gradient runs along the glow rather than across the
+/// canvas: Photoshop colours the glow where its (ranged, contoured) strength is `v` with the
+/// gradient at `1 - v`, so the first stop hugs the edge, and the glow is opaque from `v = range²`
+/// on (photoshop corpus outer-glow-gradient.psd: 1.4/255 mean, against bands across the canvas;
+/// psd-tools layer_params.psd). Glows have no gradient angle, style or Reverse.
+#[allow(clippy::too_many_arguments)]
+fn paint_glow(dst: &mut Buffer, m: &Map, g: &Glow, shape_bounds: Rect, anchor: (f64, f64), big: Rect, patterns: &PreparedPatterns<'_>) {
+    let FxPaint::Gradient(gradient) = &g.paint else {
+        return paint_fx(dst, m, &g.paint, shape_bounds, anchor, big, g.common.blend, g.common.opacity, patterns);
+    };
+    let prepared = PreparedGradient::new(gradient);
+    let gain = glow_gradient_gain(g.range);
+    let strength = Map { w: m.w, h: m.h, v: m.v.iter().map(|v| (v * gain).min(1.0)).collect() };
+    paint(dst, &strength, |i| prepared.sample(1.0 - m.v.get(i).copied().unwrap_or(0.0).clamp(0.0, 1.0)), g.common.blend, g.common.opacity);
+}
+
+/// A box width as the blurs use it: at least 1, at most [`MAX_REACH`] (an effect never reaches
+/// further, see [`margin`]), and 1 for NaN. A size or softness from a command or a file can be
+/// anything, and an unbounded width sizes the kernel and its buffers (#1543).
+fn box_width(w: f32) -> f32 {
+    if w.is_nan() { 1.0 } else { w.clamp(1.0, MAX_REACH) }
+}
+
 /// Normalised weights of a centred box of (fractional) width `w`: tap `i` gets the overlap of
 /// `[i - 0.5, i + 0.5]` with `[-w/2, w/2]`.
 fn box_weights(w: f32) -> Vec<f32> {
-    let w = w.max(1.0);
+    let w = box_width(w);
     let half = w / 2.0;
     let r = (half - 0.5).ceil().max(0.0) as i64;
     let v: Vec<f32> = (-r..=r).map(|i| ((i as f32 + 0.5).min(half) - (i as f32 - 0.5).max(-half)).max(0.0)).collect();
@@ -682,10 +742,11 @@ pub fn tent_kernel(w: f32) -> (i32, Vec<f32>) {
 /// Box geometry for a (fractional) width: (`r`, end-tap weight `f`, 1 / width) — the
 /// [`box_weights`] taps are `r - 1` full ones each side of the centre plus the two end taps at `f`.
 fn box_geom(bw: f32) -> (i64, f64, f64) {
-    let half = bw.max(1.0) / 2.0;
+    let bw = box_width(bw);
+    let half = bw / 2.0;
     let r = (half - 0.5).ceil().max(0.0) as i64;
     let f = f64::from((half - (r as f32 - 0.5)).clamp(0.0, 1.0));
-    (r, f, 1.0 / f64::from(bw.max(1.0)))
+    (r, f, 1.0 / f64::from(bw))
 }
 
 /// One box pass over `src` (zero outside it) evaluated at `x0 .. x0 + dst.len()`, as a running
@@ -1095,10 +1156,10 @@ pub(crate) fn build_maps_prepared(
         .iter()
         .enumerate()
         .map(|(i, e)| match e {
-            Effect::DropShadow(s) => vec![shadow_map(&shape, s, light, false)],
-            Effect::InnerShadow(s) => vec![shadow_map(&shape, s, light, true)],
-            Effect::OuterGlow(g) => vec![glow_map(&shape, g, false)],
-            Effect::InnerGlow(g) => vec![glow_map(&shape, g, true)],
+            Effect::DropShadow(s) => vec![shadow_map(&shape, s, light, false, (rect.x0, rect.y0))],
+            Effect::InnerShadow(s) => vec![shadow_map(&shape, s, light, true, (rect.x0, rect.y0))],
+            Effect::OuterGlow(g) => vec![glow_map(&shape, g, false, (rect.x0, rect.y0))],
+            Effect::InnerGlow(g) => vec![glow_map(&shape, g, true, (rect.x0, rect.y0))],
             Effect::Satin(s) => vec![satin_map(&shape, s)],
             Effect::BevelEmboss(b) => {
                 let (maps, paint) = bevel_maps(&shape, b, light, tex, patterns);
@@ -1153,13 +1214,18 @@ pub(crate) fn composite_with_effects_prepared(
     // unmasked fill and the mask applies to fill ∪ stroke), joined with a filled shape's outline.
     let kmask = |i: usize| vstroke.as_ref().and_then(|v| v.mask).and_then(|m| m.get(i)).copied().unwrap_or(1.0);
     let union = |i: usize, a: f32| vstroke.as_ref().and_then(|v| v.stroke.px.get(i)).map_or(a, |s| kmask(i) * (a + s[3] * (1.0 - a)));
-    let shape = if maps.outline {
+    // Transparency Shapes Layer off: the shape is the whole layer (its masks, as the maps were
+    // built), and the content's own transparency acts like fill opacity within it.
+    let shapeless = !layer.advanced.transparency_shapes;
+    let shape = if shapeless {
+        maps.crop(&maps.shape, big, 0.0)
+    } else if maps.outline {
         let o = maps.crop(&maps.shape, big, 0.0);
         Map { w, h, v: o.v.iter().zip(&content.px).enumerate().map(|(i, (o, p))| o.max(union(i, p[3]))).collect() }
     } else {
         Map { w, h, v: content.px.iter().enumerate().map(|(i, p)| union(i, p[3])).collect() }
     };
-    let relative = maps.outline || vstroke.is_some();
+    let relative = shapeless || maps.outline || vstroke.is_some();
     let fx = |i: usize, k: usize| maps.crop(&maps.per[i][k], big, 0.0);
     // Layer bounds (gradients aligned with the layer use the whole layer,
     // independent of the render rect).
@@ -1197,8 +1263,7 @@ pub(crate) fn composite_with_effects_prepared(
     }
     for (i, e) in rev() {
         if let Effect::OuterGlow(g) = e {
-            let m = fx(i, 0);
-            paint_fx(&mut work, &m, &g.paint, sb, anchor, big, g.common.blend, g.common.opacity, patterns);
+            paint_glow(&mut work, &fx(i, 0), g, sb, anchor, big, patterns);
         }
     }
 
@@ -1207,6 +1272,10 @@ pub(crate) fn composite_with_effects_prepared(
     // applies: a colour overlay at 100 % replaces the colour of a half-transparent edge pixel and
     // keeps its alpha, as in Photoshop.
     let fill = layer.fill_opacity;
+    // Blend Interior Effects as Group: the interior effects (overlays, satin, inner glow) are
+    // combined with the content first, and fill opacity applies to the combination.
+    let interior_group = layer.advanced.blend_interior && fill < 1.0;
+    let content_fill = if interior_group { 1.0 } else { fill };
     let inside = |a: f32| a > INSIDE_EPS;
     // Within an outline (or a split-off vector stroke) the content's own transparency (a fading
     // gradient fill) acts like fill opacity: the effects still cover the whole shape.
@@ -1214,9 +1283,9 @@ pub(crate) fn composite_with_effects_prepared(
         if !inside(a) {
             0.0
         } else if relative {
-            fill * (kmask(i) * p[3] / a).min(1.0)
+            content_fill * (kmask(i) * p[3] / a).min(1.0)
         } else {
-            fill
+            content_fill
         }
     };
     let mut lay = Buffer { rect: big, px: content.px.iter().zip(&shape.v).enumerate().map(|(i, (p, a))| [p[0], p[1], p[2], lay_alpha(i, p, *a)]).collect() };
@@ -1248,8 +1317,12 @@ pub(crate) fn composite_with_effects_prepared(
     }
     for (i, e) in rev() {
         if let Effect::InnerGlow(g) = e {
-            let m = rel(fx(i, 0));
-            paint_fx(&mut lay, &m, &g.paint, sb, anchor, big, g.common.blend, g.common.opacity, patterns);
+            paint_glow(&mut lay, &rel(fx(i, 0)), g, sb, anchor, big, patterns);
+        }
+    }
+    if interior_group {
+        for p in &mut lay.px {
+            p[3] *= fill.max(0.0);
         }
     }
     for (i, e) in rev() {
@@ -1326,7 +1399,17 @@ pub(crate) fn composite_with_effects_prepared(
                 let k = if maps.outline {
                     band * outline_share(shape.v[i], lay.px[i][3])
                 } else if inside(shape.v[i]) {
-                    if vector_shape { 0.0 } else { 1.0 }
+                    if vector_shape {
+                        0.0
+                    } else {
+                        // The stroke lies outside the layer's pixels. Beneath the layer it may show
+                        // only through the part of the pixel the shape doesn't cover (1 - a); the
+                        // layer composited on top covers c = a × fill, so the share beneath is
+                        // (1 - a) / (1 - c). At 100 % fill that is 1 (the layer hides the rest, as
+                        // before); at 0 % fill the interior stays clear (Fill 0 % + Outside stroke).
+                        let c = lay.px[i][3].clamp(0.0, 1.0);
+                        if c >= 1.0 { 1.0 } else { ((1.0 - shape.v[i].clamp(0.0, 1.0)) / (1.0 - c)).clamp(0.0, 1.0) }
+                    }
                 } else {
                     band
                 };
@@ -1616,6 +1699,11 @@ mod tests {
         assert_eq!(r, 4);
         assert!(k[0] > 0.0 && k[0] < 1.0 / 25.0);
         assert_eq!(tent_kernel(1.0), (0, vec![1.0]));
+        // #1543: a huge, infinite or NaN width is capped, not turned into a kernel of 2^62 taps.
+        for w in [1e30, f32::INFINITY, f32::MAX] {
+            assert_eq!(tent_kernel(w), tent_kernel(MAX_REACH), "{w}");
+        }
+        assert_eq!(tent_kernel(f32::NAN), (0, vec![1.0]));
     }
 
     fn no_tex() -> TextureCtx<'static> {
@@ -1789,5 +1877,77 @@ mod tests {
     fn offsets_follow_light() {
         let (dx, dy) = offset(120.0, 10.0);
         assert_eq!((dx, dy), (5.0, 9.0));
+    }
+
+    fn square_shape(n: usize) -> Map {
+        let mut m = Map::new(n, n, 0.0);
+        for y in 5..n - 5 {
+            for x in 5..n - 5 {
+                m.v[y * n + x] = 1.0;
+            }
+        }
+        m
+    }
+
+    fn shadow(noise: f32, origin: (i32, i32)) -> Map {
+        let s = Shadow {
+            common: photocraft_doc::FxCommon::new(BlendMode::Multiply, 1.0),
+            color: photocraft_color::Color::BLACK,
+            angle: 0.0,
+            use_global_light: false,
+            distance: 0.0,
+            spread: 0.0,
+            size: 6.0,
+            contour: Contour::Linear,
+            anti_alias: false,
+            noise,
+            knocks_out: true,
+        };
+        shadow_map(&square_shape(40), &s, &GlobalLight::default(), false, origin)
+    }
+
+    #[test]
+    fn shadow_noise_speckles_soft_coverage_deterministically() {
+        let plain = shadow(0.0, (0, 0));
+        let noisy = shadow(0.5, (0, 0));
+        let again = shadow(0.5, (0, 0));
+        let (mut diff, mut identical) = (0.0f32, true);
+        for i in 0..plain.v.len() {
+            diff += (plain.v[i] - noisy.v[i]).abs();
+            if noisy.v[i] != again.v[i] {
+                identical = false;
+            }
+        }
+        assert!(diff > 5.0, "noise changes the soft band: {diff}");
+        assert!(identical, "same coords, same speckle");
+        // Every value stays a coverage.
+        assert!(noisy.v.iter().all(|v| (0.0..=1.0).contains(v)));
+        // The speckle moves with the document origin, not the tile.
+        let moved = shadow(0.5, (100, 100));
+        assert_ne!(noisy.v, moved.v, "hashed from document coordinates");
+        // Full noise can punch holes even in the solid part.
+        let heavy = shadow(1.0, (0, 0));
+        assert!(heavy.v.iter().any(|v| *v < 0.5) && heavy.v.iter().any(|v| *v > 0.5), "heavy noise spans the range",);
+    }
+
+    #[test]
+    fn glow_noise_follows_the_contour_and_range() {
+        let g = |noise: f32| Glow {
+            common: photocraft_doc::FxCommon::new(BlendMode::Screen, 1.0),
+            paint: FxPaint::Color(photocraft_color::Color::WHITE),
+            technique: GlowTechnique::Softer,
+            spread: 0.0,
+            size: 6.0,
+            contour: Contour::Linear,
+            anti_alias: false,
+            range: 0.5,
+            jitter: 0.0,
+            noise,
+            source: GlowSource::Edge,
+        };
+        let plain = glow_map(&square_shape(40), &g(0.0), false, (0, 0));
+        let noisy = glow_map(&square_shape(40), &g(0.6), false, (0, 0));
+        let diff: f32 = plain.v.iter().zip(&noisy.v).map(|(a, b)| (a - b).abs()).sum();
+        assert!(diff > 5.0, "glow noise changes the coverage: {diff}");
     }
 }

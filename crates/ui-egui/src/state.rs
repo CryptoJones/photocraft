@@ -3,6 +3,63 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Shared selection and capture for a point curve; document parameters remain with the host.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PointCurveState {
+    pub selected: Option<usize>,
+    /// Captured point (None while removed outside), grab offset, and re-entry eligibility.
+    pub drag: Option<PointCurveDrag>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PointCurveDrag {
+    pub index: Option<usize>,
+    pub offset: [f32; 2],
+    pub removed: bool,
+}
+
+/// Curves editor memory (egui temp data): the edited channel and the point gesture.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CurvesEditorState {
+    pub channel: usize,
+    pub gesture: PointCurveState,
+}
+
+/// Camera Raw scope preferences are view state, never filter parameters or document history.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CameraRawScopeState {
+    pub shadows: bool,
+    pub highlights: bool,
+    pub lab: bool,
+    pub sampler_tool: bool,
+    pub samplers: Vec<[f32; 2]>,
+    pub vectorscope: bool,
+    pub selected_region: bool,
+    pub red_right: bool,
+    pub hide_skin_line: bool,
+    pub floating: bool,
+    pub floating_rect: Option<[f32; 4]>,
+}
+
+/// Camera Raw navigation, separate from filter settings. Reset for each opened image.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CameraRawPreviewState {
+    /// None fits the image; Some is physical display pixels per source pixel.
+    pub zoom: Option<f32>,
+    pub center: [f32; 2],
+    pub hand: bool,
+}
+
+impl Default for CameraRawPreviewState {
+    fn default() -> Self {
+        Self { zoom: None, center: [0.5, 0.5], hand: false }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Tool {
     Move,
@@ -10,6 +67,7 @@ pub enum Tool {
     EllipseMarquee,
     Lasso,
     PolygonLasso,
+    MagneticLasso,
     MagicWand,
     Crop,
     Eyedropper,
@@ -18,17 +76,23 @@ pub enum Tool {
     Count,
     Brush,
     Pencil,
+    MixerBrush,
     Eraser,
     BackgroundEraser,
     MagicEraser,
     Gradient,
     PaintBucket,
     Type,
+    VerticalType,
     Hand,
     Zoom,
     SpotHealing,
     Healing,
+    Patch,
+    ContentAwareMove,
+    RedEye,
     CloneStamp,
+    PatternStamp,
     HistoryBrush,
     Blur,
     Sharpen,
@@ -40,6 +104,7 @@ pub enum Tool {
     ObjectSelection,
     Pen,
     PathSelection,
+    DirectSelection,
     Rectangle,
     EllipseShape,
     Triangle,
@@ -51,12 +116,13 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Tool; 43] = [
+    pub const ALL: [Tool; 51] = [
         Tool::Move,
         Tool::RectMarquee,
         Tool::EllipseMarquee,
         Tool::Lasso,
         Tool::PolygonLasso,
+        Tool::MagneticLasso,
         Tool::MagicWand,
         Tool::Crop,
         Tool::Eyedropper,
@@ -65,17 +131,23 @@ impl Tool {
         Tool::Count,
         Tool::Brush,
         Tool::Pencil,
+        Tool::MixerBrush,
         Tool::Eraser,
         Tool::BackgroundEraser,
         Tool::MagicEraser,
         Tool::Gradient,
         Tool::PaintBucket,
         Tool::Type,
+        Tool::VerticalType,
         Tool::Hand,
         Tool::Zoom,
         Tool::SpotHealing,
         Tool::Healing,
+        Tool::Patch,
+        Tool::ContentAwareMove,
+        Tool::RedEye,
         Tool::CloneStamp,
+        Tool::PatternStamp,
         Tool::HistoryBrush,
         Tool::Blur,
         Tool::Sharpen,
@@ -87,6 +159,7 @@ impl Tool {
         Tool::ObjectSelection,
         Tool::Pen,
         Tool::PathSelection,
+        Tool::DirectSelection,
         Tool::Rectangle,
         Tool::EllipseShape,
         Tool::Triangle,
@@ -104,6 +177,7 @@ impl Tool {
             Tool::EllipseMarquee => "Elliptical Marquee Tool",
             Tool::Brush => "Brush Tool",
             Tool::Pencil => "Pencil Tool",
+            Tool::MixerBrush => "Mixer Brush Tool",
             Tool::Eraser => "Eraser Tool",
             Tool::BackgroundEraser => "Background Eraser Tool",
             Tool::MagicEraser => "Magic Eraser Tool",
@@ -113,6 +187,7 @@ impl Tool {
             Tool::Count => "Count Tool",
             Tool::Lasso => "Lasso Tool",
             Tool::PolygonLasso => "Polygonal Lasso Tool",
+            Tool::MagneticLasso => "Magnetic Lasso Tool",
             Tool::MagicWand => "Magic Wand Tool",
             Tool::Crop => "Crop Tool",
             Tool::Slice => "Slice Tool",
@@ -120,11 +195,16 @@ impl Tool {
             Tool::Gradient => "Gradient Tool",
             Tool::PaintBucket => "Paint Bucket Tool",
             Tool::Type => "Horizontal Type Tool",
+            Tool::VerticalType => "Vertical Type Tool",
             Tool::Hand => "Hand Tool",
             Tool::Zoom => "Zoom Tool",
             Tool::SpotHealing => "Spot Healing Brush Tool",
             Tool::Healing => "Healing Brush Tool",
+            Tool::Patch => "Patch Tool",
+            Tool::ContentAwareMove => "Content-Aware Move Tool",
+            Tool::RedEye => "Red Eye Tool",
             Tool::CloneStamp => "Clone Stamp Tool",
+            Tool::PatternStamp => "Pattern Stamp Tool",
             Tool::HistoryBrush => "History Brush Tool",
             Tool::Blur => "Blur Tool",
             Tool::Sharpen => "Sharpen Tool",
@@ -136,6 +216,7 @@ impl Tool {
             Tool::ObjectSelection => "Object Selection Tool",
             Tool::Pen => "Pen Tool",
             Tool::PathSelection => "Path Selection Tool",
+            Tool::DirectSelection => "Direct Selection Tool",
             Tool::Rectangle => "Rectangle Tool",
             Tool::EllipseShape => "Ellipse Tool",
             Tool::Triangle => "Triangle Tool",
@@ -144,17 +225,23 @@ impl Tool {
             Tool::CustomShape => "Custom Shape Tool",
         }
     }
+    pub fn is_type(self) -> bool {
+        matches!(self, Self::Type | Self::VerticalType)
+    }
+
     /// Retouching and painting tools that stroke with the brush (share the brush cursor and chip).
     pub fn is_brushlike(self) -> bool {
         matches!(
             self,
             Tool::Brush
                 | Tool::Pencil
+                | Tool::MixerBrush
                 | Tool::Eraser
                 | Tool::BackgroundEraser
                 | Tool::SpotHealing
                 | Tool::Healing
                 | Tool::CloneStamp
+                | Tool::PatternStamp
                 | Tool::HistoryBrush
                 | Tool::Blur
                 | Tool::Sharpen
@@ -169,24 +256,24 @@ impl Tool {
         match self {
             Tool::Move => 'V',
             Tool::RectMarquee | Tool::EllipseMarquee => 'M',
-            Tool::Brush | Tool::Pencil => 'B',
+            Tool::Brush | Tool::Pencil | Tool::MixerBrush => 'B',
             Tool::Eraser | Tool::BackgroundEraser | Tool::MagicEraser => 'E',
             Tool::Eyedropper | Tool::Ruler | Tool::Note | Tool::Count => 'I',
-            Tool::Lasso | Tool::PolygonLasso => 'L',
+            Tool::Lasso | Tool::PolygonLasso | Tool::MagneticLasso => 'L',
             Tool::MagicWand => 'W',
             Tool::Crop | Tool::Slice | Tool::SliceSelect => 'C',
             Tool::Gradient | Tool::PaintBucket => 'G',
-            Tool::Type => 'T',
+            Tool::Type | Tool::VerticalType => 'T',
             Tool::Hand => 'H',
             Tool::Zoom => 'Z',
-            Tool::SpotHealing | Tool::Healing => 'J',
-            Tool::CloneStamp => 'S',
+            Tool::SpotHealing | Tool::Healing | Tool::Patch | Tool::ContentAwareMove | Tool::RedEye => 'J',
+            Tool::CloneStamp | Tool::PatternStamp => 'S',
             Tool::HistoryBrush => 'Y',
             Tool::Blur | Tool::Sharpen | Tool::Smudge => '\0',
             Tool::Dodge | Tool::Burn | Tool::Sponge => 'O',
             Tool::QuickSelection | Tool::ObjectSelection => 'W',
             Tool::Pen => 'P',
-            Tool::PathSelection => 'A',
+            Tool::PathSelection | Tool::DirectSelection => 'A',
             Tool::Rectangle | Tool::EllipseShape | Tool::Triangle | Tool::Polygon | Tool::Line | Tool::CustomShape => 'U',
         }
     }
@@ -197,13 +284,14 @@ impl Tool {
             Tool::RectMarquee => "⬚",
             Tool::EllipseMarquee => "◌",
             Tool::Brush => "🖌",
+            Tool::MixerBrush => "🖌",
             Tool::Eraser => "⌫",
             Tool::Eyedropper => "💧",
-            Tool::Lasso | Tool::PolygonLasso => "L",
+            Tool::Lasso | Tool::PolygonLasso | Tool::MagneticLasso => "L",
             Tool::MagicWand => "W",
             Tool::Crop => "C",
             Tool::Gradient | Tool::PaintBucket => "G",
-            Tool::Type => "T",
+            Tool::Type | Tool::VerticalType => "T",
             Tool::Hand => "✋",
             Tool::Zoom => "🔍",
             _ => "•",
@@ -234,6 +322,15 @@ pub struct Panels {
     /// Window › Character / Paragraph: the Character | Paragraph dock group (#150).
     #[serde(default)]
     pub character: bool,
+    /// The toolbar's header chevron: two columns even when one fits (#1197).
+    #[serde(default)]
+    pub toolbar_double: bool,
+    /// The right-hand panel dock. ⇧Tab hides and shows it, as in Photoshop (#1313).
+    #[serde(default = "yes")]
+    pub dock: bool,
+    /// What Tab hid (toolbar, options bar, dock), so a second Tab brings back just those.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_by_tab: Option<[bool; 3]>,
 }
 
 impl Default for Panels {
@@ -249,6 +346,9 @@ impl Default for Panels {
             status_bar: true,
             brush_settings: false,
             character: false,
+            toolbar_double: false,
+            dock: true,
+            hidden_by_tab: None,
         }
     }
 }
@@ -282,6 +382,9 @@ pub struct View {
     pub center: [f32; 2],
     /// Recompute fit-to-screen on next frame.
     pub fit_pending: bool,
+    /// Recompute fill-screen on next frame. Unlike fit, this may crop an edge of the document.
+    #[serde(default)]
+    pub fill_pending: bool,
     /// Document size this view last showed; a change (Image/Canvas Size, crop) re-centres it.
     #[serde(default)]
     pub doc_size: [u32; 2],
@@ -289,7 +392,7 @@ pub struct View {
 
 impl Default for View {
     fn default() -> Self {
-        Self { zoom: 1.0, center: [0.0, 0.0], fit_pending: true, doc_size: [0, 0] }
+        Self { zoom: 1.0, center: [0.0, 0.0], fit_pending: true, fill_pending: false, doc_size: [0, 0] }
     }
 }
 
@@ -319,6 +422,8 @@ pub struct ToolOptions {
     /// Gradient tool mode: false = "Gradient" (live: a Gradient Fill layer, editable on canvas),
     /// true = "Classic gradient" (paints the pixels).
     pub gradient_classic: bool,
+    /// Blend mode used by both live and classic gradient drags.
+    pub gradient_blend_mode: photocraft_color::BlendMode,
     pub fill_opacity: f32,
     /// Paint Bucket fill source: false = Foreground colour, true = Pattern (Patterns panel selection).
     pub bucket_fill_pattern: bool,
@@ -330,10 +435,24 @@ pub struct ToolOptions {
     pub type_align: String,
     /// Clone Stamp / Healing Brush.
     pub clone_aligned: bool,
+    /// Pattern Stamp: lock the tile origin in document space across strokes.
+    pub pattern_stamp_aligned: bool,
+    /// Pattern Stamp: jitter each dab's phase (seeded, replayable).
+    pub pattern_stamp_impressionist: bool,
+    /// Pattern Stamp scale %, 1..1000 (100 = the tile's native size).
+    pub pattern_stamp_scale: f32,
+    /// Pattern Stamp rotation in degrees (counter-clockwise).
+    pub pattern_stamp_angle: f32,
     /// current | currentAndBelow | all
     pub clone_sample: String,
     /// Spot Healing: contentAware | createTexture | proximityMatch
     pub spot_type: String,
+    /// Patch: source (repair the selection) | destination (repair where it is dragged).
+    pub patch_mode: String,
+    /// Content-Aware Move: move | extend, Structure 1..7, Color 0..10.
+    pub cam_mode: String,
+    pub cam_structure: f32,
+    pub cam_color: f32,
     /// Dodge/Burn: shadows | midtones | highlights, exposure %, protect tones.
     pub tone_range: String,
     pub exposure: f32,
@@ -392,6 +511,17 @@ pub struct ToolOptions {
     /// Pencil › Auto Erase: a stroke that starts on the foreground colour paints the background colour.
     #[serde(default)]
     pub pencil_auto_erase: bool,
+    /// Magnetic Lasso: detection width (px, 1..256), edge contrast (%, 1..100), how often it
+    /// fastens points by itself (0..100), and whether pen pressure narrows the width.
+    pub magnetic_width: f32,
+    pub magnetic_contrast: f32,
+    pub magnetic_frequency: f32,
+    pub magnetic_pressure: bool,
+    /// Red Eye: pupil search size (1–100) and how far corrected pixels darken (0–100).
+    #[serde(default = "fifty")]
+    pub red_eye_pupil_size: f32,
+    #[serde(default = "fifty")]
+    pub red_eye_darken: f32,
 }
 
 fn yes() -> bool {
@@ -410,6 +540,10 @@ fn one() -> f32 {
     1.0
 }
 
+fn fifty() -> f32 {
+    50.0
+}
+
 impl Default for ToolOptions {
     fn default() -> Self {
         Self {
@@ -422,6 +556,7 @@ impl Default for ToolOptions {
             gradient_reverse: false,
             gradient_dither: true,
             gradient_classic: false,
+            gradient_blend_mode: photocraft_color::BlendMode::Normal,
             fill_opacity: 100.0,
             bucket_fill_pattern: false,
             type_font: "Inter".into(),
@@ -430,8 +565,16 @@ impl Default for ToolOptions {
             type_aa: "sharp".into(),
             type_align: "left".into(),
             clone_aligned: true,
+            pattern_stamp_aligned: true,
+            pattern_stamp_impressionist: false,
+            pattern_stamp_scale: 100.0,
+            pattern_stamp_angle: 0.0,
             clone_sample: "current".into(),
             spot_type: "contentAware".into(),
+            patch_mode: "source".into(),
+            cam_mode: "move".into(),
+            cam_structure: 4.0,
+            cam_color: 0.0,
             tone_range: "midtones".into(),
             exposure: 50.0,
             protect_tones: true,
@@ -462,6 +605,40 @@ impl Default for ToolOptions {
             bg_protect_fg: false,
             zoom_scrubby: true,
             pencil_auto_erase: false,
+            magnetic_width: 10.0,
+            magnetic_contrast: 10.0,
+            magnetic_frequency: 57.0,
+            magnetic_pressure: false,
+            red_eye_pupil_size: 50.0,
+            red_eye_darken: 50.0,
+        }
+    }
+}
+
+/// Edit › Transform's mode: what a handle drag does with no modifier keys held.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TransformMode {
+    /// Free Transform, Scale and Rotate.
+    #[default]
+    Free,
+    /// Edge handles skew.
+    Skew,
+    /// Corner handles move freely, one at a time; nothing else moves them (no rotating, no
+    /// edges) and nothing snaps.
+    Distort,
+    /// Corner handles move in pairs, mirrored (one-point perspective).
+    Perspective,
+}
+
+impl TransformMode {
+    /// The mode an `edit.transform.*` / `edit.freeTransform` menu id starts.
+    pub fn for_command(id: &str) -> Self {
+        match id {
+            "edit.transform.skew" => Self::Skew,
+            "edit.transform.distort" => Self::Distort,
+            "edit.transform.perspective" => Self::Perspective,
+            _ => Self::Free,
         }
     }
 }
@@ -487,6 +664,23 @@ pub struct TransformSession {
     /// the Quick Mask by itself (`None`: the layer, with its linked masks).
     #[serde(default)]
     pub target: Option<serde_json::Value>,
+    /// The layer was made for this session (⌥⌘T's copy, #352; a file dropped on the canvas), so
+    /// Cancel takes it back and OK folds it into one history step with the transform.
+    #[serde(default)]
+    pub made: Option<MadeLayer>,
+    /// Edit › Transform › Skew / Distort / Perspective (`Free` for Free Transform).
+    #[serde(default)]
+    pub mode: TransformMode,
+}
+
+/// Why a Free Transform session's layer was made for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MadeLayer {
+    /// Free Transform on a copy (⌥⌘T): OK makes the copy and the transform one Free Transform step.
+    Copy,
+    /// A file dropped on the canvas: OK makes the place and the transform one Place Embedded step.
+    Place,
 }
 
 /// In-progress inline type editing (Type tool). Offsets are character indices.
@@ -501,10 +695,23 @@ pub struct TextEdit {
     pub created: bool,
     #[serde(skip)]
     pub dragging: bool,
+    /// Paragraph-box handle being dragged (0-3 corners from top-left clockwise, 4-7 top/right/bottom/left edges).
+    #[serde(skip)]
+    pub resize: Option<u8>,
     /// IME composition in progress: (start, length) in characters. The preedit text lives in the
     /// layer so it lays out like typed text; each IME update replaces it.
     #[serde(skip)]
     pub preedit: Option<(usize, usize)>,
+}
+
+/// Temporary Type-tool drag. The document is unchanged until release; this frame is view state.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TypeTransform {
+    pub document: u64,
+    pub revision: u64,
+    pub original: photocraft_geom::Affine,
+    pub frame: TransformSession,
+    pub(crate) gesture: crate::transform_tool::Gesture,
 }
 
 /// View-menu overlays.
@@ -539,6 +746,14 @@ pub struct DockTabs {
     pub character: usize,
 }
 
+/// Color panel state.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ColorPanelState {
+    /// The panel edits the background colour (its chip was clicked), not the foreground.
+    pub background: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
     pub tool: Tool,
@@ -548,6 +763,12 @@ pub struct UiState {
     /// Inline type editing session, if any.
     #[serde(default)]
     pub text_edit: Option<TextEdit>,
+    /// Ctrl/Cmd Type-tool gesture, exposed to automation but never restored as a held pointer.
+    #[serde(default, skip_deserializing)]
+    pub type_transform: Option<TypeTransform>,
+    /// Reference point for the current type editing session (document coordinates).
+    #[serde(skip)]
+    pub type_transform_pivot: Option<[f64; 2]>,
     /// Free Transform session, if any.
     #[serde(default)]
     pub transform: Option<TransformSession>,
@@ -556,6 +777,9 @@ pub struct UiState {
     pub clone_source: Option<[f64; 2]>,
     #[serde(default)]
     pub clone_offset: Option<[f64; 2]>,
+    /// Pattern Stamp aligned origin in document pixels, kept across strokes.
+    #[serde(default)]
+    pub pattern_stamp_phase: Option<[f32; 2]>,
     /// Painting targets the active layer's mask instead of its pixels.
     #[serde(default)]
     pub mask_target: bool,
@@ -563,9 +787,20 @@ pub struct UiState {
     /// tools edit it (#196). Never set together with `mask_target`.
     #[serde(default)]
     pub vector_mask_target: bool,
-    /// Brush Preset picker opened by a right-click on the canvas: its screen position (points).
+    /// Brush Preset picker opened by a right-click on the canvas or the options-bar brush chip:
+    /// its screen position (points).
     #[serde(default)]
     pub brush_picker: Option<[f32; 2]>,
+    /// The Brush Preset picker's preset list: search, collapsed groups, view, a rename in progress.
+    #[serde(default = "crate::brush_picker::list_state")]
+    pub brush_picker_list: crate::brush_panel::BrushesPanelState,
+    /// Layers under the pointer, listed by a right-click on the canvas with the Move tool or
+    /// ⌘/Ctrl+right-click with any tool (`layer_pick_ui`, #307).
+    #[serde(default)]
+    pub layer_menu: Option<crate::layer_pick_ui::LayerMenu>,
+    /// Selection-tool context menu opened by a plain canvas right-click.
+    #[serde(default)]
+    pub canvas_tool_menu: Option<crate::canvas_tool_menu::CanvasToolMenu>,
     /// Smoothing is a per-tool option (Brush and Eraser each keep theirs): the tool whose
     /// smoothing the session brush holds, and the other tools' saved values.
     #[serde(default)]
@@ -575,15 +810,18 @@ pub struct UiState {
     /// Pen path under construction.
     #[serde(default)]
     pub pen: Option<crate::vector_ui::PenPath>,
+    /// Direct Selection tool: selected anchors and the drag in progress (#790).
+    #[serde(default)]
+    pub direct_selection: crate::direct_select::DirectSelection,
     /// Selected row in the Paths panel ("work" or a saved path name).
     #[serde(default)]
     pub selected_path: Option<String>,
     /// Layers panel kind filter ("pixel", "adjustment", "type", "shape", "smart"); empty = all.
     #[serde(default)]
     pub layer_filter: Vec<String>,
-    /// Recorded actions (Actions panel).
+    /// Actions panel: which row is selected and which are expanded. The list lives on the session.
     #[serde(default)]
-    pub actions: crate::actions::Actions,
+    pub actions: crate::actions::ActionsUi,
     /// Layer Comps panel: the selected comp (by comp id).
     #[serde(default)]
     pub layer_comp_selected: Option<u32>,
@@ -621,6 +859,9 @@ pub struct UiState {
     /// Right-dock group order, heights and collapsed groups (see `dock`).
     #[serde(default)]
     pub dock: crate::dock::DockLayout,
+    /// Which chip the Color panel edits.
+    #[serde(default)]
+    pub color_panel: ColorPanelState,
     /// Brush Settings: selected section (0 = Brush Tip Shape) and tab (0 settings, 1 Brushes).
     #[serde(default)]
     pub brush_section: usize,
@@ -637,6 +878,13 @@ pub struct UiState {
     /// In-progress polygonal lasso vertices (document coordinates).
     #[serde(default)]
     pub polygon: Vec<[f64; 2]>,
+    /// The selection mode the polygonal lasso started in ("replace", "add", ...), set by the
+    /// modifiers held at its first click.
+    #[serde(default)]
+    pub polygon_mode: String,
+    /// Magnetic Lasso border in progress (`magnetic_lasso_ui`).
+    #[serde(default)]
+    pub magnetic: crate::magnetic_lasso_ui::MagneticLasso,
     /// Crop tool rectangle being edited [x0, y0, x1, y1] (document coordinates).
     #[serde(default)]
     pub crop_rect: Option<[f64; 4]>,
@@ -649,9 +897,19 @@ pub struct UiState {
     /// Non-blocking notices (import/export warnings, files that couldn't open), newest last.
     #[serde(default)]
     pub notices: Vec<crate::notices::Notice>,
+    /// Pending GPU fallback warning, visible to automation.
+    #[serde(default)]
+    pub gpu_fallback_notice: Option<String>,
+    /// Documents (ids) whose slow full refresh on the CPU compositor has had its notice.
+    #[serde(default)]
+    pub slow_refresh_noticed: Vec<u64>,
     /// Status bar info field, Home screen (see `chrome_ui`).
     #[serde(default)]
     pub chrome: crate::chrome_ui::ChromeState,
+    #[serde(default)]
+    pub camera_raw_scope: CameraRawScopeState,
+    #[serde(default)]
+    pub camera_raw_preview: CameraRawPreviewState,
 }
 
 impl Default for UiState {
@@ -660,14 +918,20 @@ impl Default for UiState {
             tool: Tool::Brush,
             recent_files: Vec::new(),
             text_edit: None,
+            type_transform: None,
+            type_transform_pivot: None,
             transform: None,
             mask_target: false,
             vector_mask_target: false,
             brush_picker: None,
+            brush_picker_list: crate::brush_picker::list_state(),
+            layer_menu: None,
+            canvas_tool_menu: None,
             smoothing_tool: None,
             tool_smoothing: Vec::new(),
             clone_source: None,
             clone_offset: None,
+            pattern_stamp_phase: None,
             extras: Extras::default(),
             view: Default::default(),
             actions: Default::default(),
@@ -680,6 +944,7 @@ impl Default for UiState {
             shell: Default::default(),
             layer_filter: Vec::new(),
             pen: None,
+            direct_selection: Default::default(),
             selected_path: None,
             panels: Panels::default(),
             views: Vec::new(),
@@ -690,18 +955,25 @@ impl Default for UiState {
             palette_open: false,
             dock_tabs: DockTabs::default(),
             dock: Default::default(),
+            color_panel: Default::default(),
             brush_section: 0,
             brush_tab: 0,
             brushes_panel: Default::default(),
             selection_mode: 0,
             tool_options: ToolOptions::default(),
             polygon: Vec::new(),
+            polygon_mode: String::new(),
+            magnetic: Default::default(),
             crop_rect: None,
             next_id: 1,
             status: String::new(),
             status_error: false,
             notices: Vec::new(),
+            gpu_fallback_notice: None,
+            slow_refresh_noticed: Vec::new(),
             chrome: Default::default(),
+            camera_raw_scope: Default::default(),
+            camera_raw_preview: Default::default(),
         }
     }
 }
@@ -744,6 +1016,15 @@ mod tests {
         assert_eq!(Tool::from_name("Rect"), Some(Tool::RectMarquee));
         assert_eq!(Tool::from_name("RectMarquee"), Some(Tool::RectMarquee));
         assert_eq!(Tool::from_name("Eraser Tool"), Some(Tool::Eraser));
+        assert_eq!(Tool::from_name("mixerBrush"), Some(Tool::MixerBrush));
+        assert_eq!(Tool::from_name("Mixer Brush Tool"), Some(Tool::MixerBrush));
+        assert_eq!(Tool::from_name("redEye"), Some(Tool::RedEye));
+        assert_eq!(Tool::from_name("Red Eye Tool"), Some(Tool::RedEye));
+        assert_eq!(Tool::RedEye.key(), 'J');
+        assert!(!Tool::RedEye.is_brushlike());
+        assert_eq!(Tool::from_name("patternStamp"), Some(Tool::PatternStamp));
+        assert_eq!(Tool::from_name("Pattern Stamp Tool"), Some(Tool::PatternStamp));
+        assert_eq!(Tool::ALL.len(), 51);
         assert_eq!(Tool::from_name("nope"), None);
     }
 

@@ -5,7 +5,12 @@
 //! Layout: `<recovery_dir>/<key>.pcraft/` (directory bundles, so repeated
 //! autosaves write only changed tiles) plus `<key>.json` with
 //! [`RecoveryInfo`]. Native targets only (threads and a filesystem).
+//!
+//! [`RecoveryStore`] is the app-facing lifecycle: an entry is only deleted once
+//! the document is saved or closed, never just because it was recovered.
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -16,7 +21,7 @@ use photocraft_doc::Document;
 use serde::{Deserialize, Serialize};
 
 use crate::store::write_atomic;
-use crate::{PcraftWriter, Result, SaveOptions, SaveStats};
+use crate::{FormatError, PcraftWriter, Result, SaveOptions, SaveStats};
 
 /// Sidecar describing an autosave.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -68,7 +73,16 @@ impl Autosaver {
         let bundle = dir.join(format!("{key}.pcraft"));
         let sidecar = dir.join(format!("{key}.json"));
         let last2 = last.clone();
-        let handle = std::thread::Builder::new().name(format!("autosave-{key}")).spawn(move || worker(rx, bundle, sidecar, last2)).ok();
+        // A thread that never started must not look like a working autosave: record the
+        // failure where `last_result`/`flush` report it, so recovery health checks see it.
+        let spawned = std::thread::Builder::new().name(format!("autosave-{key}")).spawn(move || worker(rx, bundle, sidecar, last2));
+        let handle = match spawned {
+            Ok(h) => Some(h),
+            Err(e) => {
+                note(&last, Err(FormatError::Io(std::io::Error::other(format!("the autosave thread could not start: {e}")))));
+                None
+            }
+        };
         Autosaver { dir, key, tx: Some(tx), handle, last }
     }
 
@@ -141,7 +155,8 @@ fn worker(rx: Receiver<Job>, bundle: PathBuf, sidecar: PathBuf, last: Arc<Mutex<
     }
 }
 
-/// Recoverable documents in `recovery_dir`, newest first.
+/// Recoverable documents in `recovery_dir`, newest first. A sidecar must be named after its own
+/// (sanitized) key, so a stray or hand-edited one can never point outside the directory.
 pub fn list_recovery(recovery_dir: &Path) -> Vec<RecoveryEntry> {
     let mut out = Vec::new();
     let Ok(rd) = std::fs::read_dir(recovery_dir) else {
@@ -152,6 +167,8 @@ pub fn list_recovery(recovery_dir: &Path) -> Vec<RecoveryEntry> {
         if p.extension().is_some_and(|x| x == "json")
             && let Ok(bytes) = std::fs::read(&p)
             && let Ok(info) = serde_json::from_slice::<RecoveryInfo>(&bytes)
+            && sanitize(&info.key) == info.key
+            && p.file_stem().is_some_and(|stem| *stem == *info.key)
         {
             let bundle = recovery_dir.join(format!("{}.pcraft", info.key));
             if bundle.join(crate::store::MANIFEST).is_file() {
@@ -173,6 +190,64 @@ pub fn discard_recovery(recovery_dir: &Path, entry: &RecoveryEntry) -> Result<()
     remove_entry(recovery_dir, &entry.info.key)
 }
 
+/// The crash-recovery autosaves of one app session, keyed by document id (the `DocId` value).
+///
+/// New documents save under `doc-<session>-<id>`, with a `<session>` unique to this store: ids
+/// restart every launch, so a new document must never overwrite an entry an earlier launch left.
+/// A recovered document [adopts](Self::adopt) the entry it was loaded from. Its autosaves replace
+/// that entry in place (each save is atomic, so the old copy stays loadable until the new one is
+/// complete), and saving or closing it removes the entry. Nothing is deleted just because it was
+/// recovered, so a second crash before the next autosave loses nothing.
+#[cfg(not(target_arch = "wasm32"))]
+pub struct RecoveryStore {
+    dir: PathBuf,
+    session: String,
+    savers: HashMap<u64, Autosaver>,
+    adopted: HashMap<u64, String>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl RecoveryStore {
+    pub fn new(recovery_dir: impl Into<PathBuf>) -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static STORES: AtomicU64 = AtomicU64::new(0);
+        let t = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let session = format!("{t:x}_{:x}_{:x}", std::process::id(), STORES.fetch_add(1, Ordering::Relaxed));
+        RecoveryStore { dir: recovery_dir.into(), session, savers: HashMap::new(), adopted: HashMap::new() }
+    }
+
+    /// Load every recoverable document, newest first, with the entry it came from. Nothing is
+    /// deleted: [`adopt`](Self::adopt) each document the app opens. Entries that fail to load stay
+    /// on disk untouched.
+    pub fn recover(&self) -> Vec<(RecoveryEntry, Document)> {
+        list_recovery(&self.dir).into_iter().filter_map(|e| recover(&e).ok().map(|doc| (e, doc))).collect()
+    }
+
+    /// Document `doc_id` was opened from the recovery entry `key`: its autosaves now replace that
+    /// entry, and [`discard`](Self::discard) removes it.
+    pub fn adopt(&mut self, doc_id: u64, key: &str) {
+        self.adopted.insert(doc_id, sanitize(key));
+    }
+
+    /// Queue an autosave of `doc` (returns immediately; see [`Autosaver::request`]).
+    pub fn autosave(&mut self, doc: &Arc<Document>, revision: u64, original_path: Option<String>) {
+        let id = doc.id.0;
+        let saver = self.savers.entry(id).or_insert_with(|| {
+            let key = self.adopted.get(&id).cloned().unwrap_or_else(|| format!("doc-{}-{id}", self.session));
+            Autosaver::new(&self.dir, &key)
+        });
+        saver.request(doc.clone(), revision, original_path, SaveOptions::default());
+    }
+
+    /// Document `doc_id` was saved or closed: remove its recovery data, both its own autosaves
+    /// and the entry it adopted.
+    pub fn discard(&mut self, doc_id: u64) -> Result<()> {
+        let own = self.savers.remove(&doc_id).map_or(Ok(()), Autosaver::discard);
+        let adopted = self.adopted.remove(&doc_id).map_or(Ok(()), |key| remove_entry(&self.dir, &key));
+        own.and(adopted)
+    }
+}
+
 fn remove_entry(dir: &Path, key: &str) -> Result<()> {
     let bundle = dir.join(format!("{key}.pcraft"));
     if bundle.exists() {
@@ -183,4 +258,29 @@ fn remove_entry(dir: &Path, key: &str) -> Result<()> {
         std::fs::remove_file(sidecar)?;
     }
     Ok(())
+}
+
+/// Record the outcome of the last save attempt where `last_result`/`flush` report it. A
+/// poisoned lock keeps the previous result rather than panicking in a crash-recovery path.
+fn note(last: &Arc<Mutex<Option<Result<SaveStats>>>>, r: Result<SaveStats>) {
+    if let Ok(mut g) = last.lock() {
+        *g = Some(r);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_spawn_failure_is_reported_not_silent() {
+        // What the spawn-failure arm of `Autosaver::new` records: recovery health checks
+        // read this through `last_result`/`flush` instead of seeing a working autosave.
+        let last = Arc::new(Mutex::new(None));
+        note(&last, Err(FormatError::Io(std::io::Error::other("the autosave thread could not start: resources"))));
+        let g = last.lock().expect("lock");
+        let err = g.as_ref().and_then(|r| r.as_ref().err()).expect("the failure is recorded");
+        let msg = err.to_string();
+        assert!(msg.contains("could not start"), "{msg}");
+    }
 }

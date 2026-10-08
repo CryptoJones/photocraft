@@ -6,10 +6,12 @@
 //! and `commit` when a gesture ends (the Properties host then runs one `layer.setAdjustment`; a
 //! dialog commits on OK). Selective Color and Color Lookup keep their editors in `adjust_ui`.
 
+use crate::point_curve as curve_edit;
+use crate::state::CurvesEditorState as CurveUi;
 use std::sync::Arc;
 
-use egui::{Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, pos2, vec2};
-use photocraft_doc::adjust::ToneSpace;
+use egui::{Color32, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, pos2, vec2};
+use photocraft_doc::adjust::{HueRange, ToneSpace};
 use photocraft_doc::{Adjustment, LayerId};
 use photocraft_engine::adjust_params::{self, HUE_RANGES, PHOTO_FILTERS};
 use serde_json::{Value, json};
@@ -77,6 +79,9 @@ pub struct EditorCx {
     pub gray: bool,
     /// Current foreground and background colours (Gradient Map preset).
     pub swatches: [[f32; 3]; 2],
+    /// Hosted by an Image › Adjustments dialog (false: the Properties panel). Photoshop's dialog
+    /// sliders follow the mouse wheel; the panel's don't.
+    pub dialog: bool,
 }
 
 /// The Levels/Curves channel space the values address.
@@ -301,75 +306,6 @@ fn gradient_bar(p: &egui::Painter, r: Rect, from: Color32, to: Color32, vertical
 // ---------------------------------------------------------------------------------------------
 // Curves
 
-/// Curve point editing as pure functions on `[input, output]` points in 0..=255, sorted by input.
-pub mod curve_edit {
-    use egui::Pos2;
-
-    /// Most points a curve can hold (Photoshop's limit).
-    pub const MAX_POINTS: usize = 16;
-    /// Points closer than this (input levels) are the same point.
-    pub const MIN_GAP: f32 = 2.0;
-
-    /// Index of the point nearest `pos` (screen) within `radius` pixels.
-    pub fn hit(pts: &[[f32; 2]], to_scr: impl Fn([f32; 2]) -> Pos2, pos: Pos2, radius: f32) -> Option<usize> {
-        pts.iter().enumerate().map(|(i, q)| (i, to_scr(*q).distance(pos))).filter(|(_, d)| *d <= radius).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(i, _)| i)
-    }
-
-    /// Adds a point at `v` (kept sorted). A point already at that input is selected instead; a
-    /// full curve takes no more points.
-    pub fn insert(pts: &mut Vec<[f32; 2]>, v: [f32; 2]) -> Option<usize> {
-        let v = [v[0].clamp(0.0, 255.0), v[1].clamp(0.0, 255.0)];
-        if let Some(i) = pts.iter().position(|q| (q[0] - v[0]).abs() < MIN_GAP) {
-            return Some(i);
-        }
-        if pts.len() >= MAX_POINTS {
-            return None;
-        }
-        let i = pts.iter().position(|q| q[0] > v[0]).unwrap_or(pts.len());
-        pts.insert(i, v);
-        Some(i)
-    }
-
-    /// Endpoints stay, and a curve keeps at least two points.
-    pub fn can_delete(pts: &[[f32; 2]], i: usize) -> bool {
-        pts.len() > 2 && i > 0 && i + 1 < pts.len()
-    }
-
-    pub fn delete(pts: &mut Vec<[f32; 2]>, i: usize) -> bool {
-        if !can_delete(pts, i) {
-            return false;
-        }
-        pts.remove(i);
-        true
-    }
-
-    /// Moves point `i` to `v`, kept strictly between its neighbours' inputs.
-    pub fn move_to(pts: &mut [[f32; 2]], i: usize, v: [f32; 2]) -> bool {
-        let n = pts.len();
-        if i >= n {
-            return false;
-        }
-        let lo = if i > 0 { pts[i - 1][0] + 1.0 } else { 0.0 };
-        let hi = if i + 1 < n { pts[i + 1][0] - 1.0 } else { 255.0 };
-        let new = [v[0].round().clamp(lo, hi.max(lo)), v[1].round().clamp(0.0, 255.0)];
-        let changed = new != pts[i];
-        pts[i] = new;
-        changed
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-struct CurveUi {
-    channel: usize,
-    sel: Option<usize>,
-    /// The point being dragged (None while dragged off the graph), the grab offset and whether
-    /// the drag removed it.
-    drag: Option<(Option<usize>, [f32; 2], bool)>,
-}
-
-/// Dragging a point this far outside the graph removes it (it comes back if dragged back in).
-pub const DRAG_OFF: f32 = 12.0;
-const HIT_RADIUS: f32 = 9.0;
 const CURVE_HANDLE_SIZE: f32 = 7.0;
 const CURVE_GRAPH_PADDING: f32 = 5.0;
 
@@ -417,91 +353,10 @@ fn curves(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     let graph = curve_graph(full, side);
     ui.data_mut(|d| d.insert_temp(cx.mem.with("curves-graph"), graph));
     let to_scr = |q: [f32; 2]| pos2(graph.left() + q[0] / 255.0 * graph.width(), graph.bottom() - q[1] / 255.0 * graph.height());
-    let to_val =
-        |s: Pos2| [((s.x - graph.left()) / graph.width() * 255.0).clamp(0.0, 255.0), ((graph.bottom() - s.y) / graph.height() * 255.0).clamp(0.0, 255.0)];
     let mut e = Edit::default();
-    let mut changed = false;
-
-    // Press: hit-test where the button went down (not where a drag is first recognised).
-    let press = resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed());
-    if press && let Some(pos) = ui.input(|i| i.pointer.press_origin()) {
-        resp.request_focus();
-        let delete = ui.input(|i| i.modifiers.command);
-        match curve_edit::hit(&pts, to_scr, pos, HIT_RADIUS) {
-            Some(i) if delete => {
-                if curve_edit::delete(&mut pts, i) {
-                    changed = true;
-                    e.commit = true;
-                }
-                st.sel = None;
-                st.drag = None;
-            }
-            Some(i) => {
-                st.sel = Some(i);
-                let g = to_val(pos);
-                st.drag = Some((Some(i), [pts[i][0] - g[0], pts[i][1] - g[1]], false));
-            }
-            None if graph.contains(pos) && !delete => {
-                let before = pts.len();
-                st.sel = curve_edit::insert(&mut pts, to_val(pos));
-                changed = pts.len() != before;
-                st.drag = st.sel.map(|i| (Some(i), [0.0, 0.0], false));
-            }
-            None => st.drag = None,
-        }
-    }
-    // Drag: follow the pointer; off the graph the point is removed (back on, it returns).
-    if resp.is_pointer_button_down_on()
-        && !press
-        && let (Some((index, off, removed)), Some(pos)) = (st.drag, ui.input(|i| i.pointer.interact_pos()))
-    {
-        let outside = !graph.expand(DRAG_OFF).contains(pos);
-        let g = to_val(pos);
-        let target = [g[0] + off[0], g[1] + off[1]];
-        match index {
-            Some(i) if outside && curve_edit::can_delete(&pts, i) => {
-                pts.remove(i);
-                st.drag = Some((None, off, true));
-                st.sel = None;
-                changed = true;
-            }
-            Some(i) => changed |= curve_edit::move_to(&mut pts, i, target),
-            None if removed && !outside => {
-                st.sel = curve_edit::insert(&mut pts, target);
-                st.drag = Some((st.sel, off, true));
-                changed |= st.sel.is_some();
-            }
-            None => {}
-        }
-    }
-    if st.drag.is_some() && !resp.is_pointer_button_down_on() {
-        st.drag = None;
-        e.commit = true;
-    }
-    // Keys while the graph has focus: Delete/Backspace removes, arrows nudge (Shift: ×10).
-    if resp.has_focus()
-        && let Some(i) = st.sel.filter(|i| *i < pts.len())
-    {
-        let del = ui.input_mut(|inp| inp.consume_key(Modifiers::NONE, Key::Delete) || inp.consume_key(Modifiers::NONE, Key::Backspace));
-        if del && curve_edit::delete(&mut pts, i) {
-            st.sel = None;
-            changed = true;
-            e.commit = true;
-        } else {
-            let step = if ui.input(|inp| inp.modifiers.shift) { 10.0 } else { 1.0 };
-            let mut d = [0.0f32; 2];
-            for (k, dx, dy) in [(Key::ArrowLeft, -1.0, 0.0), (Key::ArrowRight, 1.0, 0.0), (Key::ArrowUp, 0.0, 1.0), (Key::ArrowDown, 0.0, -1.0)] {
-                if ui.input_mut(|inp| inp.consume_key(Modifiers::NONE, k) || inp.consume_key(Modifiers::SHIFT, k)) {
-                    d = [d[0] + dx * step, d[1] + dy * step];
-                }
-            }
-            let to = [pts[i][0] + d[0], pts[i][1] + d[1]];
-            if d != [0.0, 0.0] && curve_edit::move_to(&mut pts, i, to) {
-                changed = true;
-                e.commit = true;
-            }
-        }
-    }
+    let interaction = crate::point_curve::interact(ui, &resp, graph, &mut pts, &mut st.gesture);
+    let mut changed = interaction.changed;
+    e.commit = interaction.commit;
 
     // Draw: histogram, quarter grid, baseline, gradient bars, other channels, the curve, points.
     let p = ui.painter_at(full.expand(2.0));
@@ -547,7 +402,7 @@ fn curves(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     draw_curve(&pts, if ch == 0 { t.text } else { bar_color(&chan, &t) }, 1.5);
     for (i, q) in pts.iter().enumerate() {
         let r = Rect::from_center_size(to_scr(*q), vec2(CURVE_HANDLE_SIZE, CURVE_HANDLE_SIZE));
-        if Some(i) == st.sel {
+        if Some(i) == st.gesture.selected {
             p.rect_filled(r, 0.0, t.text);
             p.rect_stroke(r, 0.0, Stroke::new(1.0, Color32::BLACK), StrokeKind::Outside);
         } else {
@@ -559,7 +414,7 @@ fn curves(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     // Input / Output of the selected point.
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        let i = st.sel.filter(|i| *i < pts.len());
+        let i = st.gesture.selected.filter(|i| *i < pts.len());
         let (mut vi, mut vo) = i.map_or((0.0, 0.0), |i| (pts[i][0], pts[i][1]));
         label(ui, tl!("Input:"));
         let ri = ui.add_enabled_ui(i.is_some(), |ui| widgets::value_field(ui, &mut vi, 0.0..=255.0, "", 52.0)).inner;
@@ -836,6 +691,22 @@ fn hue_color(deg: f32) -> Color32 {
     Color32::from_rgb(rgb[0], rgb[1], rgb[2])
 }
 
+fn move_hue_range_handle(bounds: [f32; 4], k: usize, deg: f32) -> [f32; 4] {
+    let mut b = HueRange::canonical_bounds(bounds);
+    if k >= b.len() {
+        return b;
+    }
+    if k == 0 {
+        let delta = (deg - b[0] + 180.0).rem_euclid(360.0) - 180.0;
+        b[0] = (b[0] + delta).min(b[1]).max(b[1] - 180.0);
+    } else {
+        let rel = (deg - b[0]).rem_euclid(360.0);
+        let hi = if k == 3 { b[0] + 359.0 } else { b[k + 1] };
+        b[k] = (b[0] + rel).clamp(b[k - 1], hi);
+    }
+    b
+}
+
 /// The spectrum bar after the adjustment (what each hue becomes), sampled at `n` hues.
 fn adjusted_spectrum(v: &Value, n: usize) -> Vec<Color32> {
     let adj = photocraft_engine::commands::adjustment_from_params("hueSaturation", v);
@@ -938,7 +809,7 @@ fn hue_saturation(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
     if range > 0 {
         let key = HUE_RANGES[range - 1];
         let neutral = photocraft_doc::adjust::HueRange::neutral(range - 1).bounds;
-        let mut b = nums(&v[key], "range", neutral);
+        let mut b = HueRange::canonical_bounds(nums(&v[key], "range", neutral));
         let xof = |deg: f32| bars.left() + deg.rem_euclid(360.0) / 360.0 * w;
         let deg_of = |x: f32| ((x - bars.left()) / w * 360.0).clamp(0.0, 360.0);
         let mid = bars.center().y;
@@ -974,14 +845,7 @@ fn hue_saturation(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
             let k = k as usize;
             let deg = deg_of(pos.x);
             let before = b;
-            if k == 0 {
-                let delta = (deg - b[0] + 180.0).rem_euclid(360.0) - 180.0;
-                b[0] = (b[0] + delta).min(b[1]).max(b[1] - 180.0);
-            } else {
-                let rel = (deg - b[0]).rem_euclid(360.0);
-                let hi = if k == 3 { b[0] + 359.0 } else { b[k + 1] };
-                b[k] = (b[0] + rel).clamp(b[k - 1], hi);
-            }
+            b = move_hue_range_handle(b, k, deg);
             if b != before {
                 v[key]["range"] = json!(b.map(|x| x.round()));
                 e.changed = true;
@@ -1002,8 +866,23 @@ fn hue_saturation(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
 // ---------------------------------------------------------------------------------------------
 // Color Balance
 
+/// Where the Color Balance editor rooted at `mem` keeps its Tone choice.
+fn color_balance_tone_id(mem: egui::Id) -> egui::Id {
+    mem.with("cb-tone")
+}
+
+/// Photoshop's Color Balance reset to defaults (Alt+Cancel in the dialog; the Properties panel's
+/// Reset once the layer is as the panel found it): every tone back to 0 and the Tone choice back
+/// to Midtones; Preserve Luminosity stays as it is.
+pub fn reset_color_balance(ctx: &egui::Context, mem: egui::Id, v: &mut Value) {
+    for key in ["shadows", "midtones", "highlights"] {
+        v[key] = json!([0.0, 0.0, 0.0]);
+    }
+    ctx.data_mut(|d| d.insert_temp(color_balance_tone_id(mem), 1usize));
+}
+
 fn color_balance(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
-    let tone_id = cx.mem.with("cb-tone");
+    let tone_id = color_balance_tone_id(cx.mem);
     let mut tone_ix: usize = ui.data(|d| d.get_temp(tone_id)).unwrap_or(1);
     ui.horizontal(|ui| {
         label(ui, tl!("Tone:"));
@@ -1022,9 +901,12 @@ fn color_balance(ui: &mut egui::Ui, v: &mut Value, cx: &EditorCx) -> Edit {
         (tl!("Magenta  ·  Green"), Color32::from_rgb(210, 40, 190), Color32::from_rgb(40, 190, 60)),
         (tl!("Yellow  ·  Blue"), Color32::from_rgb(230, 210, 30), Color32::from_rgb(40, 80, 230)),
     ];
+    // Photoshop: a double-click on a slider zeroes it (this tone only); the dialog's sliders step
+    // with the wheel; Up/Down step the fields; Shift makes those steps 10.
+    let gestures = widgets::RowGestures { reset: Some(0.0), wheel_step: cx.dialog.then_some(1.0) };
     let mut changed = false;
     for (i, (text, a, b)) in rows.iter().enumerate() {
-        let r = gradient_slider(ui, text, &mut vals[i], -100.0..=100.0, "", *a, *b);
+        let r = Edit::of(&widgets::slider_row_with(ui, text, &mut vals[i], -100.0..=100.0, "", Some(&[*a, *b]), gestures));
         changed |= r.changed;
         e.add(r);
     }
@@ -1325,6 +1207,83 @@ pub fn swatches(app: &PhotocraftApp) -> [[f32; 3]; 2] {
     [c(app.session.tools.foreground), c(app.session.tools.background)]
 }
 
+/// Root of an adjustment layer's Properties editor view state in egui memory.
+pub fn layer_mem(id: LayerId) -> egui::Id {
+    egui::Id::new(("adjust-layer", id.0))
+}
+
+/// Kinds whose Properties edits follow Photoshop's history and Reset (measured for Color Balance,
+/// Photoshop 25.4): consecutive edits of the layer make one history step, and Reset first returns
+/// to the settings the layer had when the panel started showing it.
+fn photoshop_session(kind: &str) -> bool {
+    kind == "colorBalance"
+}
+
+/// The `coalesce` key of a layer's Properties edits (one history step while they follow each
+/// other, like Photoshop's "Modify … Layer").
+pub fn properties_coalesce(id: LayerId) -> String {
+    format!("properties-adjustment:{}", id.0)
+}
+
+/// A layer's Properties session: document, last pass drawn, the settings the panel found, and
+/// whether the panel edited them since (or since the last Reset).
+type Session = (u64, u64, Value, bool);
+
+fn session_key(id: LayerId) -> egui::Id {
+    layer_mem(id).with("session")
+}
+
+/// Remember the settings `id` (in document `doc`) had when the panel started showing it: kept
+/// while it is drawn pass after pass, taken anew after a pass without it (another layer,
+/// document or panel state shown).
+fn track_session(ctx: &egui::Context, doc: u64, id: LayerId, committed: &Value) {
+    let pass = ctx.cumulative_pass_nr();
+    let kept: Option<Session> = ctx.data(|d| d.get_temp(session_key(id)));
+    let (start, edited) = match kept {
+        Some((d, last, v, e)) if d == doc && last.saturating_add(1) >= pass => (v, e),
+        _ => (committed.clone(), false),
+    };
+    ctx.data_mut(|d| d.insert_temp(session_key(id), (doc, pass, start, edited)));
+}
+
+fn set_edited(ctx: &egui::Context, id: LayerId, edited: bool) {
+    let kept: Option<Session> = ctx.data(|d| d.get_temp(session_key(id)));
+    if let Some((doc, pass, start, _)) = kept {
+        ctx.data_mut(|d| d.insert_temp(session_key(id), (doc, pass, start, edited)));
+    }
+}
+
+/// The settings layer `id` of document `doc` had when the Properties panel started showing it,
+/// if the panel has edited them since (or since the last Reset).
+pub fn session_start(ctx: &egui::Context, doc: u64, id: LayerId) -> Option<Value> {
+    let kept: Option<Session> = ctx.data(|d| d.get_temp(session_key(id)));
+    kept.filter(|k| k.0 == doc && k.3).map(|k| k.2)
+}
+
+/// The Properties panel's Reset for an adjustment layer whose kind follows Photoshop's session
+/// ([`photoshop_session`]): the `layer.setAdjustment` params, or None for other kinds. Edited in
+/// the panel since it started showing the layer (or since the last Reset): back to the settings it
+/// found (Tone choice kept); otherwise the defaults (Color Balance: [`reset_color_balance`]).
+/// Either way part of the layer's edit step.
+pub fn properties_reset(ctx: &egui::Context, doc: u64, id: LayerId, adj: &Adjustment) -> Option<Value> {
+    let kind = photocraft_engine::commands::adjustment_kind(adj);
+    if !photoshop_session(kind) {
+        return None;
+    }
+    let mut v = match session_start(ctx, doc, id) {
+        Some(start) => start,
+        None => {
+            let mut v = adjust_params::to_params(adj);
+            reset_color_balance(ctx, layer_mem(id), &mut v);
+            v
+        }
+    };
+    set_edited(ctx, id, false);
+    v["layer"] = json!(id.0);
+    v["coalesce"] = json!(properties_coalesce(id));
+    Some(v)
+}
+
 /// The Properties-panel editor of an adjustment layer: previews live (`app.live_adjust`) while a
 /// control moves and commits one `layer.setAdjustment` per gesture.
 pub fn layer_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: LayerId, adj: &Adjustment) {
@@ -1344,13 +1303,17 @@ pub fn layer_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: LayerId, adj
         _ => {}
     }
     let committed = adjust_params::to_params(adj);
+    let session = photoshop_session(kind);
+    if session && let Some(doc) = app.session.active().map(|s| s.doc.id.0) {
+        track_session(ui.ctx(), doc, id, &committed);
+    }
     let mut values = match &app.live_adjust {
         Some((l, v)) if *l == id => v.clone(),
         _ => committed.clone(),
     };
     let gray = app.session.active().is_some_and(|s| is_gray(s.doc.mode));
     let hist = needs_histogram(kind).then(|| tone::histograms(app, HistSource::BelowLayer(id), space_of(&values)));
-    let cx = EditorCx { mem: egui::Id::new(("adjust-layer", id.0)), hist, gray, swatches: swatches(app) };
+    let cx = EditorCx { mem: layer_mem(id), hist, gray, swatches: swatches(app), dialog: false };
     let e = editor(ui, kind, &mut values, &cx);
     if e.changed {
         app.live_adjust = Some((id, values.clone()));
@@ -1360,6 +1323,10 @@ pub fn layer_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: LayerId, adj
             let rev = app.session.active().map(|s| s.revision);
             let mut p = values;
             p["layer"] = json!(id.0);
+            if session {
+                p["coalesce"] = json!(properties_coalesce(id));
+                set_edited(ui.ctx(), id, true);
+            }
             if let Err(err) = app.run("layer.setAdjustment", p) {
                 app.ui.status = err;
             }
@@ -1371,55 +1338,15 @@ pub fn layer_editor(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: LayerId, adj
 
 #[cfg(test)]
 mod tests {
-    use super::curve_edit::*;
     use super::*;
 
-    fn line() -> Vec<[f32; 2]> {
-        vec![[0.0, 0.0], [255.0, 255.0]]
-    }
-
     #[test]
-    fn insert_keeps_order_dedupes_and_respects_the_limit() {
-        let mut p = line();
-        assert_eq!(insert(&mut p, [128.0, 150.0]), Some(1));
-        assert_eq!(insert(&mut p, [64.0, 40.0]), Some(1));
-        assert_eq!(p, vec![[0.0, 0.0], [64.0, 40.0], [128.0, 150.0], [255.0, 255.0]]);
-        // A click on an existing input selects that point instead of stacking a second one.
-        assert_eq!(insert(&mut p, [129.0, 10.0]), Some(2));
-        assert_eq!(p.len(), 4);
-        let mut full: Vec<[f32; 2]> = (0..MAX_POINTS).map(|i| [i as f32 * 10.0, 0.0]).collect();
-        assert_eq!(insert(&mut full, [255.0, 0.0]), None);
-        assert_eq!(insert(&mut p, [-50.0, 900.0]), Some(0), "clamped onto the black point");
-    }
+    fn hue_range_drag_canonicalizes_bounds_before_clamping() {
+        let moved = move_hue_range_handle([0.0, 350.0, 100.0, 200.0], 2, 354.0);
+        assert_eq!(moved, [-360.0, -10.0, -6.0, -1.0]);
 
-    #[test]
-    fn endpoints_and_the_last_two_points_stay() {
-        let mut p = vec![[0.0, 0.0], [100.0, 120.0], [255.0, 255.0]];
-        assert!(!delete(&mut p, 0) && !delete(&mut p, 2) && !delete(&mut p, 7));
-        assert!(delete(&mut p, 1));
-        assert_eq!(p, line());
-        assert!(!delete(&mut p, 1) && !delete(&mut p, 0));
-        assert_eq!(p.len(), 2);
-    }
-
-    #[test]
-    fn moves_stay_between_neighbours() {
-        let mut p = vec![[0.0, 0.0], [100.0, 120.0], [200.0, 180.0], [255.0, 255.0]];
-        assert!(move_to(&mut p, 1, [250.0, 300.0]));
-        assert_eq!(p[1], [199.0, 255.0]);
-        move_to(&mut p, 0, [150.0, 10.0]);
-        assert_eq!(p[0], [150.0, 10.0]);
-        move_to(&mut p, 3, [10.0, 5.0]);
-        assert_eq!(p[3], [201.0, 5.0]);
-        assert!(!move_to(&mut p, 9, [0.0, 0.0]));
-    }
-
-    #[test]
-    fn hit_test_picks_the_nearest_point_in_radius() {
-        let p = vec![[0.0, 0.0], [100.0, 100.0], [110.0, 110.0], [255.0, 255.0]];
-        let to_scr = |q: [f32; 2]| Pos2::new(q[0], 255.0 - q[1]);
-        assert_eq!(hit(&p, to_scr, Pos2::new(108.0, 146.0), 9.0), Some(2));
-        assert_eq!(hit(&p, to_scr, Pos2::new(50.0, 50.0), 9.0), None);
+        let canonical = move_hue_range_handle([0.0, 30.0, 60.0, 90.0], 2, 65.0);
+        assert_eq!(canonical, [0.0, 30.0, 65.0, 90.0]);
     }
 
     #[test]

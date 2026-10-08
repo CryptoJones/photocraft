@@ -14,6 +14,24 @@ use photocraft_raster::{Surface, Tile, decode_pixel, encode_pixel};
 use crate::manifest::*;
 use crate::{FormatError, Result};
 
+/// Deepest group nesting a bundle may hold — the one nesting limit every consumer of the layer
+/// tree shares; see [`photocraft_doc::MAX_GROUP_DEPTH`].
+pub use photocraft_doc::MAX_GROUP_DEPTH;
+
+fn too_deep() -> FormatError {
+    FormatError::LimitExceeded(format!("layer groups nested deeper than {MAX_GROUP_DEPTH}"))
+}
+
+/// Refuses to save a document the loader would reject for its group nesting.
+pub(crate) fn check_nesting(layers: &[Layer]) -> Result<()> {
+    // Bounded recursion: it stops at the first layer past the limit.
+    fn too_deep_at(layers: &[Layer], depth: usize) -> bool {
+        (depth > MAX_GROUP_DEPTH && !layers.is_empty())
+            || layers.iter().any(|l| matches!(&l.content, LayerContent::Group(g) if too_deep_at(&g.children, depth + 1)))
+    }
+    if too_deep_at(layers, 0) { Err(too_deep()) } else { Ok(()) }
+}
+
 pub(crate) trait Sink {
     /// Register a tile, returning its hash.
     fn tile(&mut self, format: PixelFormat, tile: &Arc<Tile>) -> Hash;
@@ -145,6 +163,7 @@ fn layer_m(l: &Layer, sink: &mut dyn Sink) -> LayerM {
             }),
             warp: s.warp.clone(),
             stack_mode: s.stack_mode,
+            perspective: s.perspective,
         },
     };
     LayerM {
@@ -178,6 +197,7 @@ fn layer_m(l: &Layer, sink: &mut dyn Sink) -> LayerM {
         link_group: l.link_group,
         excluded_channels: l.excluded_channels,
         blend_if: l.blend_if.clone(),
+        advanced: l.advanced,
         video: l.video.as_ref().map(|v| video_m(v, sink)),
     }
 }
@@ -290,7 +310,13 @@ impl Loader<'_> {
         swap_to_le(&mut dp, f.sample);
         let mut s = Surface::with_default(f, &decode_pixel(&f, &dp));
         let len = tile_len(&f);
+        // Both edges of a tile's rectangle must fit in i32 (`TileCoord::rect` multiplies by the
+        // tile size): -8388608 ..= 8388606. A damaged manifest can name any index (#938).
+        let fits = |i: i32| i.checked_mul(TILE_SIZE).is_some() && i.checked_add(1).and_then(|e| e.checked_mul(TILE_SIZE)).is_some();
         for t in &m.tiles {
+            if !fits(t.tx) || !fits(t.ty) {
+                return Err(FormatError::corrupt(format!("tile ({}, {}) is outside the coordinate range", t.tx, t.ty)));
+            }
             let c = TileCoord::new(t.tx, t.ty);
             if s.tile(c).is_some() {
                 return Err(FormatError::corrupt(format!("duplicate tile ({}, {})", t.tx, t.ty)));
@@ -355,16 +381,27 @@ impl Loader<'_> {
     }
 
     fn layer(&mut self, m: &LayerM, depth: usize) -> Result<Layer> {
-        if depth > 256 {
-            return Err(FormatError::LimitExceeded("layer groups nested deeper than 256".into()));
+        if depth > MAX_GROUP_DEPTH {
+            return Err(too_deep());
         }
+        // Children first, from this small frame: the conversion's large locals stay off the stack
+        // that grows with each nesting level.
+        let mut children = Vec::new();
+        if let ContentM::Group { children: kids, .. } = &m.content {
+            children.reserve(kids.len());
+            for c in kids {
+                children.push(self.layer(c, depth + 1)?);
+            }
+        }
+        self.layer_with(m, children)
+    }
+
+    /// One layer, given its already converted group children.
+    #[inline(never)]
+    fn layer_with(&mut self, m: &LayerM, children: Vec<Layer>) -> Result<Layer> {
         let content = match &m.content {
             ContentM::Raster { surface } => LayerContent::Raster(self.surface(surface)?),
-            ContentM::Group { children, expanded, artboard } => LayerContent::Group(Group {
-                artboard: artboard.clone(),
-                children: children.iter().map(|c| self.layer(c, depth + 1)).collect::<Result<_>>()?,
-                expanded: *expanded,
-            }),
+            ContentM::Group { expanded, artboard, .. } => LayerContent::Group(Group { artboard: artboard.clone(), children, expanded: *expanded }),
             ContentM::Adjustment { adjustment } => LayerContent::Adjustment(adjustment.clone()),
             ContentM::Fill { fill } => LayerContent::Fill(fill.clone()),
             ContentM::Text { text, font_family, size_pt, color, transform, cache, psd_raw, runs, paragraphs, shape, orientation, antialias, warp } => {
@@ -392,7 +429,7 @@ impl Loader<'_> {
                 cache: self.opt_surface(cache)?,
                 psd_raw: self.opt_blob(psd_raw)?,
             }),
-            ContentM::Smart { source, transform, smart_filters, cache, psd_raw, filters_enabled, filter_mask, warp, stack_mode } => {
+            ContentM::Smart { source, transform, smart_filters, cache, psd_raw, filters_enabled, filter_mask, warp, stack_mode, perspective } => {
                 LayerContent::Smart(SmartObject {
                     source: match source {
                         SmartSourceM::Embedded { file_name, blob } => SmartSource::Embedded { file_name: file_name.clone(), bytes: self.fetch.blob(blob)? },
@@ -415,6 +452,7 @@ impl Loader<'_> {
                     },
                     warp: warp.clone().filter(|w| w.mesh.as_ref().is_none_or(|m| m.is_valid())),
                     stack_mode: *stack_mode,
+                    perspective: perspective.filter(|p| p.iter().all(|v| v.is_finite())),
                 })
             }
         };
@@ -457,6 +495,7 @@ impl Loader<'_> {
             link_group: m.link_group,
             excluded_channels: m.excluded_channels,
             blend_if: m.blend_if.clone(),
+            advanced: m.advanced,
             video: m.video.as_ref().map(|v| self.video(v)).transpose()?,
         })
     }

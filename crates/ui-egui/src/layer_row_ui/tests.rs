@@ -4,7 +4,7 @@
 use egui::{Modifiers, PointerButton, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use photocraft_doc::LayerContent;
+use photocraft_doc::{Effect, LayerContent};
 use serde_json::json;
 
 use super::{Indicator, RowRects, layout, recorded};
@@ -135,6 +135,23 @@ fn the_fx_triangle_hides_and_shows_the_effects_rows() {
     assert!(h.state().session.active().unwrap().fx_collapsed.is_empty());
 }
 
+#[test]
+fn a_configured_but_disabled_effect_stays_discoverable_in_the_panel() {
+    let mut session = photocraft_engine::Session::new();
+    session.execute("file.new", json!({"width": 64, "height": 48})).unwrap();
+    let layer_id = session.execute("layer.new.layer", json!({"name": "Styled"})).unwrap()["layer"].as_u64().unwrap();
+    session.execute("layer.layerStyle.dropShadow", json!({"layer": layer_id})).unwrap();
+    let state = session.active_mut().unwrap();
+    let doc = std::sync::Arc::make_mut(&mut state.doc);
+    let layer = doc.layers.iter_mut().find(|layer| layer.id.0 == layer_id).unwrap();
+    let Some(Effect::DropShadow(shadow)) = layer.effects.items.first_mut() else { panic!("drop shadow was configured") };
+    shadow.common.enabled = false;
+
+    let h = harness(session, 1.0, "promedium", 290.0);
+    let effect_row = h.get_by_label("Drop Shadow").rect();
+    assert!(effect_row.is_positive(), "a configured disabled effect remains visible for discovery");
+}
+
 fn groups_open(s: &photocraft_engine::Session) -> Vec<bool> {
     s.active().unwrap().doc.walk().into_iter().filter_map(|(_, _, l)| if let LayerContent::Group(g) = &l.content { Some(g.expanded) } else { None }).collect()
 }
@@ -160,4 +177,137 @@ fn collapse_all_groups_from_the_panel_menu_and_it_is_saved() {
         s.add_document(back, None);
         assert!(groups_open(&s).iter().all(|o| !o), "{name}: groups stay closed");
     }
+}
+
+/// Dragging down the eye column hides (or shows) every layer swept over, in one history step, and
+/// never reorders the layers, even when one pointer move jumps several rows; a hidden layer's eye
+/// box is empty and a click shows it again.
+#[test]
+fn dragging_down_the_eyes_sweeps_visibility_without_reordering() {
+    for moves in [10, 1] {
+        let mut s = photocraft_engine::Session::new();
+        s.execute("file.new", json!({"width": 64, "height": 48})).unwrap();
+        for i in 0..4 {
+            s.execute("layer.new.layer", json!({"name": format!("L{i}")})).unwrap();
+        }
+        let mut h = harness(s, 1.0, "promedium", 290.0);
+        let order = |h: &Harness<'_, PhotocraftApp>| h.state().session.active().unwrap().doc.layers.iter().map(|l| l.id).collect::<Vec<_>>();
+        let visible = |h: &Harness<'_, PhotocraftApp>, id: u64| h.state().session.active().unwrap().doc.layer(photocraft_doc::LayerId(id)).unwrap().visible;
+        let steps = |h: &Harness<'_, PhotocraftApp>| h.state().session.active().unwrap().history.past_len();
+        let (before, steps_before) = (order(&h), steps(&h));
+        // Rows top to bottom: L3, L2, L1, L0, Background.
+        let rows = recorded(&h.ctx);
+        let eye = |r: &RowRects| pos2(r.row.left() + 17.0, r.row.center().y);
+        let (first, last) = (eye(&rows[0]), eye(&rows[2]));
+        h.event(egui::Event::PointerMoved(first));
+        h.run_steps(1);
+        h.event(egui::Event::PointerButton { pos: first, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+        h.run_steps(1);
+        for k in 1..=moves {
+            h.event(egui::Event::PointerMoved(first + (last - first) * (k as f32 / moves as f32)));
+            h.run_steps(1);
+        }
+        h.event(egui::Event::PointerButton { pos: last, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+        h.run_steps(3);
+        for r in &rows[..3] {
+            assert!(!visible(&h, r.layer), "{moves} moves: layer {} swept hidden", r.layer);
+        }
+        assert!(visible(&h, rows[3].layer), "{moves} moves: rows past the sweep are untouched");
+        assert_eq!(order(&h), before, "{moves} moves: an eye drag never reorders the layers");
+        assert_eq!(steps(&h), steps_before + 1, "{moves} moves: the whole sweep is one history step");
+        assert_eq!(h.state().session.active().unwrap().history.undo_label(), Some("Layer Visibility"));
+        // A click on the (empty) eye box of a hidden layer shows it again.
+        let p = eye(&recorded(&h.ctx)[1]);
+        click(&mut h, p);
+        assert!(visible(&h, rows[1].layer));
+    }
+}
+
+/// #736: a layer row dropped on the footer's New Layer button is duplicated, on New Group it is
+/// grouped, on Delete it is deleted; a row outside the selection goes alone.
+#[test]
+fn dropping_a_row_on_the_footer_buttons_duplicates_groups_and_deletes() {
+    let mut s = photocraft_engine::Session::new();
+    s.execute("file.new", json!({"width": 64, "height": 48})).unwrap();
+    for i in 0..3 {
+        s.execute("layer.new.layer", json!({"name": format!("L{i}")})).unwrap();
+    }
+    let mut h = harness(s, 1.0, "promedium", 290.0);
+    let names = |h: &Harness<'_, PhotocraftApp>| h.state().session.active().unwrap().doc.layers.iter().map(|l| l.name.clone()).collect::<Vec<_>>();
+    let drag_to = |h: &mut Harness<'static, PhotocraftApp>, row: usize, label: &str| {
+        let from = recorded(&h.ctx)[row].row.center();
+        let to = h.get_by_label(label).rect().center();
+        h.event(egui::Event::PointerMoved(from));
+        h.run_steps(1);
+        h.event(egui::Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+        h.run_steps(1);
+        for k in 1..=8 {
+            h.event(egui::Event::PointerMoved(from + (to - from) * (k as f32 / 8.0)));
+            h.run_steps(1);
+        }
+        h.event(egui::Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+        h.run_steps(3);
+    };
+    // Rows top to bottom: L2 (selected), L1, L0, Background. L1 isn't selected: it goes alone.
+    drag_to(&mut h, 1, "Create a new layer");
+    assert_eq!(names(&h), ["Background", "L0", "L1", "L1 copy", "L2"]);
+    let steps = h.state().session.active().unwrap().history.past_len();
+    // Rows: L2, L1 copy (now selected), L1, L0, Background.
+    drag_to(&mut h, 3, "Create a new group");
+    let doc = &h.state().session.active().unwrap().doc;
+    let group = doc.layers.iter().find(|l| l.is_group()).expect("a group");
+    let LayerContent::Group(g) = &group.content else { panic!("not a group") };
+    assert_eq!(g.children.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(), ["L0"]);
+    assert_eq!(h.state().session.active().unwrap().history.past_len(), steps + 1, "one undo step");
+    let n = h.state().session.active().unwrap().doc.layers.len();
+    drag_to(&mut h, 0, "Delete layer");
+    assert!(!names(&h).iter().any(|n| n == "L2"));
+    assert_eq!(h.state().session.active().unwrap().doc.layers.len(), n - 1);
+}
+
+/// Photoshop: ⌥ held when a dragged row is dropped copies the layer there (one "Duplicate Layer"
+/// step) and leaves the original in place; without ⌥ the same drag moves it.
+#[test]
+fn alt_dragging_a_row_drops_a_copy_and_a_plain_drag_moves() {
+    let mut s = photocraft_engine::Session::new();
+    s.execute("file.new", json!({"width": 64, "height": 48})).unwrap();
+    for i in 0..3 {
+        s.execute("layer.new.layer", json!({"name": format!("L{i}")})).unwrap();
+    }
+    let mut h = harness(s, 1.0, "promedium", 290.0);
+    let names = |h: &Harness<'_, PhotocraftApp>| h.state().session.active().unwrap().doc.layers.iter().map(|l| l.name.clone()).collect::<Vec<_>>();
+    let steps = |h: &Harness<'_, PhotocraftApp>| h.state().session.active().unwrap().history.past_len();
+    // Drag row `from` to the upper quarter of row `to` (= above it), with `release` held on drop.
+    let drag = |h: &mut Harness<'static, PhotocraftApp>, from: usize, to: usize, release: Modifiers| {
+        let rows = recorded(&h.ctx);
+        let a = rows[from].row.center();
+        let b = pos2(rows[to].row.center().x, rows[to].row.top() + rows[to].row.height() * 0.25);
+        h.event(egui::Event::PointerMoved(a));
+        h.run_steps(1);
+        h.event(egui::Event::PointerButton { pos: a, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+        h.run_steps(1);
+        for k in 1..=8 {
+            h.event(egui::Event::PointerMoved(a + (b - a) * (k as f32 / 8.0)));
+            h.run_steps(1);
+        }
+        // ⌥ only needs to be down when the row is dropped.
+        h.event(egui::Event::ModifiersChanged(release));
+        h.run_steps(1);
+        h.event(egui::Event::PointerButton { pos: b, button: PointerButton::Primary, pressed: false, modifiers: release });
+        h.run_steps(1);
+        h.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+        h.run_steps(3);
+    };
+    // Rows top to bottom: L2, L1, L0, Background. ⌥-drag L0 above L2.
+    let before = steps(&h);
+    drag(&mut h, 2, 0, Modifiers::ALT);
+    assert_eq!(names(&h), ["Background", "L0", "L1", "L2", "L0 copy"]);
+    assert_eq!(steps(&h), before + 1, "one undo step");
+    assert_eq!(h.state().session.active().unwrap().history.undo_label(), Some("Duplicate Layer"));
+    let active = h.state().session.active().unwrap().active_layer;
+    assert_eq!(active, h.state().session.active().unwrap().doc.layers.last().map(|l| l.id), "the copy is active");
+    // Rows: L0 copy, L2, L1, L0, Background. A plain drag of L1 above L0 copy moves it.
+    drag(&mut h, 2, 0, Modifiers::NONE);
+    assert_eq!(names(&h), ["Background", "L0", "L2", "L0 copy", "L1"]);
+    assert_eq!(h.state().session.active().unwrap().history.undo_label(), Some("Reorder Layers"));
 }

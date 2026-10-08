@@ -3,7 +3,7 @@
 //! realistic layered document, from the places focus usually is.
 
 use egui::accesskit::Role;
-use egui::{Key, Modifiers, PointerButton, Pos2, vec2};
+use egui::{Modifiers, PointerButton, Pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use photocraft_doc::LayerContent;
@@ -91,7 +91,8 @@ enum Place {
     LayersRow,
     /// Just after clicking into the Layers panel's Opacity field (a text field now).
     OpacityField,
-    /// A non-text widget focused (Tab from nothing focuses the first one, as egui does).
+    /// A non-text widget focused (a Layers panel row, through accessibility focus: Tab from
+    /// nothing focused is Photoshop's Show/Hide All Panels, #1313).
     FocusedWidget,
 }
 
@@ -123,9 +124,11 @@ fn put_focus(h: &mut Harness<'_, PhotocraftApp>, place: Place) {
             assert_eq!(Focus::of(&h.ctx), Focus::Text, "clicking a value field edits it");
         }
         Place::FocusedWidget => {
-            h.event(egui::Event::Key { key: Key::Tab, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
+            h.get_by_role_and_label(Role::Button, "paint").scroll_to_me();
+            h.run_steps(4);
+            h.get_by_role_and_label(Role::Button, "paint").focus();
             h.run_steps(2);
-            assert_eq!(Focus::of(&h.ctx), Focus::Widget, "Tab focused a widget");
+            assert_eq!(Focus::of(&h.ctx), Focus::Widget, "a widget is focused");
         }
     }
     take_log(&h.ctx);
@@ -296,4 +299,192 @@ fn a_disabled_shortcut_says_why() {
     let log = take_log(&h.ctx);
     assert!(matches!(log.as_slice(), [(id, Outcome::Disabled(_) | Outcome::Failed(_))] if id == "layer.mergeLayers"), "{log:?}");
     assert!(!h.state().ui.status.is_empty() && h.state().ui.status_error, "the status bar says why");
+}
+
+/// #352: ⌥[ ⌥] ⌥, ⌥. and ⇧⌥[ walk the Layers panel's rows from the keyboard.
+#[test]
+fn alt_brackets_walk_the_layers_panel() {
+    let mut h = harness();
+    // Rows, top to bottom: paint, Hello (type), group, in-group, Background.
+    assert_eq!(active_name(&h), "paint");
+    for (key, want) in [("Alt+[", "Hello"), ("Alt+[", "group"), ("Alt+[", "in-group"), ("Alt+]", "group"), ("Alt+,", "Background"), ("Alt+.", "paint")] {
+        press(&mut h, key);
+        assert_eq!(active_name(&h), want, "after {key}");
+    }
+    press(&mut h, "Alt+Shift+[");
+    assert_eq!(active_name(&h), "Hello");
+    assert_eq!(h.state().session.active().unwrap().selected_layers().len(), 2, "⇧⌥[ adds to the selection");
+}
+
+/// #626: [ ] ⇧[ ⇧] are commands listed under Tools in Edit › Keyboard Shortcuts, so they rebind.
+#[test]
+fn brush_keys_can_be_rebound() {
+    let mut h = harness();
+    put_focus(&mut h, Place::Canvas);
+    let items = crate::prefs_ui::shortcut_items(h.state());
+    let listed = |id: &str| items.iter().find(|i| i.0 == id).map(|i| (i.1.clone(), i.2.clone(), i.3.clone()));
+    assert_eq!(listed("tools.decreaseBrushSize"), Some(("Decrease Brush Size".into(), vec!["Tools".into()], Some("[".into()))));
+    assert_eq!(listed("tools.increaseBrushHardness").and_then(|i| i.2), Some("Shift+]".into()));
+    let app = h.state_mut();
+    app.ui.tool = Tool::Brush;
+    app.run("tools.setBrush", json!({"brush": {"size": 40, "hardness": 0.5}})).unwrap();
+    app.run("edit.keyboardShortcuts", json!({"set": {"tools.increaseBrushSize": "Alt+W", "tools.increaseBrushHardness": "Alt+Shift+W"}})).unwrap();
+    let brush = |h: &Harness<'_, PhotocraftApp>| (h.state().session.tools.brush.size, h.state().session.tools.brush.hardness);
+    press(&mut h, "]");
+    press(&mut h, "Shift+]");
+    assert_eq!(brush(&h), (40.0, 0.5), "the old keys are free");
+    press(&mut h, "Alt+W");
+    press(&mut h, "Alt+Shift+W");
+    assert_eq!(brush(&h), (50.0, 0.75), "the new keys step size and hardness");
+    press(&mut h, "[");
+    press(&mut h, "Shift+[");
+    assert_eq!(brush(&h), (40.0, 0.5), "the others keep their defaults");
+    // Hardness only steps for a tool with a brush tip; the press says why it did nothing.
+    h.state_mut().ui.tool = Tool::Move;
+    take_log(&h.ctx);
+    press(&mut h, "Alt+Shift+W");
+    assert_eq!(brush(&h), (40.0, 0.5));
+    assert!(matches!(take_log(&h.ctx).as_slice(), [(id, Outcome::Disabled(_))] if id == "tools.increaseBrushHardness"));
+}
+
+/// Bytes the app saved, newest last.
+type Saved = std::rc::Rc<std::cell::RefCell<Vec<Vec<u8>>>>;
+
+/// [`harness`] with a document that saves in place, an exporter writing its top-level layer count
+/// and a writer recording it; then one new layer on top (history to undo).
+fn saving_harness() -> (Harness<'static, PhotocraftApp>, Saved) {
+    let saved = Saved::default();
+    let out = saved.clone();
+    let mut h = Harness::builder().with_size(vec2(1440.0, 900.0)).with_max_steps(64).build_eframe(move |cc| {
+        PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
+        let services = crate::Services {
+            export: Some(Box::new(|doc, _, _| Ok((doc.layers.len().to_string().into_bytes(), Vec::new())))),
+            write: Some(Box::new(move |_, bytes| {
+                out.borrow_mut().push(bytes.to_vec());
+                Ok(())
+            })),
+            ..Default::default()
+        };
+        let mut session = realistic();
+        session.active_mut().unwrap().path = Some("/tmp/layout.psd".into());
+        session.execute("layer.new.layer", json!({"name": "added"})).unwrap();
+        PhotocraftApp::new(session, services)
+    });
+    h.run_steps(8);
+    put_focus(&mut h, Place::Canvas);
+    (h, saved)
+}
+
+fn layer_count(h: &Harness<'_, PhotocraftApp>) -> usize {
+    h.state().session.active().unwrap().doc.layers.len()
+}
+
+/// Press `shortcuts` one after another within a single frame (`Harness::event` runs a frame per
+/// event).
+fn press_in_one_frame(h: &mut Harness<'_, PhotocraftApp>, shortcuts: &[&str]) {
+    let events = &mut h.input_mut().events;
+    for sc in shortcuts {
+        let sc = parse(sc).unwrap();
+        let m = platform(sc.modifiers);
+        events.push(egui::Event::ModifiersChanged(m));
+        events.push(egui::Event::Key { key: sc.logical_key, physical_key: None, pressed: true, repeat: false, modifiers: m });
+        events.push(egui::Event::Key { key: sc.logical_key, physical_key: None, pressed: false, repeat: false, modifiers: m });
+    }
+    events.push(egui::Event::ModifiersChanged(Modifiers::NONE));
+    h.run_steps(2);
+}
+
+fn logged(h: &Harness<'_, PhotocraftApp>) -> Vec<String> {
+    take_log(&h.ctx).into_iter().map(|(id, _)| id).collect()
+}
+
+/// #440: shortcuts arriving in one frame run in the order they were pressed.
+#[test]
+fn shortcuts_in_one_frame_run_in_order() {
+    let (mut h, saved) = saving_harness();
+    assert_eq!(layer_count(&h), 5);
+    // ⌘Z then ⌘S: the undone document is saved.
+    press_in_one_frame(&mut h, &["Cmd+Z", "Cmd+S"]);
+    assert_eq!(layer_count(&h), 4, "⌘Z undid the new layer");
+    assert_eq!(saved.borrow().as_slice(), [b"4".to_vec()], "⌘S saved after the undo");
+    assert_eq!(logged(&h), ["edit.undo", "file.save"]);
+    // ⇧⌘Z redoes; then ⌘S before ⌘Z saves first and undoes after.
+    press_in_one_frame(&mut h, &["Cmd+Shift+Z"]);
+    assert_eq!(layer_count(&h), 5);
+    logged(&h);
+    saved.borrow_mut().clear();
+    press_in_one_frame(&mut h, &["Cmd+S", "Cmd+Z"]);
+    assert_eq!(saved.borrow().as_slice(), [b"5".to_vec()], "saved before the undo");
+    assert_eq!(layer_count(&h), 4, "then undone");
+    assert_eq!(logged(&h), ["file.save", "edit.undo"]);
+}
+
+/// A shortcut that opens a dialog leaves the frame's later keys to it: ⌘L then ⌘Z doesn't undo
+/// behind the Levels dialog.
+#[test]
+fn a_shortcut_opening_a_dialog_takes_the_frames_later_keys() {
+    let (mut h, _) = saving_harness();
+    press_in_one_frame(&mut h, &["Cmd+L", "Cmd+Z"]);
+    assert_eq!(h.state().ui.dialogs.len(), 1, "⌘L opened Levels");
+    assert_eq!(layer_count(&h), 5, "⌘Z didn't undo behind the dialog");
+    assert_eq!(logged(&h), ["image.adjustments.levels"]);
+}
+
+fn names(h: &Harness<'_, PhotocraftApp>) -> Vec<String> {
+    h.state().session.active().unwrap().doc.walk().into_iter().map(|(_, _, l)| l.name.clone()).collect()
+}
+
+/// #1077: with nothing selected, Delete (and Backspace) deletes the selected layer whatever its
+/// kind, from the canvas or the Layers panel, in one undo step; it used to say Clear needs a
+/// pixel layer on an adjustment layer.
+#[test]
+fn delete_without_a_selection_deletes_the_selected_layer() {
+    for place in [Place::Canvas, Place::LayersRow] {
+        for key in ["Delete", "Backspace"] {
+            let mut h = harness();
+            put_focus(&mut h, place);
+            let s = &mut h.state_mut().session;
+            s.execute("select.deselect", json!({})).unwrap();
+            let adj = photocraft_doc::LayerId(s.execute("layer.newAdjustmentLayer.invert", json!({})).unwrap()["layer"].as_u64().unwrap());
+            h.run_steps(2);
+            let before = names(&h);
+            press(&mut h, key);
+            assert_eq!(logged(&h), ["layer.delete"], "{place:?} {key}");
+            assert!(h.state().session.active().unwrap().doc.layer(adj).is_none(), "{place:?} {key}: the adjustment layer is gone");
+            assert_eq!(names(&h).len(), before.len() - 1, "{place:?} {key}: only it");
+            press(&mut h, "Cmd+Z");
+            assert_eq!(names(&h), before, "{place:?} {key}: one undo brings it back");
+        }
+    }
+}
+
+/// Every selected layer goes, pixel layers too (Photoshop deletes, it doesn't clear the layer).
+#[test]
+fn delete_without_a_selection_deletes_every_selected_layer() {
+    let mut h = harness();
+    put_focus(&mut h, Place::Canvas);
+    let s = &mut h.state_mut().session;
+    s.execute("select.deselect", json!({})).unwrap();
+    let paint = s.active().unwrap().active_layer.unwrap();
+    let adj = photocraft_doc::LayerId(s.execute("layer.newAdjustmentLayer.invert", json!({})).unwrap()["layer"].as_u64().unwrap());
+    s.execute("layer.select", json!({"layer": paint.0})).unwrap();
+    s.execute("layer.select", json!({"layer": adj.0, "mode": "add"})).unwrap();
+    h.run_steps(2);
+    let n = names(&h).len();
+    press(&mut h, "Delete");
+    let doc = &h.state().session.active().unwrap().doc;
+    assert!(doc.layer(paint).is_none() && doc.layer(adj).is_none(), "both selected layers are gone");
+    assert_eq!(names(&h).len(), n - 2);
+}
+
+/// A selection keeps Edit › Clear: the selected pixels go, the layer stays.
+#[test]
+fn delete_with_a_selection_clears_it() {
+    let mut h = harness();
+    put_focus(&mut h, Place::Canvas);
+    let before = names(&h);
+    assert!(h.state().session.active().unwrap().doc.selection.is_some());
+    press(&mut h, "Delete");
+    assert_eq!(logged(&h), ["edit.clear"]);
+    assert_eq!(names(&h), before, "no layer was deleted");
 }

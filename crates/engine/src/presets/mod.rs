@@ -11,7 +11,9 @@
 //! - shapes ([`shapes`]): vector shapes for the Custom Shape tool, placed as shape layers;
 //! - tool presets ([`tools`]): a tool plus its options (opaque JSON the shell fills in);
 //! - clone sources ([`clone_source`]): five source slots with offset, scale, rotation and flip
-//!   that `paint.cloneStamp` / `paint.healingBrush` follow.
+//!   that `paint.cloneStamp` / `paint.healingBrush` follow;
+//! - swatches ([`swatches`]): named colours in their own colour model (commands in
+//!   `crate::swatch_cmds`, `.aco`/`.ase` import and export).
 //!
 //! The built-in groups are our own (clean-room): colours, styles and shapes were designed here,
 //! not copied from Photoshop's presets. User edits persist with the preferences document: see
@@ -22,10 +24,13 @@ pub mod gradients;
 pub mod patterns;
 pub mod shapes;
 pub mod styles;
+pub mod swatches;
 pub mod tools;
 
 #[cfg(test)]
 mod tests;
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -75,6 +80,11 @@ pub struct PresetState {
     pub pattern: Option<String>,
     pub tool_presets: Vec<tools::ToolPreset>,
     pub clone: clone_source::CloneSources,
+    /// The user defaults "Make Default" in the Layer Style dialog saves
+    /// (effect kind → param set); "Reset to Default" restores them.
+    pub layer_defaults: BTreeMap<String, Value>,
+    /// Swatches panel library.
+    pub swatches: Vec<Group<swatches::Swatch>>,
     /// Bumped on every preset change (UIs key thumbnail caches on it).
     pub rev: u64,
 }
@@ -90,6 +100,8 @@ impl Default for PresetState {
             pattern: None,
             tool_presets: tools::builtin(),
             clone: Default::default(),
+            layer_defaults: BTreeMap::new(),
+            swatches: swatches::builtin(),
             rev: 0,
         }
     }
@@ -112,6 +124,9 @@ struct Persisted {
     tool_presets: Option<Vec<tools::ToolPreset>>,
     #[serde(default)]
     custom_shapes: Option<Vec<crate::edit_menu_cmds::CustomShape>>,
+    #[serde(default)]
+    layer_defaults: Option<BTreeMap<String, Value>>,
+    swatches: Option<Vec<Group<swatches::Swatch>>>,
 }
 
 impl PresetState {
@@ -125,6 +140,8 @@ impl PresetState {
             pattern_groups: Some(self.pattern_groups.clone()),
             tool_presets: Some(self.tool_presets.clone()),
             custom_shapes: Some(s.edit_state.custom_shapes.clone()),
+            layer_defaults: Some(self.layer_defaults.clone()),
+            swatches: Some(self.swatches.clone()),
         };
         serde_json::to_value(p).unwrap_or(Value::Null)
     }
@@ -156,6 +173,14 @@ impl Session {
         }
         if let Some(c) = p.custom_shapes {
             self.edit_state.custom_shapes = c;
+        }
+        if let Some(d) = p.layer_defaults {
+            st.layer_defaults = d;
+        }
+        if let Some(mut g) = p.swatches {
+            // A hand-edited preferences file can't make the library unbounded.
+            crate::swatch_cmds::cap_library(&mut g);
+            self.presets.swatches = g;
         }
         self.presets.rev += 1;
     }

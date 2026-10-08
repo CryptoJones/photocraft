@@ -16,12 +16,13 @@ use photocraft_algo::puppet::{PuppetDensity, PuppetMode, PuppetPin, PuppetWarp, 
 use photocraft_algo::transform::Interp;
 use photocraft_algo::warp::{warp_mesh_gray, warp_mesh_surface};
 use photocraft_color::PixelFormat;
-use photocraft_doc::{Document, Layer, LayerContent, LayerId, SmartFilter};
+use photocraft_doc::{Document, Layer, LayerContent, LayerId, Locks, SmartFilter};
 use photocraft_geom::Rect;
 use photocraft_raster::Surface;
 use serde_json::{Value, json};
 
 use crate::commands::CommandSpec;
+use crate::photo_cmds::Stopwatch;
 use crate::{EngineError, Result, Session};
 
 pub const LIQUIFY: &str = "filter.liquify";
@@ -150,11 +151,12 @@ pub fn liquify_surface(surf: &Surface, strokes: &[LiquifyStroke], cell: f64, can
     apply_liquify(surf, &field)
 }
 
-/// Puppet-warps a surface's content.
-pub fn puppet_surface(surf: &Surface, w: &PuppetWarp, interp: Interp) -> Surface {
+/// Puppet-warps a surface's content; `None` when the result would span more than
+/// [`photocraft_algo::puppet::MAX_WARP_PIXELS`].
+pub fn puppet_surface(surf: &Surface, w: &PuppetWarp, interp: Interp) -> Option<Surface> {
     let b = surf.content_bounds();
     if w.is_identity() || b.is_empty() {
-        return surf.clone();
+        return Some(surf.clone());
     }
     puppet_warp(surf, b, w, interp)
 }
@@ -177,7 +179,8 @@ pub fn apply_to_surface(id: &str, params: &Value, surf: &Surface, canvas: Rect) 
             let (strokes, cell) = liquify_params(id, params, canvas).ok()?;
             Some(liquify_surface(surf, &strokes, cell, canvas))
         }
-        PUPPET | PUPPET_SMART => Some(puppet_surface(surf, &puppet_params(id, params).ok()?, interp(params))),
+        // A stored warp too far to render leaves the smart object as it is (#1019).
+        PUPPET | PUPPET_SMART => Some(puppet_surface(surf, &puppet_params(id, params).ok()?, interp(params)).unwrap_or_else(|| surf.clone())),
         PERSPECTIVE | PERSPECTIVE_SMART => Some(perspective_surface(surf, &perspective_params(id, params).ok()?, interp(params))),
         _ => None,
     }
@@ -219,8 +222,9 @@ fn float_background(l: &mut Layer) {
     }
 }
 
-fn check_locks(l: &Layer, position: bool) -> Result<()> {
-    if l.locks.all || l.locks.pixels || (position && l.locks.position) {
+fn check_locks(l: &Layer, group: Locks, position: bool) -> Result<()> {
+    let locks = l.locks.union(group);
+    if locks.all || locks.pixels || (position && locks.position) {
         return Err(EngineError::Other(format!("layer \"{}\" is locked", l.name)));
     }
     Ok(())
@@ -229,16 +233,10 @@ fn check_locks(l: &Layer, position: bool) -> Result<()> {
 /// Shared driver: a smart object records `cmd` as a smart filter; a pixel layer is edited in
 /// place by `f(surface, selection)`.
 type MaskFn<'a> = Option<&'a dyn Fn(&Surface) -> Surface>;
+/// Deforms a layer's pixels (with the selection and canvas); an `Err` leaves the layer as it was.
+type LayerFn<'a> = &'a dyn Fn(&Surface, Option<&Surface>, Rect) -> Result<Surface>;
 
-fn run_on_layer(
-    s: &mut Session,
-    cmd: &str,
-    label: &str,
-    p: &Value,
-    moves: bool,
-    f: &dyn Fn(&Surface, Option<&Surface>, Rect) -> Surface,
-    mask: MaskFn,
-) -> Result<Value> {
+fn run_on_layer(s: &mut Session, cmd: &str, label: &str, p: &Value, moves: bool, f: LayerFn, mask: MaskFn) -> Result<Value> {
     let id = target(s, p)?;
     let mut params = p.clone();
     if let Value::Object(m) = &mut params {
@@ -247,6 +245,7 @@ fn run_on_layer(
     s.edit(label, |doc: &mut Document, _| {
         let canvas = doc.bounds();
         let selection = doc.selection.clone();
+        let group = crate::transform_cmds::group_locks(doc, id);
         let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
         if let LayerContent::Smart(_) = l.content {
             let sf = SmartFilter { command: cmd.to_string(), params: params.clone(), blend: photocraft_color::BlendMode::Normal, opacity: 1.0, visible: true };
@@ -255,11 +254,11 @@ fn run_on_layer(
         if moves {
             float_background(l);
         }
-        check_locks(l, moves)?;
+        check_locks(l, group, moves)?;
         let LayerContent::Raster(surf) = &mut l.content else {
             return Err(EngineError::Other(format!("{label} needs a pixel layer (rasterize it first)")));
         };
-        *surf = f(surf, selection.as_ref(), canvas);
+        *surf = f(surf, selection.as_ref(), canvas)?;
         // A linked layer mask follows a geometric warp.
         if let (Some(mf), Some(m)) = (mask, l.mask.as_mut())
             && m.linked
@@ -278,7 +277,7 @@ fn liquify(s: &mut Session, p: &Value) -> Result<Value> {
     if strokes.is_empty() {
         return Ok(json!({"layer": id.0, "changed": false}));
     }
-    let t0 = std::time::Instant::now();
+    let t0 = Stopwatch::start();
     let field = LiquifyField::from_strokes(canvas, cell, &strokes);
     let smart = matches!(s.active().and_then(|d| d.doc.layer(id)).map(|l| &l.content), Some(LayerContent::Smart(_)));
     if field.is_identity() && !smart {
@@ -292,29 +291,29 @@ fn liquify(s: &mut Session, p: &Value) -> Result<Value> {
         false,
         &|surf, sel, _| {
             let out = apply_liquify(surf, &field);
-            match sel {
+            Ok(match sel {
                 Some(sel) => mix_by_selection(surf, &out, sel),
                 None => out,
-            }
+            })
         },
         None,
     )?;
     let mut r = r;
-    r["ms"] = json!(t0.elapsed().as_secs_f64() * 1000.0);
+    r["ms"] = json!(t0.ms());
     r["maxDisplacement"] = json!(field.max_displacement());
     Ok(r)
 }
 
 /// Lifts the selected pixels (when there is a selection), deforms them with `f` and puts them
 /// back over the rest; without a selection deforms the whole surface.
-fn deform_selected(surf: &Surface, sel: Option<&Surface>, f: &dyn Fn(&Surface) -> Surface) -> Surface {
+fn deform_selected(surf: &Surface, sel: Option<&Surface>, f: &dyn Fn(&Surface) -> Result<Surface>) -> Result<Surface> {
     match sel {
         Some(sel) => {
             let (lifted, mut rest) = crate::transform_cmds::split_selected(surf, sel);
-            let moved = f(&lifted);
+            let moved = f(&lifted)?;
             crate::transform_cmds::composite_over(&mut rest, &moved);
             rest.prune();
-            rest
+            Ok(rest)
         }
         None => {
             let fmt = surf.format();
@@ -332,7 +331,8 @@ fn puppet(s: &mut Session, p: &Value, cmd: &str) -> Result<Value> {
         return Ok(json!({"layer": id.0, "changed": false}));
     }
     let it = interp(p);
-    run_on_layer(s, cmd, "Puppet Warp", p, true, &|surf, sel, _| deform_selected(surf, sel, &|x| puppet_surface(x, &w, it)), None)
+    let too_far = || bad(cmd, "the pins stretch the content too far: the result would cover more than 2^30 pixels");
+    run_on_layer(s, cmd, "Puppet Warp", p, true, &|surf, sel, _| deform_selected(surf, sel, &|x| puppet_surface(x, &w, it).ok_or_else(too_far)), None)
 }
 
 fn perspective(s: &mut Session, p: &Value, cmd: &str) -> Result<Value> {
@@ -354,7 +354,7 @@ fn perspective(s: &mut Session, p: &Value, cmd: &str) -> Result<Value> {
         "Perspective Warp",
         p,
         true,
-        &|surf, sel, _| deform_selected(surf, sel, &|x| perspective_surface(x, &planes, it)),
+        &|surf, sel, _| deform_selected(surf, sel, &|x| Ok(perspective_surface(x, &planes, it))),
         Some(&mask_fn),
     )?;
     r["planes"] = json!(planes);
@@ -362,7 +362,7 @@ fn perspective(s: &mut Session, p: &Value, cmd: &str) -> Result<Value> {
 }
 
 pub fn specs() -> Vec<CommandSpec> {
-    const L: &str = r##"{"strokes":[{"tool":"forwardWarp|reconstruct|smooth|twirlCw|twirlCcw|pucker|bloat|pushLeft|freeze|thaw|reconstructAll","size":px=100,"density":0-100=50,"pressure":0-100=100,"rate":0-100=80,"points":[[x,y,pressure?]…],"amount":%? (reconstructAll)}…],"meshSize":px? (field resolution, px per node; default 2, or 4 above 4 MP),"layer":id?} — strokes replay in order on a fresh field; a selection limits the effect; on a smart object it becomes a smart filter"##;
+    const L: &str = r##"{"strokes":[{"tool":"forwardWarp|reconstruct|smooth|twirlCw|twirlCcw|pucker|bloat|pushLeft|freeze|thaw|lassoMask|reconstructAll","size":px=100,"density":0-100=50,"pressure":0-100=100,"rate":0-100=80,"points":[[x,y,pressure?]…],"amount":%? (reconstructAll; lassoMask: 1 freezes the polygon in points, 0 thaws it)}…],"meshSize":px? (field resolution, px per node; default 2, or 4 above 4 MP),"layer":id?} — strokes replay in order on a fresh field; a selection limits the effect; on a smart object it becomes a smart filter"##;
     const P: &str = r##"{"pins":[{"src":[x,y],"dst":[x,y],"rotate":deg?,"depth":n?}…],"mode":"rigid|normal|distort"="normal","density":"fewer|normal|more"="normal","expansion":px=2,"interpolation":"bicubic|bilinear|nearest","layer":id?} — mesh over the opaque region, as-rigid-as-possible; on a smart object it becomes a smart filter"##;
     const Q: &str = r##"{"planes":[{"src":[[x,y]×4],"dst":[[x,y]×4]}…] (corners clockwise from top-left; corners that coincide in src are linked),"straighten":"horizontal|vertical|auto"?,"interpolation":"bicubic|bilinear|nearest","layer":id?}"##;
     vec![

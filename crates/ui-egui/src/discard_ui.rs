@@ -5,10 +5,12 @@
 //! once every affected document has been answered. Cancel at any point drops it. Documents are
 //! tracked by id, not tab index, so closing one elsewhere while the prompt is up can't retarget it.
 
+use egui::Key;
 use photocraft_doc::DocId;
 use serde_json::{Value, json};
 
 use crate::PhotocraftApp;
+use crate::widgets::{ButtonRole, DialogButton};
 
 const EXIT: &str = "file.exit";
 
@@ -78,6 +80,14 @@ pub fn intercept(app: &mut PhotocraftApp, id: &str, params: &Value) -> bool {
     true
 }
 
+impl PhotocraftApp {
+    /// Whether closing now would lose work: a document has unsaved changes and closing wasn't
+    /// confirmed. The web build has the browser ask before leaving the page while this holds (#1380).
+    pub fn has_unsaved_work(&self) -> bool {
+        !self.allow_close && self.session.documents().iter().any(|d| d.is_dirty())
+    }
+}
+
 /// Called once per frame: holds back a window close request while there is unsaved work.
 pub fn guard_window_close(app: &mut PhotocraftApp, ctx: &egui::Context) {
     if app.allow_close || !ctx.input(|i| i.viewport().close_requested()) {
@@ -85,6 +95,7 @@ pub fn guard_window_close(app: &mut PhotocraftApp, ctx: &egui::Context) {
     }
     if intercept(app, EXIT, &Value::Null) {
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
 }
 
@@ -114,23 +125,46 @@ fn advance(app: &mut PhotocraftApp, ctx: &egui::Context) {
     }
 }
 
-/// Saves `doc` in place; false when it is gone, the save failed or its file dialog was cancelled.
+/// Saves `doc`; true once it is saved. A document without a file to write back to asks where in
+/// the save dialog: the prompt then hides until it is answered, and moves on only if it saved.
 fn save(app: &mut PhotocraftApp, ctx: &egui::Context, doc: DocId) -> bool {
     let Some(i) = index_of(app, doc) else { return false };
     app.session.set_active(i);
-    match crate::menus::invoke_unguarded(app, ctx, "file.save", json!({})) {
+    let saved = crate::menus::invoke_unguarded(app, ctx, "file.save", json!({}));
+    if saved.is_ok() && app.file_dialog_open() {
+        let ctx = ctx.clone();
+        app.after_file_dialog(move |app, saved| {
+            let saved = saved.map_err(couldnt_save)?;
+            // Still the prompt that asked (quitting may have replaced it meanwhile).
+            if app.discard.as_ref().and_then(|p| p.docs.first()) == Some(&doc) {
+                advance(app, &ctx);
+            }
+            Ok(saved)
+        });
+        return false;
+    }
+    match saved {
         Ok(_) => true,
         // Backing out of the file dialog is the user's choice, not an error.
-        Err(e) if e == "cancelled" => false,
+        Err(e) if e == crate::file_dialog::CANCELLED => false,
         Err(e) => {
-            app.ui.status = format!("Couldn't save: {e}");
+            app.ui.status = couldnt_save(e);
             app.ui.status_error = true;
             false
         }
     }
 }
 
+/// A save failure as reported ("cancelled" stays as it is: it isn't reported).
+fn couldnt_save(e: String) -> String {
+    if e == crate::file_dialog::CANCELLED { e } else { format!("Couldn't save: {e}") }
+}
+
 pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
+    // Hidden while Save's file dialog is up; it's back if that is cancelled.
+    if app.file_dialog_open() {
+        return;
+    }
     let Some(p) = &app.discard else { return };
     let Some(&doc) = p.docs.first() else { return };
     let (exits, reverts) = (p.id == EXIT, p.id == "file.revert");
@@ -149,7 +183,25 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         };
         (tl!("Unsaved changes"), crate::i18n::fmt(template, &[("name", &name)]))
     };
-    let (mut save_it, mut discard_it, mut cancel) = (false, false, false);
+    let mac = ctx.os() == egui::os::OperatingSystem::Mac;
+    // The answers in the platform's words; `dialog_buttons` puts them in its order. Windows (and
+    // Linux) ask Yes / No / Cancel with Y, N and Esc, as Photoshop does there; macOS asks
+    // Don't Save / Cancel / Save. Esc always cancels (the modal closes on it).
+    let cancel = (ButtonRole::Cancel, "Cancel", mac.then_some(Key::C), 84.0, Answer::Cancel);
+    let buttons = if reverts {
+        vec![(ButtonRole::Default, "Revert", Some(Key::R), 84.0, Answer::Discard), cancel]
+    } else if mac {
+        vec![
+            (ButtonRole::Default, "Save", Some(Key::S), 84.0, Answer::Save),
+            (ButtonRole::Alternate, "Don't Save", Some(Key::D), 100.0, Answer::Discard),
+            cancel,
+        ]
+    } else {
+        vec![(ButtonRole::Default, "Yes", Some(Key::Y), 84.0, Answer::Save), (ButtonRole::Alternate, "No", Some(Key::N), 84.0, Answer::Discard), cancel]
+    };
+    let mut answer = ctx.input_mut(|i| buttons.iter().find(|b| b.2.is_some_and(|k| i.consume_key(egui::Modifiers::NONE, k))).map(|b| b.4));
+    let labels: Vec<String> = buttons.iter().map(|b| b.2.map_or_else(|| tl!(b.1).to_string(), |k| mnemonic(b.1, k))).collect();
+    let row: Vec<DialogButton> = buttons.iter().zip(&labels).map(|(b, label)| DialogButton::new(b.0, label, b.3)).collect();
     let modal = egui::Modal::new(egui::Id::new("discard-prompt")).show(ctx, |ui| {
         ui.set_max_width(420.0);
         ui.label(egui::RichText::new(tl!(&title)).font(crate::theme::semibold(15.0)));
@@ -160,21 +212,39 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         ui.add_space(12.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
-            if reverts {
-                discard_it = crate::widgets::primary_button(ui, tl!("Revert"), 84.0).clicked();
-                cancel = crate::widgets::secondary_button(ui, tl!("Cancel"), 84.0).clicked();
-            } else {
-                save_it = crate::widgets::primary_button(ui, tl!("Save"), 84.0).clicked();
-                cancel = crate::widgets::secondary_button(ui, tl!("Cancel"), 84.0).clicked();
-                discard_it = crate::widgets::secondary_button(ui, tl!("Don't Save"), 100.0).clicked();
+            if let Some(role) = crate::widgets::dialog_buttons(ui, &row) {
+                answer = buttons.iter().find(|b| b.0 == role).map(|b| b.4);
             }
         });
     });
-    cancel |= modal.should_close();
-    if cancel {
-        app.discard = None;
-    } else if discard_it || (save_it && save(app, ctx, doc)) {
-        advance(app, ctx);
+    if modal.should_close() {
+        answer = Some(Answer::Cancel);
+    }
+    // Enter takes the default answer, unless Tab focused a button: that one took the Enter as a click.
+    if answer.is_none() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Enter)) {
+        answer = buttons.iter().find(|b| b.0 == ButtonRole::Default).map(|b| b.4);
+    }
+    match answer {
+        Some(Answer::Cancel) => app.discard = None,
+        Some(Answer::Discard) => advance(app, ctx),
+        Some(Answer::Save) if save(app, ctx, doc) => advance(app, ctx),
+        _ => {}
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Answer {
+    Save,
+    Discard,
+    Cancel,
+}
+
+/// "(S)ave": the key in parentheses, or appended ("Guardar (S)") when the translation doesn't start with it.
+fn mnemonic(label: &str, key: Key) -> String {
+    let (label, k) = (tl!(label), key.name());
+    match label.split_at_checked(1) {
+        Some((first, rest)) if first.eq_ignore_ascii_case(k) => format!("({first}){rest}"),
+        _ => format!("{label} ({k})"),
     }
 }
 
@@ -289,6 +359,163 @@ mod tests {
         assert!(app.allow_close);
     }
 
+    #[test]
+    fn mnemonic_labels_bracket_the_key() {
+        assert_eq!(mnemonic("Don't Save", Key::D), "(D)on't Save");
+        assert_eq!(mnemonic("Guardar", Key::S), "Guardar (S)");
+        assert_eq!(mnemonic("保存", Key::S), "保存 (S)");
+    }
+
+    type Prompted = egui_kittest::Harness<'static, PhotocraftApp>;
+
+    /// The unsaved-changes prompt for `command` over `app`'s dirty documents, as `os` draws it (with
+    /// the file dialogs shown and answered at the end of each frame, as the app does).
+    fn prompt_for(app: PhotocraftApp, command: &str, os: egui::os::OperatingSystem) -> Prompted {
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(800.0, 600.0)).build_ui_state(
+            |ui, app| {
+                show(app, ui.ctx());
+                app.poll_file_dialog(ui.ctx(), None);
+            },
+            app,
+        );
+        PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
+        h.ctx.set_os(os);
+        assert!(intercept(h.state_mut(), command, &Value::Null));
+        h.run_steps(2);
+        h
+    }
+
+    /// The unsaved-changes prompt for Close All over two dirty documents, as `os` draws it.
+    fn prompt_on(os: egui::os::OperatingSystem) -> Prompted {
+        let mut app = app_with_docs(2);
+        make_dirty(&mut app, 0);
+        make_dirty(&mut app, 1);
+        prompt_for(app, "file.closeAll", os)
+    }
+
+    /// The buttons named `labels`, sorted by where they are drawn, left to right.
+    fn drawn_order<'a>(h: &Prompted, labels: [&'a str; 3]) -> Vec<&'a str> {
+        use egui_kittest::kittest::Queryable;
+        let mut v = labels.map(|l| (h.get_by_label(l).rect().left(), l)).to_vec();
+        v.sort_by(|a, b| a.0.total_cmp(&b.0));
+        v.into_iter().map(|(_, l)| l).collect()
+    }
+
+    /// Tab walks `labels` left to right and wraps; Shift+Tab steps back.
+    fn tab_walks(h: &mut Prompted, labels: [&str; 3]) {
+        use egui_kittest::kittest::Queryable;
+        let focused = |h: &Prompted| labels.into_iter().find(|l| h.get_by_label(l).is_focused());
+        for want in [labels[0], labels[1], labels[2], labels[0]] {
+            h.key_press(Key::Tab);
+            h.run_steps(2);
+            assert_eq!(focused(h), Some(want));
+        }
+        h.key_press_modifiers(egui::Modifiers::SHIFT, Key::Tab);
+        h.run_steps(2);
+        assert_eq!(focused(h), Some(labels[2]));
+    }
+
+    fn docs_left(h: &Prompted) -> Option<usize> {
+        h.state().discard.as_ref().map(|p| p.docs.len())
+    }
+
+    #[test]
+    fn windows_and_linux_ask_yes_no_cancel_with_the_default_first() {
+        for os in [egui::os::OperatingSystem::Windows, egui::os::OperatingSystem::Nix] {
+            let mut h = prompt_on(os);
+            let labels = ["(Y)es", "(N)o", "Cancel"];
+            assert_eq!(drawn_order(&h, labels), labels, "{os:?}");
+            tab_walks(&mut h, labels);
+            h.key_press(Key::N);
+            h.run_steps(2);
+            assert_eq!(docs_left(&h), Some(1), "N answered the first document");
+            // Cancel has no letter here: C does nothing, Esc cancels.
+            h.key_press(Key::C);
+            h.run_steps(2);
+            assert_eq!(docs_left(&h), Some(1));
+            h.key_press(Key::Escape);
+            h.run_steps(2);
+            assert!(h.state().discard.is_none());
+            assert_eq!(h.state().session.documents().len(), 2, "Cancel closed nothing");
+        }
+    }
+
+    #[test]
+    fn macos_asks_dont_save_cancel_save_with_the_default_last() {
+        let mut h = prompt_on(egui::os::OperatingSystem::Mac);
+        let labels = ["(D)on't Save", "(C)ancel", "(S)ave"];
+        assert_eq!(drawn_order(&h, labels), labels);
+        tab_walks(&mut h, labels);
+        h.key_press(Key::D);
+        h.run_steps(2);
+        assert_eq!(docs_left(&h), Some(1), "D answered the first document");
+        h.key_press(Key::C);
+        h.run_steps(2);
+        assert!(h.state().discard.is_none());
+        assert_eq!(h.state().session.documents().len(), 2, "Cancel closed nothing");
+    }
+
+    #[test]
+    fn enter_takes_the_default_answer_or_the_focused_button() {
+        let mut h = prompt_on(egui::os::OperatingSystem::Windows);
+        // Backing out of the save dialog keeps the prompt.
+        let (show, asked) = crate::file_dialog::fake(vec![None]);
+        h.state_mut().services.file_dialog = Some(show);
+        h.key_press(Key::Enter);
+        h.run_steps(2);
+        assert_eq!(asked.borrow().len(), 1, "Enter answered Yes, which saves");
+        assert_eq!(docs_left(&h), Some(2));
+        // Tab to No: Enter now presses it.
+        for _ in 0..2 {
+            h.key_press(Key::Tab);
+            h.run_steps(2);
+        }
+        h.key_press(Key::Enter);
+        h.run_steps(2);
+        assert_eq!(asked.borrow().len(), 1, "no second dialog");
+        assert_eq!(docs_left(&h), Some(1), "Enter pressed the focused No");
+    }
+
+    #[test]
+    fn saving_from_the_prompt_waits_for_the_save_dialog_then_closes() {
+        use crate::{FileDialogAnswer, FileDialogReply};
+        use egui_kittest::kittest::Queryable;
+        use std::{cell::RefCell, rc::Rc};
+        let written: Rc<RefCell<Vec<String>>> = Rc::default();
+        let (w, waiting): (_, Rc<RefCell<Option<FileDialogReply>>>) = (written.clone(), Rc::default());
+        let held = waiting.clone();
+        let mut app = app_with_docs(1);
+        make_dirty(&mut app, 0);
+        app.services.export = Some(Box::new(|_: &photocraft_doc::Document, _: &str, _: &crate::ExportSettings| Ok((b"out".to_vec(), Vec::new()))));
+        app.services.write = Some(Box::new(move |p: &str, _: &[u8]| {
+            w.borrow_mut().push(p.to_string());
+            Ok(())
+        }));
+        // A dialog the user takes their time with.
+        app.services.file_dialog = Some(Box::new(move |_, _, reply| *held.borrow_mut() = Some(reply)));
+        let mut h = prompt_for(app, "file.close", egui::os::OperatingSystem::Windows);
+        let answer = |h: &mut Prompted, a: Option<FileDialogAnswer>| {
+            waiting.borrow_mut().take().expect("the save dialog is open").send(a);
+            h.run_steps(2);
+        };
+        // Cancelling the save dialog brings the prompt back.
+        h.key_press(Key::Y);
+        h.run_steps(3);
+        assert!(h.state().file_dialog_open());
+        assert!(h.query_by_label("(Y)es").is_none(), "the prompt waits behind the dialog");
+        answer(&mut h, None);
+        assert_eq!(docs_left(&h), Some(1));
+        assert!(h.query_by_label("(Y)es").is_some());
+        // Saving closes the document.
+        h.key_press(Key::Y);
+        h.run_steps(3);
+        assert_eq!(h.state().session.documents().len(), 1, "still open while the dialog is");
+        answer(&mut h, Some(FileDialogAnswer::SaveTo("/pics/kept.psd".into())));
+        assert_eq!(*written.borrow(), ["/pics/kept.psd"]);
+        assert!(h.state().discard.is_none());
+        assert!(h.state().session.documents().is_empty());
+    }
+
     /// One frame with the window's close button pressed; whether the guard cancelled the close.
     fn press_window_close(app: &mut PhotocraftApp) -> bool {
         let mut info = egui::ViewportInfo::default();
@@ -297,7 +524,10 @@ mod tests {
         input.viewports.insert(egui::ViewportId::ROOT, info);
         let mut out = egui::Context::default().run_ui(input, |ui| guard_window_close(app, ui.ctx()));
         out.textures_delta.clear();
-        out.viewport_output[&egui::ViewportId::ROOT].commands.iter().any(|c| matches!(c, egui::ViewportCommand::CancelClose))
+        let commands = &out.viewport_output[&egui::ViewportId::ROOT].commands;
+        let cancelled = commands.iter().any(|c| matches!(c, egui::ViewportCommand::CancelClose));
+        assert_eq!(commands.iter().any(|c| matches!(c, egui::ViewportCommand::Focus)), cancelled);
+        cancelled
     }
 
     #[test]
@@ -306,6 +536,16 @@ mod tests {
         make_dirty(&mut app, 0);
         assert!(press_window_close(&mut app));
         assert!(app.discard.is_some());
+    }
+
+    #[test]
+    fn unsaved_work_is_any_dirty_document_until_closing_is_confirmed() {
+        let mut app = app_with_docs(2);
+        assert!(!app.has_unsaved_work());
+        make_dirty(&mut app, 1);
+        assert!(app.has_unsaved_work(), "a dirty document that isn't the active one counts");
+        app.allow_close = true;
+        assert!(!app.has_unsaved_work());
     }
 
     #[test]

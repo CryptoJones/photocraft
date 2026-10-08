@@ -41,6 +41,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod abr;
+pub mod aco;
+pub mod ase;
 pub mod blend;
 pub mod builder;
 pub mod compression;
@@ -65,6 +67,7 @@ pub mod tagged;
 // Test-data generator (tests and fuzz seeds only): failing loudly is the point.
 #[allow(clippy::expect_used)]
 pub mod testgen;
+pub mod tiff;
 pub mod tree;
 
 pub use blend::BlendMode;

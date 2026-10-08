@@ -15,11 +15,27 @@ use crate::blocks;
 use crate::pixels::{deinterleave, encode_be, psd_depth};
 use crate::psd_import::REGENERATED;
 
+const PSD_MAX_FILE_SIZE: u64 = 2 * 1024 * 1024 * 1024;
+const PSD_ESTIMATE_FIXED_OVERHEAD: u64 = 1024 * 1024;
+const PSD_ESTIMATE_LAYER_OVERHEAD: u64 = 64 * 1024;
+
 /// Options for [`document_to_psd_with`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PsdExportOptions {
     /// Write PSB even when the document fits PSD limits.
     pub force_psb: bool,
+    /// Matte the merged image against white where it is translucent, as Photoshop does
+    /// (`false` keeps straight colour under the alpha: for containers that store the composite
+    /// with its own alpha, such as a layered TIFF).
+    pub merged_matte: bool,
+    /// Compression of the merged image (32-bit float documents are always written raw).
+    pub merged_compression: Compression,
+}
+
+impl Default for PsdExportOptions {
+    fn default() -> Self {
+        PsdExportOptions { force_psb: false, merged_matte: true, merged_compression: Compression::Rle }
+    }
 }
 
 struct Ex {
@@ -228,7 +244,11 @@ impl Ex {
 
     fn encode(&self, id: i16, plane: &[u8], w: usize, h: usize) -> ChannelData {
         let depth = psd_depth(self.fmt.sample);
-        ChannelData::encode(id, self.compression(), plane, w, h, depth, self.version)
+        // Photoshop writes empty layer/mask channels as just the raw compression code.
+        // A ZIP stream for a zero-sized channel makes readers try to decompress an
+        // invalid image extent (notably psd-tools for 32-bit adjustment layers).
+        let compression = if w == 0 || h == 0 { Compression::Raw } else { self.compression() };
+        ChannelData::encode(id, compression, plane, w, h, depth, self.version)
             .or_else(|_| ChannelData::encode(id, Compression::Raw, plane, w, h, depth, self.version))
             .unwrap_or(ChannelData { id, compression: Some(Compression::Raw), data: plane.to_vec() })
     }
@@ -417,7 +437,13 @@ impl Ex {
                     _ => adjust_map::Channels::Other,
                 };
                 let cged = raw.iter().find(|(k, _)| k == b"CgEd").map(|(_, d)| d.clone());
-                let keep = raw.iter().any(|(k, d)| adjust_map::ADJUSTMENT_KEYS.contains(&k) && adjust_map::parse(k, d, cged.as_deref(), channels) == *a);
+                let keep = raw.iter().any(|(k, d)| {
+                    // A previously saved PhotoCraft v2 Photo Filter block may be 18 bytes.
+                    // It parses here, but Photoshop requires four-byte alignment, so repair
+                    // that legacy record on re-save rather than preserving the broken bytes.
+                    let legacy_phfl = k == b"phfl" && d.starts_with(&[0, 2]) && d.len() % 4 != 0;
+                    !legacy_phfl && adjust_map::ADJUSTMENT_KEYS.contains(&k) && adjust_map::parse(k, d, cged.as_deref(), channels) == *a
+                });
                 if !keep {
                     raw.retain(|(k, _)| !adjust_map::ADJUSTMENT_KEYS.contains(&k) && k != b"CgEd");
                     let w = adjust_map::write(a);
@@ -477,6 +503,8 @@ impl Ex {
             },
             None => raw.retain(|(k, _)| k != b"brst"),
         }
+        // Advanced Blending: written from the field (in place when the block was imported).
+        crate::blocks::put_advanced(&l.advanced, &mut raw);
         if !matches!(l.content, LayerContent::Shape(_)) {
             self.vector_mask_block(l, &mut raw);
         }
@@ -550,7 +578,16 @@ impl Ex {
         let size = if size.0 > 0.0 && size.1 > 0.0 { size } else { size_from_layer(sm) };
         let mut warnings = Vec::new();
         let fx = (!stack.filters.is_empty()).then(|| filter_fx(&stack, &l.name, &mut warnings));
-        let spec = PlacedSpec { idnt: &src.uuid, placed: &placed, transform: sm.transform, size, dpi: src.dpi, warp: sm.warp.as_ref(), filter_fx: fx };
+        let spec = PlacedSpec {
+            idnt: &src.uuid,
+            placed: &placed,
+            transform: sm.transform,
+            perspective: sm.perspective,
+            size,
+            dpi: src.dpi,
+            warp: sm.warp.as_ref(),
+            filter_fx: fx,
+        };
         let sold = sold_bytes(same_source.map(|t| &t.descriptor), &spec, &mut warnings);
         let plld = plld_bytes(&spec, &mut warnings);
         warnings.dedup();
@@ -562,7 +599,12 @@ impl Ex {
             let bounds = sm.cache.as_ref().map_or(self.canvas, |c| c.content_bounds().union(&self.canvas));
             let item = match (sm.stack_mode, self.source_composite(&src.uuid)) {
                 (None, Some((img, img_bounds))) => {
-                    let unfiltered = photocraft_algo::warp::place_source(&img, img_bounds, &sm.transform, sm.warp.as_ref());
+                    let unfiltered = match &sm.perspective {
+                        Some(p) => {
+                            photocraft_algo::warp::place_source_projective(&img, img_bounds, &photocraft_algo::transform::Homography(*p), sm.warp.as_ref())
+                        }
+                        None => photocraft_algo::warp::place_source(&img, img_bounds, &sm.transform, sm.warp.as_ref()),
+                    };
                     crate::smart_map::feid_item(&placed, &unfiltered, sm.filter_mask.as_ref(), bounds, self.fmt)
                 }
                 _ => None,
@@ -683,7 +725,7 @@ impl Ex {
                 return Err(format!("smart objects nest more than {MAX_NESTING} deep"));
             }
             let doc = photocraft_format::load_from_bytes(bytes).map_err(|e| format!("its contents can't be read: {e}"))?;
-            let (file, warnings) = document_to_psd_nested(&doc, &PsdExportOptions { force_psb: true }, self.smart.depth + 1);
+            let (file, warnings) = document_to_psd_nested(&doc, &PsdExportOptions { force_psb: true, ..Default::default() }, self.smart.depth + 1);
             let data = file.to_bytes().map_err(|e| format!("its contents can't be written: {e}"))?;
             let stem = file_name.rsplit_once('.').map_or(file_name, |(a, _)| a);
             self.warnings.extend(warnings.into_iter().map(|w| format!("smart object {stem}: {w}")));
@@ -942,6 +984,118 @@ pub fn document_to_psd_with(doc: &Document, opts: &PsdExportOptions) -> (PsdFile
     document_to_psd_nested(doc, opts, 0)
 }
 
+/// Adds headroom for compressed channel streams and their per-row length tables.
+fn estimate_encoded_size(raw_bytes: u64, rows: u64, structural_bytes: u64) -> Option<u64> {
+    raw_bytes.checked_add(raw_bytes.checked_add(63)?.checked_div(64)?)?.checked_add(rows.checked_mul(8)?)?.checked_add(structural_bytes)
+}
+
+fn add_plane_estimate(raw_bytes: &mut u64, rows: &mut u64, width: u64, height: u64, channels: u64, bytes_per_sample: u64) -> Option<()> {
+    let plane_bytes = width.checked_mul(height)?.checked_mul(channels)?.checked_mul(bytes_per_sample)?;
+    let plane_rows = height.checked_mul(channels)?;
+    *raw_bytes = raw_bytes.checked_add(plane_bytes)?;
+    *rows = rows.checked_add(plane_rows)?;
+    Some(())
+}
+
+fn exceeds_psd_size_limit(estimated_size: Option<u64>) -> bool {
+    estimated_size.is_none_or(|size| size > PSD_MAX_FILE_SIZE)
+}
+
+fn surface_dimensions(surface: &Surface) -> Option<(u64, u64)> {
+    let bounds = surface.content_bounds();
+    Some((u64::from(bounds.width()), u64::from(bounds.height())))
+}
+
+pub(crate) fn estimate_psd_size(doc: &Document) -> Option<u64> {
+    let mut raw_bytes = 0;
+    let mut rows = 0;
+    let mut structural_bytes = PSD_ESTIMATE_FIXED_OVERHEAD;
+
+    let width = u64::from(doc.size.width);
+    let height = u64::from(doc.size.height);
+
+    if doc.mode == ColorMode::Multichannel {
+        let channels = u64::try_from(doc.channels.len().clamp(1, 56)).ok()?;
+        let sample_bytes = u64::try_from(if doc.depth == SampleType::F32 { SampleType::U16.bytes() } else { doc.depth.bytes() }).ok()?;
+        add_plane_estimate(&mut raw_bytes, &mut rows, width, height, channels, sample_bytes)?;
+    } else {
+        let format = doc.pixel_format();
+        let color_channels = u64::try_from(format.mode.color_channels()).ok()?;
+        let bytes_per_sample = u64::try_from(format.sample.bytes()).ok()?;
+        let layer_channels = color_channels.checked_add(1)?;
+
+        for (_, _, layer) in doc.walk() {
+            structural_bytes = structural_bytes.checked_add(PSD_ESTIMATE_LAYER_OVERHEAD)?.checked_add(u64::try_from(layer.name.len()).ok()?)?;
+            for (_, data) in &layer.psd_blocks {
+                structural_bytes = structural_bytes.checked_add(u64::try_from(data.len()).ok()?)?;
+            }
+
+            let surface = match &layer.content {
+                LayerContent::Fill(fill) => {
+                    let mut fill_width = width;
+                    let mut fill_height = height;
+                    if let Some(cache) = &layer.fill_cache
+                        && cache.fill == *fill
+                    {
+                        let (cache_width, cache_height) = surface_dimensions(&cache.surface)?;
+                        fill_width = fill_width.max(cache_width);
+                        fill_height = fill_height.max(cache_height);
+                    }
+                    add_plane_estimate(&mut raw_bytes, &mut rows, fill_width, fill_height, layer_channels, bytes_per_sample)?;
+                    None
+                }
+                _ => layer.surface(),
+            };
+            if let Some(surface) = surface {
+                let (surface_width, surface_height) = surface_dimensions(surface)?;
+                add_plane_estimate(&mut raw_bytes, &mut rows, surface_width, surface_height, layer_channels, bytes_per_sample)?;
+            }
+            if let Some(mask) = &layer.mask {
+                let (mask_width, mask_height) = surface_dimensions(&mask.surface)?;
+                add_plane_estimate(&mut raw_bytes, &mut rows, mask_width, mask_height, 1, bytes_per_sample)?;
+            }
+            if let LayerContent::Smart(smart) = &layer.content
+                && let photocraft_doc::SmartSource::Embedded { bytes, .. } = &smart.source
+            {
+                structural_bytes = structural_bytes.checked_add(u64::try_from(bytes.len()).ok()?)?;
+            }
+        }
+
+        let max_extra_channels = 56usize.saturating_sub(format.mode.color_channels() + 1);
+        let mut extra_channels = doc.channels.len().min(max_extra_channels);
+        if doc.quick_mask.is_some() && extra_channels < max_extra_channels {
+            extra_channels += 1;
+        }
+        let merged_channels = color_channels.checked_add(1)?.checked_add(u64::try_from(extra_channels).ok()?)?;
+        add_plane_estimate(&mut raw_bytes, &mut rows, width, height, merged_channels, bytes_per_sample)?;
+        for channel in doc.channels.iter().take(extra_channels) {
+            structural_bytes = structural_bytes.checked_add(u64::try_from(channel.name.len()).ok()?)?;
+        }
+    }
+
+    structural_bytes = structural_bytes
+        .checked_add(u64::try_from(doc.icc_profile.as_ref().map_or(0, |profile| profile.len())).ok()?)?
+        .checked_add(u64::try_from(doc.metadata.xmp.as_ref().map_or(0, String::len)).ok()?)?
+        .checked_add(u64::try_from(doc.metadata.exif.as_ref().map_or(0, |data| data.len())).ok()?)?;
+    for (_, name, data) in &doc.metadata.psd_resources {
+        structural_bytes = structural_bytes.checked_add(u64::try_from(name.len()).ok()?)?.checked_add(u64::try_from(data.len()).ok()?)?;
+    }
+    for (_, _, data) in &doc.metadata.psd_global_blocks {
+        structural_bytes = structural_bytes.checked_add(u64::try_from(data.len()).ok()?)?;
+    }
+
+    estimate_encoded_size(raw_bytes, rows, structural_bytes)
+}
+
+pub(crate) fn psd_version(doc: &Document, force_psb: bool, size_exceeds_limit: bool) -> Version {
+    let exceeds_dimensions = doc.size.width > 30_000 || doc.size.height > 30_000;
+    if force_psb || exceeds_dimensions || size_exceeds_limit { Version::Psb } else { Version::Psd }
+}
+
+pub(crate) fn psd_size_exceeds_limit(doc: &Document) -> bool {
+    exceeds_psd_size_limit(estimate_psd_size(doc))
+}
+
 /// [`document_to_psd_with`] for a document embedded `depth` smart objects deep.
 fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32) -> (PsdFile, Vec<String>) {
     if doc.mode == ColorMode::Multichannel {
@@ -951,7 +1105,8 @@ fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32) -
     let sample = fmt.sample;
     let cc = fmt.mode.color_channels();
     let big = doc.size.width > 30_000 || doc.size.height > 30_000;
-    let version = if opts.force_psb || big { Version::Psb } else { Version::Psd };
+    let size_exceeds_limit = !opts.force_psb && !big && psd_size_exceeds_limit(doc);
+    let version = psd_version(doc, opts.force_psb, size_exceeds_limit);
     let mut ex = Ex {
         fmt,
         dpi: doc.resolution_dpi,
@@ -971,6 +1126,8 @@ fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32) -
     };
     if big && !opts.force_psb {
         ex.warnings.push("document exceeds 30000 px; written as PSB".into());
+    } else if size_exceeds_limit && !opts.force_psb {
+        ex.warnings.push("estimated encoded size exceeds 2 GB; written as PSB".into());
     }
     if fmt.mode != doc.mode {
         ex.warnings.push(format!("{:?} document written as {:?}", doc.mode, fmt.mode));
@@ -1004,8 +1161,8 @@ fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32) -
     // Merged composite, rendered and encoded in bands (no full-size float composite). Matting
     // against white only changes pixels with alpha < 1; if some are slightly translucent but all
     // round to opaque (so no alpha channel is written), encode once more without the matte.
-    let (mut planes, has_alpha, translucent) = merged_planes(doc, &fmt, cmyk_of(&fmt), true);
-    if !has_alpha && translucent {
+    let (mut planes, has_alpha, translucent) = merged_planes(doc, &fmt, cmyk_of(&fmt), opts.merged_matte);
+    if !has_alpha && translucent && opts.merged_matte {
         planes = merged_planes(doc, &fmt, cmyk_of(&fmt), false).0;
     }
     let n = doc.size.area() as usize;
@@ -1038,7 +1195,7 @@ fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32) -
     }
     let channels = (cc + usize::from(has_alpha) + extra.len()) as u16;
     let header = Header::new(version, doc.size.width, doc.size.height, channels, psd_depth(sample), psd_mode(fmt.mode));
-    let mcomp = if sample == SampleType::F32 { Compression::Raw } else { Compression::Rle };
+    let mcomp = if sample == SampleType::F32 { Compression::Raw } else { opts.merged_compression };
     let image_data = ImageData::encode(mcomp, &planes, &header)
         .or_else(|_| ImageData::encode(Compression::Raw, &planes, &header))
         .unwrap_or(ImageData { compression: Compression::Raw, data: planes });
@@ -1124,7 +1281,10 @@ fn document_to_psd_nested(doc: &Document, opts: &PsdExportOptions, depth: u32) -
         global_blocks.push(tb);
     }
     let comps_resource = ex.comps.is_some().then(|| crate::comps_map::write_comps_resource(doc));
-    let slices_resource = crate::slices_map::export_resource(doc, &ex.layer_ids);
+    let (slices_resource, slices_warning) = crate::slices_map::export_resource(doc, &ex.layer_ids);
+    if let Some(warning) = slices_warning {
+        ex.warnings.push(warning);
+    }
     for (id, name, data) in &doc.metadata.psd_resources {
         // Layer comps: the preserved list while unchanged, else regenerated (or dropped) below.
         if *id == crate::comps_map::LAYER_COMPS && comps_resource.is_some() {
@@ -1205,4 +1365,80 @@ fn mask_parameters(user: Option<(f32, f32)>, vector: Option<(f32, f32)>) -> Opti
         | u8::from(p.vector_density.is_some()) << 2
         | u8::from(p.vector_feather.is_some()) << 3;
     (flags != 0).then_some(MaskParameters { flags, ..p })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn document(width: u32, height: u32) -> Document {
+        Document::new("size estimate", photocraft_geom::Size::new(width, height), ColorMode::Rgb, SampleType::U8)
+    }
+
+    #[test]
+    fn photo_filter_psd_is_four_byte_aligned_and_round_trips() {
+        let color = [60000u16, 30000, 0].map(|x| x as f32 / 65535.0);
+        let adjustment = photocraft_doc::Adjustment::PhotoFilter { color, density: 0.14, preserve_luminosity: true };
+        let mut doc =
+            Document::with_background("Photo Filter PSD", photocraft_geom::Size::new(32, 24), ColorMode::Rgb, SampleType::U8, photocraft_doc::Color::WHITE);
+        let mut layer = Layer::new("Warming Filter", LayerContent::Adjustment(adjustment.clone()));
+        doc.layers.push(layer.clone());
+
+        let assert_phfl = |file: &PsdFile| {
+            let records = &file.layer_info.as_ref().unwrap().layers;
+            let data =
+                records.iter().flat_map(|r| r.blocks.iter()).find(|b| b.key == *b"phfl").map(|b| b.data.as_slice()).expect("Photo Filter adjustment data");
+            assert_eq!(data.len(), 20, "PSD layer block length includes four-byte padding");
+            assert_eq!(&data[0..2], &[0, 2], "version 2 RGB Photo Filter");
+            assert_eq!(&data[17..], &[0, 0, 0], "three padding bytes after the 17-byte payload");
+        };
+
+        let exported = document_to_psd(&doc);
+        assert_phfl(&exported);
+        let encoded = exported.to_bytes().unwrap();
+        let parsed = PsdFile::from_bytes(&encoded).unwrap();
+        assert_phfl(&parsed);
+        let (restored, _) = crate::psd_import::psd_to_document(&parsed);
+        assert!(restored.layers.iter().any(|l| l.content == LayerContent::Adjustment(adjustment.clone())));
+
+        // Importing a legacy 18-byte block must still work; saving it again should repair it
+        // even when the adjustment values have not changed (normally raw blocks are reused).
+        let mut legacy = crate::adjust_map::write(&adjustment)[0].1.clone();
+        legacy.truncate(18);
+        layer.psd_blocks = vec![(*b"phfl", std::sync::Arc::new(legacy))];
+        doc.layers.pop();
+        doc.layers.push(layer);
+        let repaired = document_to_psd(&doc);
+        assert_phfl(&repaired);
+        let repaired_bytes = repaired.to_bytes().unwrap();
+        assert_phfl(&PsdFile::from_bytes(&repaired_bytes).unwrap());
+    }
+
+    #[test]
+    fn size_limit_boundary_keeps_limit_and_switches_above_it() {
+        assert!(!exceeds_psd_size_limit(Some(PSD_MAX_FILE_SIZE)));
+        assert!(exceeds_psd_size_limit(Some(PSD_MAX_FILE_SIZE + 1)));
+        assert!(exceeds_psd_size_limit(None));
+    }
+
+    #[test]
+    fn encoded_size_estimator_rejects_arithmetic_overflow() {
+        assert_eq!(estimate_encoded_size(u64::MAX, 0, 0), None);
+        assert_eq!(estimate_encoded_size(0, u64::MAX, 0), None);
+        assert_eq!(estimate_encoded_size(0, 0, u64::MAX), Some(u64::MAX));
+        assert!(exceeds_psd_size_limit(estimate_psd_size(&document(u32::MAX, u32::MAX))));
+    }
+
+    #[test]
+    fn large_encoded_size_selects_psb_without_changing_explicit_choice() {
+        let large = document(30_000, 30_000);
+        assert!(estimate_psd_size(&large).is_some_and(|size| size > PSD_MAX_FILE_SIZE));
+        let large_size_exceeds_limit = psd_size_exceeds_limit(&large);
+        assert_eq!(psd_version(&large, false, large_size_exceeds_limit), Version::Psb);
+
+        let small = document(1, 1);
+        let small_size_exceeds_limit = psd_size_exceeds_limit(&small);
+        assert_eq!(psd_version(&small, false, small_size_exceeds_limit), Version::Psd);
+        assert_eq!(psd_version(&small, true, small_size_exceeds_limit), Version::Psb);
+    }
 }

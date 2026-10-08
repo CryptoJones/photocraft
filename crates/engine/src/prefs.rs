@@ -58,13 +58,18 @@ choice!(ColorPicker { Adobe = "adobe", System = "system" } default Adobe);
 choice!(Theme { Pro = "pro", ProMedium = "proMedium", Studio = "studio", StudioLight = "studioLight", Classic = "classic" } default ProMedium);
 choice!(CanvasColor { Default = "default", Black = "black", DarkGray = "darkGray", MediumGray = "mediumGray", LightGray = "lightGray", Custom = "custom" } default Default);
 choice!(CanvasBorder { DropShadow = "dropShadow", Line = "line", None = "none" } default DropShadow);
-choice!(UiScale { Auto = "auto", P100 = "100", P200 = "200" } default Auto);
+choice!(UiScale { Auto = "auto", P75 = "75", P100 = "100", P125 = "125", P150 = "150", P175 = "175", P200 = "200", P250 = "250", P300 = "300" } default Auto);
 choice!(
     /// Graphics backend of the desktop app's window and GPU canvas (applies at next launch).
     /// `auto` lets PhotoCraft pick (DX12 for Intel adapters on Windows); `cpu` composites on the
     /// CPU and draws the window with a software adapter where the platform has one. A start that
     /// crashes inside the graphics driver moves this to the next safer choice.
     GpuBackend { Auto = "auto", Vulkan = "vulkan", Dx12 = "dx12", Metal = "metal", Gl = "gl", Cpu = "cpu" } default Auto
+);
+choice!(
+    /// Rendering policy, independent of the advanced graphics backend selection.
+    /// CPU disables image acceleration; the native window may still need hardware graphics.
+    RenderingMode { Auto = "auto", Gpu = "gpu", Cpu = "cpu" } default Auto
 );
 choice!(UiFontSize { Tiny = "tiny", Small = "small", Medium = "medium", Large = "large" } default Small);
 choice!(LogDestination { Metadata = "metadata", TextFile = "textFile", Both = "both" } default Metadata);
@@ -211,6 +216,13 @@ pub struct Interface {
     /// Draw menu item colours set with Edit › Menus.
     pub show_menu_colors: bool,
     pub show_tooltips: bool,
+    /// Move tool drags show only the layer's outline and an arrow, leaving its pixels in place
+    /// until release. Off (the default), the pixels follow the pointer live inside the outline.
+    pub show_bounding_box_when_dragging_layer: bool,
+    /// Windows and Linux: use the system's title bar and window buttons instead of PhotoCraft's
+    /// own one-row title bar (tiling window managers, desktops that draw their own decorations;
+    /// #1271, #1316). Read when the app starts. macOS always uses the system's.
+    pub system_title_bar: bool,
 }
 
 impl Default for Interface {
@@ -227,6 +239,8 @@ impl Default for Interface {
             dynamic_color_sliders: true,
             show_menu_colors: true,
             show_tooltips: true,
+            show_bounding_box_when_dragging_layer: false,
+            system_title_bar: false,
         }
     }
 }
@@ -355,6 +369,9 @@ pub struct Export {
     pub quick_export_format: QuickExportFormat,
     pub quick_export_location: ExportLocation,
     pub jpeg_quality: u32,
+    /// Keep the existing lossless Quick Export default until the user opts into lossy WebP.
+    pub webp_lossless: bool,
+    pub webp_quality: u32,
     pub metadata: ExportMetadata,
     pub convert_to_srgb: bool,
 }
@@ -365,6 +382,8 @@ impl Default for Export {
             quick_export_format: QuickExportFormat::Png,
             quick_export_location: ExportLocation::Ask,
             jpeg_quality: 85,
+            webp_lossless: true,
+            webp_quality: 85,
             metadata: ExportMetadata::Copyright,
             convert_to_srgb: true,
         }
@@ -385,14 +404,25 @@ pub struct Performance {
     pub cache_tile_size: u32,
     /// Draw the canvas with the GPU (applies at next launch).
     pub use_gpu: bool,
+    /// Explicit rendering policy. None preserves older useGpu/gpuBackend preferences.
+    pub rendering_mode: Option<RenderingMode>,
     /// Graphics backend (applies at next launch; see [`GpuBackend`]).
     pub gpu_backend: GpuBackend,
+    /// Live previews of large documents (adjustment and filter dialogs, an adjustment layer's
+    /// sliders while they drag) render on a reduced copy: fast, but blocky when zoomed in. Off:
+    /// they render at full resolution.
+    pub low_resolution_previews: bool,
     /// Memory budget of the layer-effect cache, in MB.
     pub effect_cache_mb: u32,
     pub legacy_compositing: bool,
 }
 
 impl Performance {
+    /// Resolve old preferences without allowing legacy flags to override an explicit mode.
+    pub fn effective_rendering_mode(&self) -> RenderingMode {
+        self.rendering_mode.unwrap_or_else(|| if !self.use_gpu || self.gpu_backend == GpuBackend::Cpu { RenderingMode::Cpu } else { RenderingMode::Auto })
+    }
+
     /// Pixel memory a document and its History may hold (Memory Usage), in bytes: beyond it
     /// the oldest history states are dropped.
     pub fn history_budget_bytes(&self) -> usize {
@@ -408,7 +438,9 @@ impl Default for Performance {
             cache_levels: 4,
             cache_tile_size: 8192,
             use_gpu: true,
+            rendering_mode: None,
             gpu_backend: GpuBackend::Auto,
+            low_resolution_previews: true,
             effect_cache_mb: 768,
             legacy_compositing: false,
         }
@@ -659,6 +691,10 @@ pub struct RawDefaults {
     pub sharpen_for: RawSharpen,
     pub open_as_smart_object: bool,
     pub apply_auto_tone: bool,
+    /// Opening a raw file interactively shows the Camera Raw dialog first (Open / Cancel), as
+    /// Photoshop does; off develops it with the defaults straight away. Automation opens never
+    /// show the dialog.
+    pub open_in_camera_raw: bool,
 }
 
 impl Default for RawDefaults {
@@ -670,6 +706,7 @@ impl Default for RawDefaults {
             sharpen_for: RawSharpen::None,
             open_as_smart_object: false,
             apply_auto_tone: false,
+            open_in_camera_raw: true,
         }
     }
 }
@@ -787,8 +824,6 @@ pub const HIDDEN_UNTIL_IMPLEMENTED: &[&str] = &[
     "general.alwaysCreateSmartObjectsWhenPlacing",
     "general.animatedZoom",
     "general.zoomResizesWindows",
-    "general.useLegacyFreeTransform",
-    "interface.uiFontSize",
     "interface.showChannelsInColor",
     "interface.dynamicColorSliders",
     "workspace.autoCollapseIconPanels",
@@ -797,17 +832,14 @@ pub const HIDDEN_UNTIL_IMPLEMENTED: &[&str] = &[
     "workspace.enableFloatingDocumentWindowDocking",
     "workspace.largeTabs",
     "workspace.enableNarrowOptionsBar",
-    "tools.zoomClickedPointToCenter",
     "tools.enableFlickPanning",
     "tools.varyRoundBrushHardnessOnHud",
     "tools.showTransformationValues",
-    "tools.overscroll",
     "tools.doubleClickLayerMaskLaunchesSelectAndMask",
     "fileHandling.imagePreviews",
     "fileHandling.lowercaseExtension",
     "fileHandling.saveInBackground",
     "fileHandling.ignoreExifProfileTag",
-    "fileHandling.askBeforeSavingLayeredTiff",
     "fileHandling.maximizePsdCompatibility",
     "performance.cacheLevels",
     "performance.effectCacheMb",
@@ -882,6 +914,7 @@ pub fn choices(path: &str) -> Option<&'static [&'static str]> {
         "rawDefaults.bitDepth" => RawDepth::NAMES,
         "rawDefaults.sharpenFor" => RawSharpen::NAMES,
         "performance.gpuBackend" => GpuBackend::NAMES,
+        "performance.renderingMode" => RenderingMode::NAMES,
         _ => return None,
     })
 }
@@ -891,7 +924,7 @@ pub fn range(path: &str) -> Option<(f64, f64)> {
     Some(match path {
         "fileHandling.autosaveMinutes" => (1.0, 240.0),
         "fileHandling.recentFileCount" => (0.0, 100.0),
-        "export.jpegQuality" => (1.0, 100.0),
+        "export.jpegQuality" | "export.webpQuality" => (1.0, 100.0),
         "performance.memoryUsageMb" => (256.0, 1_048_576.0),
         "performance.historyStates" => (1.0, 1000.0),
         "performance.cacheLevels" => (1.0, 8.0),
@@ -986,6 +1019,9 @@ fn set_path(root: &mut Value, path: &str, value: Value) -> std::result::Result<(
 
 /// Validate one value for `path` before it is stored (choices, ranges, colours).
 fn check_value(path: &str, v: &Value) -> std::result::Result<(), String> {
+    if path == "performance.renderingMode" && v.is_null() {
+        return Ok(()); // Legacy policy, resolved from useGpu and gpuBackend.
+    }
     if let Some(c) = choices(path) {
         let s = v.as_str().ok_or_else(|| format!("`{path}` must be one of {}", c.join("|")))?;
         if !c.contains(&s) {
@@ -1053,6 +1089,18 @@ impl Preferences {
             *self = Preferences::default();
             return Ok(());
         };
+        // These maps have no stored defaults; removing an override restores the fallback.
+        match keyed(path) {
+            Some(("shortcuts", id)) => {
+                self.shortcuts.remove(id);
+                return Ok(());
+            }
+            Some(("menus.colors", id)) => {
+                self.menus.colors.remove(id);
+                return Ok(());
+            }
+            _ => {}
+        }
         let def = Preferences::default().get(path).ok_or_else(|| format!("unknown preference `{path}`"))?;
         if path == "shortcuts" {
             self.shortcuts.clear();
@@ -1227,13 +1275,18 @@ impl Session {
 
     /// Everything persisted as one JSON document: the preferences plus `colorSettings`.
     pub fn prefs_to_json(&self) -> String {
+        serde_json::to_string_pretty(&self.prefs_value()).unwrap_or_default()
+    }
+
+    /// [`Session::prefs_to_json`] as a JSON tree (frontends merge it with what storage holds).
+    pub fn prefs_value(&self) -> Value {
         let mut v = self.prefs().to_json();
         if let Value::Object(m) = &mut v {
             m.insert("colorSettings".into(), serde_json::to_value(&self.color.settings).unwrap_or(Value::Null));
             m.insert("version".into(), json!(1));
             m.insert("presets".into(), self.presets.to_json(self));
         }
-        serde_json::to_string_pretty(&v).unwrap_or_default()
+        v
     }
 
     /// Restore preferences saved by [`Session::prefs_to_json`]. Missing keys keep their
@@ -1352,6 +1405,14 @@ fn prefs_reset(s: &mut Session, p: &Value) -> Result<Value> {
     let path = p.get("path").or_else(|| p.get("section")).and_then(Value::as_str);
     match path {
         Some("colorSettings") => s.color.settings = Default::default(),
+        // One colour setting: `Preferences` has no `colorSettings`, so take the default
+        // from `ColorSettings` and route it like `prefs.set` does.
+        Some(path) if path.starts_with("colorSettings.") => {
+            let defaults = serde_json::to_value(crate::color_cmds::ColorSettings::default()).map_err(|e| bad("prefs.reset", e.to_string()))?;
+            let key = path.strip_prefix("colorSettings.").unwrap_or(path);
+            let def = get_path(&defaults, key).cloned().ok_or_else(|| bad("prefs.reset", format!("unknown preference `{path}`")))?;
+            s.set_pref(path, def).map_err(|e| bad("prefs.reset", e))?;
+        }
         None => {
             s.color.settings = Default::default();
             s.edit_prefs(|p| p.reset(None)).map_err(|e| bad("prefs.reset", e))?;
@@ -1364,7 +1425,12 @@ fn prefs_reset(s: &mut Session, p: &Value) -> Result<Value> {
     }
     s.prefs.edit(|_| ());
     s.apply_prefs();
-    prefs_get(s, &json!({"path": path.unwrap_or("")}))
+    if path.is_some_and(|path| keyed(path).is_some()) {
+        // The removed override is absent, so reading its old path would report an error.
+        Ok(Value::Null)
+    } else {
+        prefs_get(s, &json!({"path": path.unwrap_or("")}))
+    }
 }
 
 /// `edit.preferences.<section>`: the section's values (the GUI opens the dialog on it instead).
@@ -1402,7 +1468,14 @@ fn keyboard_shortcuts(s: &mut Session, p: &Value) -> Result<Value> {
             for (id, v) in m {
                 let Some(sc) = v.as_str().and_then(normalize_shortcut) else { continue };
                 for (c, def) in bindable() {
-                    if c != id && next.shortcut(c, def).and_then(normalize_shortcut).as_deref() == Some(sc.as_str()) {
+                    // Never strip a command that this same call is assigning:
+                    // two entries for one key are a clash inside the call, which
+                    // the returned conflicts list reports (#719). Stripping
+                    // each other here unbound both silently.
+                    if c == id || m.contains_key(c) {
+                        continue;
+                    }
+                    if next.shortcut(c, def).and_then(normalize_shortcut).as_deref() == Some(sc.as_str()) {
                         next.shortcuts.insert(c.to_string(), String::new());
                     }
                 }

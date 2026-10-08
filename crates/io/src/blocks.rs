@@ -2,7 +2,7 @@
 //! smart objects, locks and label colors.
 
 use photocraft_color::{Color, ColorMode};
-use photocraft_doc::{BlendIf, BlendRange, Fill, GradientStyle, LabelColor, Locks};
+use photocraft_doc::{AdvancedBlending, BlendIf, BlendRange, Fill, GradientStyle, Knockout, LabelColor, Locks};
 use photocraft_geom::Affine;
 use photocraft_psd::descriptor::{Descriptor, Id, UnicodeString, Value, VersionedDescriptor};
 use photocraft_psd::layer::BlendingRanges;
@@ -16,6 +16,60 @@ pub fn parse_brst(data: &[u8]) -> u32 {
 /// Inverse of [`parse_brst`]; `None` when every channel blends (no block).
 pub fn brst_data(mask: u32) -> Option<Vec<u8>> {
     (mask != 0).then(|| (0..32u32).filter(|i| mask & 1 << i != 0).flat_map(u32::to_be_bytes).collect())
+}
+
+/// The Advanced Blending blocks, as (key, value for `a`, Photoshop's default value): `knko`
+/// (0 none, 1 shallow, 2 deep), `infx`, `clbl`, `tsly`, `lmgm`, `vmgm`. Each is stored as one
+/// byte followed by three bytes of padding (Adobe PSD spec, "Additional Layer Information").
+pub fn advanced_flags(a: &AdvancedBlending) -> [([u8; 4], u8, u8); 6] {
+    [
+        (*b"knko", a.knockout.to_psd(), 0),
+        (*b"infx", u8::from(a.blend_interior), 0),
+        (*b"clbl", u8::from(a.blend_clipped), 1),
+        (*b"tsly", u8::from(a.transparency_shapes), 1),
+        (*b"lmgm", u8::from(a.layer_mask_hides_effects), 0),
+        (*b"vmgm", u8::from(a.vector_mask_hides_effects), 0),
+    ]
+}
+
+/// Advanced Blending from a layer record's blocks (`block(key)` gives a block's data). A missing
+/// or empty block keeps Photoshop's default.
+pub fn advanced_from_blocks<'a>(block: impl Fn(&[u8; 4]) -> Option<&'a [u8]>) -> AdvancedBlending {
+    let mut a = AdvancedBlending::default();
+    let flag = |k: &[u8; 4]| block(k).and_then(|d| d.first().copied());
+    if let Some(v) = flag(b"knko") {
+        a.knockout = Knockout::from_psd(v);
+    }
+    let set = |k: &[u8; 4], f: &mut bool| {
+        if let Some(v) = flag(k) {
+            *f = v != 0;
+        }
+    };
+    set(b"infx", &mut a.blend_interior);
+    set(b"clbl", &mut a.blend_clipped);
+    set(b"tsly", &mut a.transparency_shapes);
+    set(b"lmgm", &mut a.layer_mask_hides_effects);
+    set(b"vmgm", &mut a.vector_mask_hides_effects);
+    a
+}
+
+/// Writes the Advanced Blending blocks into an exported layer's preserved block list: a block
+/// already there is rewritten in place (keeping Photoshop's block order); a missing one is added
+/// only when its value differs from the default, so plain layers gain no blocks.
+pub fn put_advanced(a: &AdvancedBlending, raw: &mut Vec<([u8; 4], Vec<u8>)>) {
+    for (key, v, default) in advanced_flags(a) {
+        match raw.iter_mut().find(|(k, _)| *k == key) {
+            Some(e) => {
+                // Keep any extra bytes a reader wrote; the flag is the first byte.
+                if e.1.len() < 4 {
+                    e.1.resize(4, 0);
+                }
+                e.1[0] = v;
+            }
+            None if v != default => raw.push((key, vec![v, 0, 0, 0])),
+            None => {}
+        }
+    }
 }
 
 /// Layer-record blending ranges (Adobe PSD spec, "Layer blending ranges data": the composite
@@ -46,15 +100,16 @@ pub fn ranges_from_blend_if(b: &BlendIf, channels: usize) -> BlendingRanges {
 }
 
 /// `lspf` bits (Adobe spec: bit 0 transparency, 1 composite, 2 position).
-/// Artboard (bit 3... here `0x10` as observed by ag-psd) and "all" (bit 31)
-/// are undocumented.
+/// Artboard (bit 3, `0x08`, as reference files write it) and "all" (bit 31) are undocumented.
+/// Older PhotoCraft builds wrote the artboard lock at bit 4 (`0x10`); that value is still
+/// accepted on read so those files keep their lock, and is rewritten at `0x08`.
 pub fn locks_from_lspf(v: u32) -> Locks {
-    Locks { transparency: v & 1 != 0, pixels: v & 2 != 0, position: v & 4 != 0, artboard: v & 0x10 != 0, all: v & 0x8000_0000 != 0 }
+    Locks { transparency: v & 1 != 0, pixels: v & 2 != 0, position: v & 4 != 0, artboard: v & 0x08 != 0 || v & 0x10 != 0, all: v & 0x8000_0000 != 0 }
 }
 
 /// Inverse of [`locks_from_lspf`].
 pub fn lspf_from_locks(l: &Locks) -> u32 {
-    u32::from(l.transparency) | u32::from(l.pixels) << 1 | u32::from(l.position) << 2 | u32::from(l.artboard) << 4 | u32::from(l.all) << 31
+    u32::from(l.transparency) | u32::from(l.pixels) << 1 | u32::from(l.position) << 2 | u32::from(l.artboard) << 3 | u32::from(l.all) << 31
 }
 
 /// `lclr` index → label.
@@ -67,6 +122,11 @@ pub fn label_from_index(v: u16) -> LabelColor {
         5 => LabelColor::Blue,
         6 => LabelColor::Violet,
         7 => LabelColor::Gray,
+        // Photoshop 2024 added these without renumbering the original labels.
+        8 => LabelColor::Seafoam,
+        9 => LabelColor::Indigo,
+        10 => LabelColor::Magenta,
+        11 => LabelColor::Fuchsia,
         _ => LabelColor::None,
     }
 }
@@ -82,6 +142,10 @@ pub fn label_index(l: LabelColor) -> u16 {
         LabelColor::Blue => 5,
         LabelColor::Violet => 6,
         LabelColor::Gray => 7,
+        LabelColor::Seafoam => 8,
+        LabelColor::Indigo => 9,
+        LabelColor::Magenta => 10,
+        LabelColor::Fuchsia => 11,
     }
 }
 
@@ -531,6 +595,31 @@ pub fn parse_smart(key: &[u8; 4], data: &[u8]) -> (String, Affine) {
     (id, affine)
 }
 
+/// The projective placement of a `SoLd` / `SoLE` block whose corners aren't a parallelogram
+/// (Distort, Perspective): source pixels → document pixels, row-major 3×3. Read from
+/// `nonAffineTransform` (the placed corners), else `Trnf`. `None` for affine placements, which
+/// [`parse_smart`]'s affine holds exactly.
+pub fn parse_smart_perspective(key: &[u8; 4], data: &[u8]) -> Option<[f64; 9]> {
+    if key != b"SoLd" && key != b"SoLE" {
+        return None;
+    }
+    let d = data.get(8..).and_then(parse_prefix_versioned)?;
+    let sz = get_desc(&d, "Sz  ")?;
+    let (w, h) = (num(sz.get("Wdth"))?, num(sz.get("Hght"))?);
+    let quad = |key: &str| -> Option<[[f64; 2]; 4]> {
+        let Some(Value::List(pts)) = d.get(key) else { return None };
+        let p: Vec<f64> = pts.iter().filter_map(|v| num(Some(v))).collect();
+        (p.len() == 8 && p.iter().all(|v| v.is_finite())).then(|| [[p[0], p[1]], [p[2], p[3]], [p[4], p[5]], [p[6], p[7]]])
+    };
+    let q = quad("nonAffineTransform").or_else(|| quad("Trnf"))?;
+    // A parallelogram (top-left + bottom-right = top-right + bottom-left) is affine.
+    let tol = 1e-6 * (1.0 + q.iter().flatten().fold(0.0f64, |m, v| m.max(v.abs())));
+    if (0..2).all(|i| (q[0][i] + q[2][i] - q[1][i] - q[3][i]).abs() <= tol) || w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    photocraft_algo::transform::Homography::rect_to_quad([0.0, 0.0, w, h], q).map(|m| m.0)
+}
+
 /// `masterFXSwitch` from an `lfx2` block (defaults to `true`).
 pub fn effects_enabled(lfx2: &[u8]) -> bool {
     lfx2.get(4..)
@@ -612,6 +701,37 @@ mod tests {
     }
 
     #[test]
+    fn advanced_blending_blocks_round_trip() {
+        use photocraft_doc::{AdvancedBlending, Knockout};
+        let a = AdvancedBlending {
+            knockout: Knockout::Deep,
+            blend_interior: true,
+            blend_clipped: false,
+            transparency_shapes: false,
+            layer_mask_hides_effects: true,
+            vector_mask_hides_effects: true,
+        };
+        let mut raw = Vec::new();
+        super::put_advanced(&a, &mut raw);
+        assert_eq!(raw.len(), 6);
+        assert!(raw.contains(&(*b"knko", vec![2, 0, 0, 0])));
+        assert!(raw.contains(&(*b"clbl", vec![0, 0, 0, 0])));
+        let get = |k: &[u8; 4]| raw.iter().find(|(bk, _)| bk == k).map(|(_, d)| d.as_slice());
+        assert_eq!(super::advanced_from_blocks(get), a);
+        // Defaults: nothing added to a plain layer; existing blocks rewritten in place, in order.
+        let mut plain = Vec::new();
+        super::put_advanced(&AdvancedBlending::default(), &mut plain);
+        assert!(plain.is_empty());
+        let mut kept = vec![(*b"luni", vec![0; 4]), (*b"knko", vec![1, 0, 0, 0]), (*b"clbl", vec![1])];
+        super::put_advanced(&AdvancedBlending::default(), &mut kept);
+        assert_eq!(kept, vec![(*b"luni", vec![0; 4]), (*b"knko", vec![0, 0, 0, 0]), (*b"clbl", vec![1, 0, 0, 0])]);
+        // Missing and empty blocks read as Photoshop's defaults.
+        assert!(super::advanced_from_blocks(|_| None).is_default());
+        assert!(super::advanced_from_blocks(|_| Some(&[][..])).is_default());
+        assert_eq!(super::advanced_from_blocks(|k| (k == b"knko").then_some(&[1u8][..])).knockout, Knockout::Shallow);
+    }
+
+    #[test]
     fn brst_round_trip() {
         assert_eq!(super::parse_brst(&[0, 0, 0, 2]), 0b100);
         assert_eq!(super::parse_brst(&[0, 0, 0, 0, 0, 0, 0, 1]), 0b11);
@@ -668,9 +788,15 @@ mod tests {
 
     #[test]
     fn locks_and_labels() {
-        for bits in [0u32, 1, 2, 4, 0x10, 0x8000_0000, 0x8000_0017] {
+        // Reference values round-trip byte for byte; Background layers carry 0x0D
+        // (transparency + position + the bit-3 lock reference files write).
+        for bits in [0u32, 1, 2, 4, 8, 0x0D, 0x8000_0000, 0x8000_000F] {
             assert_eq!(lspf_from_locks(&locks_from_lspf(bits)), bits);
         }
+        // Older PhotoCraft files wrote the artboard lock at 0x10; it reads back as artboard
+        // and is rewritten at the reference value 0x08.
+        assert!(locks_from_lspf(0x10).artboard);
+        assert_eq!(lspf_from_locks(&locks_from_lspf(0x10)), 0x08);
         for i in 0..8 {
             assert_eq!(label_index(label_from_index(i)), i);
         }

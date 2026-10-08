@@ -157,6 +157,17 @@ fn progress_is_monotonic_and_reaches_one() {
     assert_eq!((info.state, info.progress), ("done", 1.0));
 }
 
+#[test]
+fn a_preset_filter_job_is_named_after_the_preset() {
+    // #528: the job (progress UI) and its history step say "Blur More", not "Gaussian Blur".
+    let mut s = session(300, 200);
+    let id = job(s.start("filter.blur.blurMore", json!({})).unwrap());
+    let e = wait_event(&mut s, id);
+    assert!(matches!(e.outcome, JobOutcome::Done(_)), "{e:?}");
+    assert_eq!(e.label, "Blur More");
+    assert_eq!(s.active().unwrap().history.undo_label(), Some("Blur More"));
+}
+
 /// A fake document job that runs until `gate` opens (or it is cancelled), then inverts nothing
 /// but records one undo step named "Gated Job".
 pub(super) fn gated_job(s: &mut Session, gate: &Arc<std::sync::atomic::AtomicBool>) -> JobId {
@@ -259,6 +270,32 @@ fn content_aware_fill_and_scale_run_as_jobs() {
 }
 
 #[test]
+fn content_aware_move_runs_as_a_job() {
+    let mut inline = session(160, 120);
+    let mut s = session(160, 120);
+    for t in [&mut inline, &mut s] {
+        t.execute("select.rect", json!({"x": 20, "y": 40, "width": 30, "height": 30})).unwrap();
+    }
+    let p = json!({"offset": [90, 10], "structure": 3, "color": 4});
+    inline.execute("paint.contentAwareMove", p.clone()).unwrap();
+    let before = s.active().unwrap().doc.clone();
+    let id = job(s.start("paint.contentAwareMove", p.clone()).unwrap());
+    let e = wait_event(&mut s, id);
+    let JobOutcome::Done(v) = &e.outcome else { panic!("{e:?}") };
+    assert_eq!(v["offset"], json!([90, 10]));
+    assert_eq!(pixels(&s), pixels(&inline), "same result as the synchronous command");
+    let sel = |s: &Session| s.active().unwrap().doc.selection.as_ref().unwrap().read_region(s.active().unwrap().doc.bounds());
+    assert_eq!(sel(&s), sel(&inline), "the selection moved the same way");
+    // Cancelled at once: the document stays as it was.
+    s.undo();
+    let id = job(s.start("paint.contentAwareMove", p).unwrap());
+    assert!(s.cancel_job(id));
+    s.join_cancelled_jobs();
+    assert_eq!(wait_event(&mut s, id).outcome, JobOutcome::Cancelled);
+    assert_eq!(pixels(&s), before.layer(s.active().unwrap().active_layer.unwrap()).unwrap().surface().unwrap().read_region(before.bounds()));
+}
+
+#[test]
 fn open_runs_as_a_job_and_cancel_adds_nothing() {
     let mut src = session(40, 30);
     let doc = (*src.active().unwrap().doc).clone();
@@ -292,6 +329,23 @@ fn wait_job_blocks_until_applied() {
     // Waiting again reports the recorded result.
     assert_eq!(s.wait_job(id).unwrap(), v);
     assert!(s.wait_job(JobId(12345)).is_err());
+}
+
+#[test]
+fn params_that_are_not_an_object_are_rejected_before_running() {
+    let mut s = session(40, 30);
+    let before = s.active().unwrap().history.past_len();
+    for id in ["image.adjustments.invert", "filter.blur.gaussianBlur", "layer.new.layer"] {
+        for p in [json!([3]), json!("x"), json!(5), json!(true)] {
+            let e = s.execute(id, p.clone()).unwrap_err().to_string();
+            assert!(e.contains(id) && e.contains("must be a JSON object"), "{id} {p}: {e}");
+            assert!(s.start(id, p).is_err(), "{id}: background start must reject too");
+        }
+    }
+    assert_eq!(s.active().unwrap().history.past_len(), before, "nothing ran");
+    s.execute("image.adjustments.invert", json!({})).unwrap();
+    s.execute("image.adjustments.invert", Value::Null).unwrap();
+    assert_eq!(s.active().unwrap().history.past_len(), before + 2);
 }
 
 /// Cancel latency on a 24 MP document (6000×4000): from `cancel_job` until the worker thread

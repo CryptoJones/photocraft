@@ -3,7 +3,9 @@
 mod common;
 use common::*;
 use photocraft_color::{ColorMode, SampleType};
-use photocraft_doc::{Document, Layer, LayerId};
+use photocraft_doc::text::{CharStyle, ParagraphStyle, TextRun};
+use photocraft_doc::text_styles::{CharacterStyleDef, ParagraphStyleDef};
+use photocraft_doc::{Document, Layer, LayerContent, LayerId, Slice, TextLayer};
 use photocraft_format::*;
 use photocraft_raster::Rgba8Image;
 
@@ -58,10 +60,79 @@ fn save_path_zip_file() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// Deepest group nesting in `layers` (0 when there are no groups).
+fn group_depth(layers: &[Layer]) -> usize {
+    layers.iter().map(|l| if let photocraft_doc::LayerContent::Group(g) = &l.content { 1 + group_depth(&g.children) } else { 0 }).max().unwrap_or(0)
+}
+
+/// [`rich_doc`] with its layers wrapped in groups until they are nested `levels` deep.
+fn nested_doc(levels: usize, depth: SampleType) -> Document {
+    let mut doc = rich_doc(ColorMode::Rgb, depth);
+    let mut layers = std::mem::take(&mut doc.layers);
+    for i in group_depth(&layers)..levels {
+        layers = vec![Layer::group(format!("Level {i}"), layers)];
+    }
+    doc.layers = layers;
+    assert_eq!(group_depth(&doc.layers), levels);
+    doc
+}
+
+/// serde_json's default limit (128 levels) used to make bundles with 40+ nested groups unreadable.
+/// Runs on a 1 MiB stack, the smallest main-thread stack we ship on (Windows, wasm).
+#[test]
+fn deeply_nested_groups_roundtrip() {
+    let run = || {
+        for (levels, depth) in [(40, SampleType::U8), (MAX_GROUP_DEPTH, SampleType::U16), (MAX_GROUP_DEPTH, SampleType::F32)] {
+            let doc = nested_doc(levels, depth);
+            let back = load_from_bytes(&save_to_bytes(&doc, &SaveOptions::default()).unwrap()).unwrap();
+            assert_eq!(back, doc, "{levels} levels at {depth:?}");
+        }
+    };
+    std::thread::Builder::new().stack_size(1 << 20).spawn(run).unwrap().join().unwrap();
+}
+
+/// A save never writes a bundle the loader would reject for its nesting.
+#[test]
+fn nesting_beyond_the_load_limit_is_refused_at_save() {
+    let e = save_to_bytes(&nested_doc(MAX_GROUP_DEPTH + 1, SampleType::U8), &SaveOptions::default()).unwrap_err();
+    assert!(matches!(e, FormatError::LimitExceeded(_)), "{e}");
+}
+
 #[test]
 fn empty_document_roundtrips() {
     let doc = Document::new("empty", photocraft_doc::Size::new(1, 1), ColorMode::Rgb, SampleType::U8);
     assert_eq!(load_from_bytes(&save_to_bytes(&doc, &SaveOptions::default()).unwrap()).unwrap(), doc);
+}
+
+#[test]
+fn exhausted_document_ids_and_maximal_text_runs_roundtrip() {
+    let mut doc = Document::new("exhausted", photocraft_doc::Size::new(2, 1), ColorMode::Rgb, SampleType::U8);
+    doc.slices.list.push(Slice { id: u32::MAX, ..Default::default() });
+    doc.text_styles.character.push(CharacterStyleDef { id: u32::MAX, ..Default::default() });
+    doc.text_styles.paragraph.push(ParagraphStyleDef { id: u32::MAX, ..Default::default() });
+    doc.layers.push(Layer::new(
+        "Text",
+        LayerContent::Text(TextLayer {
+            text: "ab".into(),
+            runs: vec![TextRun { len: 1, style: CharStyle::default() }, TextRun { len: usize::MAX, style: CharStyle { size_pt: 24.0, ..Default::default() } }],
+            paragraphs: vec![
+                photocraft_doc::text::ParagraphRun { len: 1, style: ParagraphStyle::default() },
+                photocraft_doc::text::ParagraphRun { len: usize::MAX, style: ParagraphStyle::default() },
+            ],
+            ..Default::default()
+        }),
+    ));
+
+    let bytes = save_to_bytes(&doc, &SaveOptions::default()).unwrap();
+    let loaded = load_from_bytes(&bytes).unwrap();
+    assert_eq!(loaded.slices.next_id(), None);
+    assert_eq!(loaded.text_styles.next_char_id(), None);
+    assert_eq!(loaded.text_styles.next_para_id(), None);
+    let LayerContent::Text(text) = &loaded.layers.last().unwrap().content else { panic!("text layer must roundtrip") };
+    assert_eq!(text.char_runs().iter().map(|r| r.len).sum::<usize>(), text.text.len());
+    assert_eq!(text.char_runs()[1].len, 1);
+    assert_eq!(text.char_runs()[1].style.size_pt, 24.0);
+    assert_eq!(text.paragraph_runs().iter().map(|r| r.len).sum::<usize>(), text.text.len());
 }
 
 #[test]
@@ -90,6 +161,9 @@ fn directory_incremental_and_gc() {
     let mut w = PcraftWriter::new();
     let s1 = w.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
     assert_eq!(s1.tiles_written, s1.tiles_total);
+    let s2_same_writer = w.save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
+    assert_eq!(s2_same_writer.tiles_written, 0);
+    assert_eq!(s2_same_writer.tiles_reused, s2_same_writer.tiles_total);
     // A fresh writer still skips files already on disk.
     let s2 = PcraftWriter::new().save_dir(&doc, &dir, &SaveOptions::default()).unwrap();
     assert_eq!(s2.tiles_written, 0);
@@ -317,6 +391,45 @@ fn blend_if_roundtrips() {
     assert!(back.layers.iter().skip(1).all(|l| l.blend_if.is_default()));
 }
 
+/// Advanced Blending (knockout, as-group switches, transparency shapes, masks hide effects)
+/// survives .pcraft at every depth; manifests written before the field existed load with
+/// Photoshop's defaults, and default layers don't write it.
+#[test]
+fn advanced_blending_roundtrips_and_defaults_when_absent() {
+    use photocraft_doc::{AdvancedBlending, Knockout};
+    for depth in SampleType::ALL {
+        let mut doc = rich_doc(ColorMode::Rgb, depth);
+        let a = AdvancedBlending {
+            knockout: Knockout::Deep,
+            blend_interior: true,
+            blend_clipped: false,
+            transparency_shapes: false,
+            layer_mask_hides_effects: true,
+            vector_mask_hides_effects: true,
+        };
+        doc.layers[0].advanced = a;
+        if let Some(l) = doc.layers.get_mut(1) {
+            l.advanced.knockout = Knockout::Shallow;
+        }
+        let bytes = save_to_bytes(&doc, &SaveOptions::default()).unwrap();
+        let back = load_from_bytes(&bytes).unwrap();
+        assert_eq!(back, doc, "{depth:?}");
+        assert_eq!(back.layers[0].advanced, a);
+        // Only the non-default layers carry the field.
+        let m = read_manifest(&bytes).unwrap();
+        let v = serde_json::to_value(&m.document).unwrap();
+        let with = v["layers"].as_array().unwrap().iter().filter(|l| l.get("advanced").is_some()).count();
+        assert_eq!(with, if doc.layers.len() > 1 { 2 } else { 1 });
+        // An older manifest (no `advanced`) loads with the defaults.
+        let mut old = v.clone();
+        for l in old["layers"].as_array_mut().unwrap() {
+            l.as_object_mut().unwrap().remove("advanced");
+        }
+        let old: photocraft_format::manifest::DocM = serde_json::from_value(old).unwrap();
+        assert!(old.layers.iter().all(|l| l.advanced.is_default()));
+    }
+}
+
 #[test]
 fn video_layer_frames_survive_roundtrip() {
     use photocraft_doc::{Timeline, VideoData, VideoSource};
@@ -350,4 +463,48 @@ fn video_layer_frames_survive_roundtrip() {
     let mut px = [[0.0f32; 4]; 1];
     v.frames[2].read_rgba_into(Rect::from_xywh(1, 1, 1, 1), &mut px);
     assert!(px[0][0] > 0.9 && px[0][2] < 0.1, "frame 2 is reddish: {:?}", px[0]);
+}
+
+/// Issue #1101: serde_json writes NaN and the infinities as `null`, which the manifest's float
+/// fields refuse on load, so such a document saved "successfully" and never opened again. The
+/// save is refused instead, naming the value; finite documents are unaffected.
+#[test]
+fn a_non_finite_float_is_refused_at_save_rather_than_breaking_every_later_load() {
+    use photocraft_doc::Adjustment;
+    type Mutate = Box<dyn Fn(&mut Document)>;
+    let base = rich_doc(ColorMode::Rgb, SampleType::U8);
+    let cases: Vec<(&str, Mutate)> = vec![
+        (
+            "exposure",
+            Box::new(|d| {
+                d.insert_above(None, Layer::new("adj", LayerContent::Adjustment(Adjustment::Exposure { exposure: f32::NAN, offset: 0.0, gamma: 1.0 })));
+            }),
+        ),
+        (
+            "gamma",
+            Box::new(|d| {
+                d.insert_above(
+                    None,
+                    Layer::new("adj", LayerContent::Adjustment(Adjustment::Exposure { exposure: 0.0, offset: 0.0, gamma: f32::NEG_INFINITY })),
+                );
+            }),
+        ),
+        ("resolution_dpi", Box::new(|d| d.resolution_dpi = f32::INFINITY)),
+    ];
+    for (field, mutate) in cases {
+        let mut doc = base.clone();
+        mutate(&mut doc);
+        let err = save_to_bytes(&doc, &SaveOptions::default()).expect_err(field);
+        assert!(matches!(err, FormatError::NonFinite { .. }), "{field}: {err:?}");
+        let msg = err.to_string();
+        assert!(msg.contains(field) && msg.contains("NaN or infinite"), "{field}: {msg}");
+        // The incremental writer shares the check, for autosave and directory bundles.
+        let mut w = PcraftWriter::new();
+        assert!(matches!(w.save_zip(&doc, &SaveOptions::default()), Err(FormatError::NonFinite { .. })), "{field}: PcraftWriter");
+    }
+    // The same document with finite values round-trips as before.
+    let mut doc = base.clone();
+    doc.insert_above(None, Layer::new("adj", LayerContent::Adjustment(Adjustment::Exposure { exposure: 0.5, offset: 0.0, gamma: 1.0 })));
+    let back = load_from_bytes(&save_to_bytes(&doc, &SaveOptions::default()).unwrap()).unwrap();
+    assert_eq!(back, doc);
 }

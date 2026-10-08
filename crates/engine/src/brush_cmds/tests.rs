@@ -52,6 +52,30 @@ fn stroke_accepts_full_points_brush_and_preset() {
 }
 
 #[test]
+fn paint_commands_bound_hostile_time_and_reject_oversized_brushes() {
+    let mut s = session(32, 32);
+    let timed = s.execute(
+        "paint.stroke",
+        json!({
+            "points": [[16, 16, 1, 0, 0, 0, 0], [16, 16, 1, 0, 0, 0, 1.7976931348623157e308]],
+            "brush": {"buildUp": true, "buildUpRate": 1000, "size": 4, "pressureSize": false}
+        }),
+    );
+    assert!(timed.is_ok(), "the bounded airbrush catch-up should still commit: {timed:?}");
+
+    for command in ["paint.stroke", "paint.pencil"] {
+        let result = s.execute(command, json!({"points": [[8, 8]], "size": 1e30}));
+        assert!(result.is_err(), "{command} must reject an oversized brush before rasterizing");
+    }
+    let result = s.execute("paint.stroke", json!({"points": [[8, 8]], "brush": {"dualBrush": {"enabled": true, "size": 1e30}}}));
+    assert!(result.is_err(), "enabled dual brush dimensions are bounded too");
+
+    s.execute("tools.setBrush", json!({"size": 5000})).expect("the shared brush limit is accepted");
+    assert!(s.execute("tools.setBrush", json!({"size": 5001})).is_err(), "tools.setBrush must reject sizes above the shared limit");
+    assert_eq!(s.tools.brush.size, 5000.0, "a rejected brush update must not change the session brush");
+}
+
+#[test]
 fn replay_is_deterministic() {
     let params = json!({"points": [[10, 50], [60, 30, 0.7], [120, 60, 0.9], [180, 40]], "preset": "Spatter", "color": "#ff8800"});
     let run = || {
@@ -516,4 +540,51 @@ fn coalesced_set_brush_calls_journal_once_per_gesture() {
         t.execute(id, p.clone()).unwrap();
     }
     assert_eq!(t.tools.brush, s.tools.brush);
+}
+
+/// A Scatter amount beyond the 1000 % maximum (the issue's 1e38, just above the maximum, or one
+/// that only fits as infinity) is rejected naming the value, before the session brush changes, by
+/// `tools.setBrush` and by a stroke's own brush patch; the maximum itself and an ordinary amount
+/// above 100 % still paint (#977).
+#[test]
+fn out_of_range_scatter_is_rejected_and_the_maximum_still_paints() {
+    let new = || {
+        let mut s = Session::new();
+        s.execute("file.new", json!({"width": 32, "height": 32})).unwrap();
+        s.execute("layer.new.layer", json!({})).unwrap();
+        s
+    };
+    let scatter = |j: f64| json!({"scattering": {"enabled": true, "bothAxes": true, "scatter": {"jitter": j}}});
+    let dual = |j: f64| json!({"dualBrush": {"enabled": true, "bothAxes": true, "size": 6, "scatter": j}});
+    let stroke = json!({"points": [[10, 10]]});
+    for (j, shown) in [(1e38, "1e38"), (10.01, "10.01"), (1e39, "inf"), (-1.0, "-1.0")] {
+        for (patch, what) in [(scatter(j), "scatter"), (dual(j), "dual brush scatter")] {
+            let mut s = new();
+            let before = s.tools.brush.clone();
+            let err = s.execute("tools.setBrush", json!({ "brush": patch.clone() })).unwrap_err();
+            let msg = err.to_string();
+            assert!(matches!(err, EngineError::BadParams { .. }) && msg.contains(what) && msg.contains(shown), "{j}: {msg}");
+            assert_eq!(s.tools.brush, before, "a rejected scatter must not change the session brush");
+            let (doc, revision) = (s.active().unwrap().doc.clone(), s.active().unwrap().revision);
+            let err = paint_stroke(&mut s, &json!({"points": [[10, 10]], "brush": patch})).unwrap_err();
+            assert!(matches!(err, EngineError::BadParams { .. }) && err.to_string().contains(shown), "{j}: {err}");
+            assert!(std::sync::Arc::ptr_eq(&doc, &s.active().unwrap().doc) && s.active().unwrap().revision == revision);
+        }
+    }
+    // The issue's repro, end to end: a stroke after the rejected update still paints normally.
+    let mut s = new();
+    assert!(s.execute("tools.setBrush", json!({ "brush": scatter(1e38) })).is_err());
+    assert!(s.execute("paint.stroke", stroke.clone()).is_ok());
+    // The maximum (1000 %) is accepted and paints a finite, well-formed dab.
+    for patch in [scatter(10.0), dual(10.0)] {
+        let mut s = new();
+        s.execute("tools.setBrush", json!({ "brush": patch })).unwrap();
+        let r = s.execute("paint.stroke", stroke.clone()).unwrap();
+        let d: Vec<i64> = r["damage"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
+        assert!(d[0].abs() < 1000 && d[1].abs() < 1000 && d[2] > 0 && d[3] > 0, "{r}");
+    }
+    // Control: 200 % scatter paints where it did before the cap.
+    let mut s = new();
+    s.execute("tools.setBrush", json!({ "brush": scatter(2.0) })).unwrap();
+    assert_eq!(s.execute("paint.stroke", stroke).unwrap(), json!({"damage": [17, 14, 23, 23]}));
 }

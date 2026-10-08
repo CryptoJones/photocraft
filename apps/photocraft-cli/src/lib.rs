@@ -14,15 +14,20 @@ pub const USAGE: &str = "\
 photocraft-cli: headless Photocraft
 
 USAGE:
-  photocraft-cli convert <in> <out> [--format <ext>] [--quality <1-100>]
+  photocraft-cli convert <in> <out> [--format <ext>] [--quality <1-100>] [--tiff-layers]
       Convert between formats (.pcraft, .psd, .png, .jpg, .tif, .webp, .exr, …).
+      TIFF output is flat unless --tiff-layers keeps the layers (Photoshop layer data).
+      --quality sets the JPEG or WebP quality; a WebP written with a quality is lossy, without one lossless.
   photocraft-cli info <file> [--compact]
       Print the document as JSON (size, mode, depth, layer tree).
-  photocraft-cli run (<file> | --new <json>) --cmd <id> [--params <json>] [--cmd …] [--out <file>] [--format <ext>]
+  photocraft-cli run (<file> | --new <json>) --cmd <id> [--params <json>] [--cmd …] [--out <file>] [--format <ext>] [--quality <1-100>] [--tiff-layers]
       Open a file, run engine commands in order, save the result. Each --params
       applies to the preceding --cmd. Prints each command's JSON result.
-  photocraft-cli batch --actions <actions.json> --in <dir> --out <dir> [--format <ext>]
-      Apply an action list ([{\"command\": id, \"params\": {…}}, …]) to every image in a directory.
+  photocraft-cli batch --actions <actions.json> --in <dir> --out <dir> [--format <ext>] [--quality <1-100>] [--in-place] [--tiff-layers]
+      Apply an action list to every image in a directory. Steps are [id, params] pairs,
+      {\"command\": id, \"params\": {…}} objects or bare ids, as a recorded action or droplet stores them
+      (a list, or wrapped in {\"actions\": …}, {\"steps\": …} or a droplet). An --out folder that is the
+      --in folder is refused, as the results would replace the originals; --in-place allows it.
   photocraft-cli droplet <file.pcdroplet> <file-or-dir>… [--out <dir>]
       Run a droplet (File › Automate › Create Droplet) on images and folders.
   photocraft-cli commands [--json] [--filter <text>]
@@ -33,8 +38,12 @@ USAGE:
   photocraft-cli serve [--port <port>] [--control-token <64-hex> | --control-token-file <path>]
       [--automation-read-root <dir>] [--automation-write-root <dir>]
       Keep one headless session open and answer JSON lines ({\"id\",\"method\",\"params\"}) on stdio,
-      or on 127.0.0.1:<port>. Methods: engine.execute, engine.commands, doc.open/new/save/inspect/render/
-      select/close, session.list, batch, methods (docs/control-protocol.md#headless-server).
+      or on 127.0.0.1:<port>. Methods: engine.execute, jobs.list/cancel, engine.commands,
+      doc.open/new/save/inspect/render/select/close, session.list, batch, methods
+      (docs/control-protocol.md#headless-server).
+
+  photocraft-cli <subcommand> --help (or -h) prints this text. A flag the subcommand doesn't take is
+  an error.
 ";
 
 struct Args {
@@ -42,43 +51,67 @@ struct Args {
     flags: Vec<(String, Option<String>)>,
 }
 
-const VALUE_FLAGS: &[&str] = &[
-    "--format",
-    "--quality",
-    "--new",
-    "--cmd",
-    "--params",
-    "--out",
-    "--actions",
-    "--in",
-    "--filter",
-    "--bridge",
-    "--port",
-    "--control-token",
-    "--control-token-file",
-    "--automation-read-root",
-    "--automation-write-root",
+/// A subcommand: the flags it reads (taking a value, or given bare) and what it runs. A flag
+/// outside these is a usage error, so a typo such as `--fromat` can't be silently ignored (#423).
+struct Subcommand {
+    name: &'static str,
+    values: &'static [&'static str],
+    bare: &'static [&'static str],
+    run: fn(&Args, &mut dyn Write, &mut dyn Write) -> R,
+}
+
+const SUBCOMMANDS: &[Subcommand] = &[
+    Subcommand { name: "convert", values: &["--format", "--quality"], bare: &["--tiff-layers"], run: convert },
+    Subcommand { name: "info", values: &[], bare: &["--compact"], run: |a, out, _| info(a, out) },
+    Subcommand { name: "run", values: &["--new", "--cmd", "--params", "--out", "--format", "--quality"], bare: &["--tiff-layers"], run: run_cmds },
+    Subcommand { name: "batch", values: &["--actions", "--in", "--out", "--format", "--quality"], bare: &["--in-place", "--tiff-layers"], run: batch },
+    Subcommand { name: "droplet", values: &["--out"], bare: &[], run: droplet },
+    Subcommand { name: "commands", values: &["--filter"], bare: &["--json"], run: |a, out, _| commands(a, out) },
+    Subcommand {
+        name: "mcp",
+        values: &["--bridge", "--control-token", "--control-token-file", "--automation-read-root", "--automation-write-root"],
+        bare: &[],
+        run: |a, _, _| mcp(a),
+    },
+    Subcommand {
+        name: "serve",
+        values: &["--port", "--control-token", "--control-token-file", "--automation-read-root", "--automation-write-root"],
+        bare: &[],
+        run: |a, _, err| serve(a, err),
+    },
 ];
 
-fn parse(args: &[String]) -> Result<Args, String> {
+/// The subcommand's arguments, or `None` when they ask for help (`--help` or `-h`).
+fn parse(sub: &Subcommand, args: &[String]) -> Result<Option<Args>, String> {
     let mut a = Args { positional: Vec::new(), flags: Vec::new() };
+    let unknown = |flag: &str| format!("unknown flag {flag} for {}", sub.name);
     let mut i = 0;
-    while i < args.len() {
-        let s = &args[i];
+    while let Some(s) = args.get(i) {
+        if s == "--help" || s == "-h" {
+            return Ok(None);
+        }
         if let Some((k, v)) = s.split_once('=').filter(|(k, _)| k.starts_with("--")) {
+            if sub.bare.contains(&k) {
+                return Err(format!("{k} takes no value"));
+            }
+            if !sub.values.contains(&k) {
+                return Err(unknown(k));
+            }
             a.flags.push((k.to_owned(), Some(v.to_owned())));
-        } else if VALUE_FLAGS.contains(&s.as_str()) {
+        } else if sub.values.contains(&s.as_str()) {
             let v = args.get(i + 1).ok_or_else(|| format!("{s} needs a value"))?;
             a.flags.push((s.clone(), Some(v.clone())));
             i += 1;
-        } else if s.starts_with("--") {
+        } else if sub.bare.contains(&s.as_str()) {
             a.flags.push((s.clone(), None));
+        } else if s.starts_with("--") {
+            return Err(unknown(s));
         } else {
             a.positional.push(s.clone());
         }
         i += 1;
     }
-    Ok(a)
+    Ok(Some(a))
 }
 
 impl Args {
@@ -92,28 +125,30 @@ impl Args {
 
 type R = Result<(), String>;
 
+/// [`run`] on the raw process arguments. An argument that is not valid Unicode is a usage error
+/// naming its position and a lossy rendering (exit 2), never a panic: `std::env::args()` aborts
+/// the process on one (issue #1108).
+pub fn run_os(args: &[std::ffi::OsString], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
+    let mut strings = Vec::with_capacity(args.len());
+    for (i, a) in args.iter().enumerate() {
+        match a.clone().into_string() {
+            Ok(s) => strings.push(s),
+            Err(raw) => {
+                let _ = writeln!(err, "error: argument {} is not valid Unicode: `{}`\n\n{USAGE}", i + 1, raw.to_string_lossy());
+                return 2;
+            }
+        }
+    }
+    run(&strings, out, err)
+}
+
 /// Run the CLI. Returns the process exit code (0 ok, 1 failure, 2 usage).
 pub fn run(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
     let Some(cmd) = args.first() else {
         let _ = write!(err, "{USAGE}");
         return 2;
     };
-    let parsed = match parse(&args[1..]) {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = writeln!(err, "error: {e}\n\n{USAGE}");
-            return 2;
-        }
-    };
-    let r = match cmd.as_str() {
-        "convert" => convert(&parsed, out, err),
-        "info" => info(&parsed, out),
-        "run" => run_cmds(&parsed, out, err),
-        "batch" => batch(&parsed, out, err),
-        "commands" => commands(&parsed, out),
-        "droplet" => droplet(&parsed, out, err),
-        "mcp" => mcp(&parsed),
-        "serve" => serve(&parsed, err),
+    match cmd.as_str() {
         "-h" | "--help" | "help" => {
             let _ = write!(out, "{USAGE}");
             return 0;
@@ -122,12 +157,25 @@ pub fn run(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
             let _ = writeln!(out, "photocraft-cli {}", photocraft_engine::build_info::long_version());
             return 0;
         }
-        other => {
-            let _ = writeln!(err, "error: unknown command `{other}`\n\n{USAGE}");
+        _ => {}
+    }
+    let Some(sub) = SUBCOMMANDS.iter().find(|s| s.name == cmd) else {
+        let _ = writeln!(err, "error: unknown command `{cmd}`\n\n{USAGE}");
+        return 2;
+    };
+    let parsed = match parse(sub, &args[1..]) {
+        Ok(Some(p)) => p,
+        // `<subcommand> --help`: usage, without reading inputs or starting a server.
+        Ok(None) => {
+            let _ = write!(out, "{USAGE}");
+            return 0;
+        }
+        Err(e) => {
+            let _ = writeln!(err, "error: {e}\n\n{USAGE}");
             return 2;
         }
     };
-    match r {
+    match (sub.run)(&parsed, out, err) {
         Ok(()) => 0,
         Err(e) => {
             let _ = writeln!(err, "error: {e}");
@@ -137,10 +185,14 @@ pub fn run(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> i32 {
 }
 
 fn export_opts(a: &Args) -> Result<ExportOptions, String> {
-    let mut o = ExportOptions::default();
+    // TIFF output is flat unless asked: scripted conversions keep predictable sizes.
+    let mut o = ExportOptions { tiff_layers: a.has("--tiff-layers"), ..Default::default() };
     if let Some(q) = a.get("--quality") {
-        let q: u8 = q.parse().map_err(|_| format!("bad --quality `{q}`"))?;
-        o.encode.jpeg_quality = q.clamp(1, 100);
+        let q = q.parse().ok().filter(|q| (1..=100).contains(q)).ok_or_else(|| format!("bad --quality `{q}`: expected a whole number from 1 to 100"))?;
+        o.encode.jpeg_quality = q;
+        // Asking for a quality asks for a lossy WebP; the default WebP stays lossless.
+        o.encode.webp_quality = q;
+        o.encode.webp_lossless = false;
     }
     Ok(o)
 }
@@ -149,6 +201,12 @@ fn warn_all(err: &mut dyn Write, ws: &[String]) {
     for w in ws {
         let _ = writeln!(err, "warning: {w}");
     }
+}
+
+/// The engine knows which type families aren't installed. Warn before an export
+/// uses a fallback face rather than silently changing the appearance of the text.
+fn missing_font_warnings(fonts: Vec<String>) -> Vec<String> {
+    fonts.into_iter().map(|font| format!("font '{font}' is not installed; text may render using a fallback face")).collect()
 }
 
 fn automation_workspace(args: &Args) -> Result<AuthorizedWorkspace, String> {
@@ -160,9 +218,11 @@ fn convert(a: &Args, _out: &mut dyn Write, err: &mut dyn Write) -> R {
     let [input, output] = a.positional.as_slice() else {
         return Err("convert needs <in> <out>".into());
     };
+    let opts = export_opts(a)?;
     let o = files::open(Path::new(input)).map_err(|e| e.to_string())?;
     warn_all(err, &o.warnings);
-    let ws = files::save(&o.document, Path::new(output), a.get("--format"), &export_opts(a)?, None).map_err(|e| e.to_string())?;
+    warn_all(err, &missing_font_warnings(photocraft_engine::type_extra_cmds::missing_fonts(&o.document)));
+    let ws = files::save(&o.document, Path::new(output), a.get("--format"), &opts, None).map_err(|e| e.to_string())?;
     warn_all(err, &ws);
     Ok(())
 }
@@ -179,7 +239,11 @@ fn info(a: &Args, out: &mut dyn Write) -> R {
     let mut h = Headless::trusted_local();
     let opened = h.open(Path::new(file)).map_err(|e| e.to_string())?;
     let mut doc = h.inspect(None).map_err(|e| e.to_string())?;
-    doc["warnings"] = opened["warnings"].clone();
+    let mut warnings = opened["warnings"].as_array().cloned().unwrap_or_default();
+    if let Some(st) = h.session.active() {
+        warnings.extend(missing_font_warnings(photocraft_engine::type_extra_cmds::missing_fonts(&st.doc)).into_iter().map(Value::String));
+    }
+    doc["warnings"] = Value::Array(warnings);
     doc["file"] = json!(file);
     // Drop per-session noise.
     if let Value::Object(m) = &mut doc {
@@ -207,6 +271,7 @@ fn command_list(a: &Args) -> Result<Vec<(String, Value)>, String> {
 }
 
 fn run_cmds(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
+    let opts = export_opts(a)?;
     let mut h = Headless::trusted_local();
     match (a.positional.as_slice(), a.get("--new")) {
         ([file], None) => {
@@ -216,7 +281,7 @@ fn run_cmds(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
         }
         ([], Some(new)) => {
             let p: Value = serde_json::from_str(new).map_err(|e| format!("bad --new JSON: {e}"))?;
-            h.command_run("file.new", p).map_err(|e| e.to_string())?;
+            h.command_run("file.new", p).map_err(|e| format!("--new: {e}"))?;
         }
         _ => return Err("run needs exactly one of <file> or --new <json>".into()),
     }
@@ -224,34 +289,54 @@ fn run_cmds(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
     if cmds.is_empty() && a.get("--out").is_none() {
         return Err("run needs at least one --cmd (or --out)".into());
     }
+    let mut reported_fonts = std::collections::HashSet::<String>::new();
     for (id, params) in cmds {
         let r = h.command_run(&id, params).map_err(|e| format!("`{id}`: {e}"))?;
-        print_json(out, &json!({"command": id, "result": r}), true)?;
+        let new_warnings: Vec<String> = h
+            .session
+            .active()
+            .map(|st| missing_font_warnings(photocraft_engine::type_extra_cmds::missing_fonts(&st.doc)))
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|w| reported_fonts.insert(w.clone()))
+            .collect();
+        warn_all(err, &new_warnings);
+        let mut result = json!({"command": id, "result": r});
+        if !new_warnings.is_empty() {
+            result["warnings"] = json!(new_warnings);
+        }
+        print_json(out, &result, true)?;
     }
+    // A `run` with only `--out` still reports missing fonts before exporting.
+    let remaining: Vec<String> = h
+        .session
+        .active()
+        .map(|st| missing_font_warnings(photocraft_engine::type_extra_cmds::missing_fonts(&st.doc)))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|w| reported_fonts.insert(w.clone()))
+        .collect();
+    warn_all(err, &remaining);
     if let Some(o) = a.get("--out") {
-        let r = h.save(None, Some(Path::new(o)), a.get("--format"), &export_opts(a)?).map_err(|e| e.to_string())?;
+        let r = h.save(None, Some(Path::new(o)), a.get("--format"), &opts).map_err(|e| e.to_string())?;
         let ws: Vec<String> = serde_json::from_value(r["warnings"].clone()).unwrap_or_default();
         warn_all(err, &ws);
     }
     Ok(())
 }
 
-/// Parse an actions file: `[{"command": id, "params": {…}}]` or
-/// `{"actions": [...]}`; `"id"` is accepted for `"command"`.
+/// Parse an actions file: the steps of a recorded action or a droplet (`[id, params]` pairs,
+/// `{"command": id, "params": {…}}` objects or bare ids; `"id"` is accepted for `"command"`), as a
+/// list or wrapped in `{"actions": […]}`, `{"steps": […]}` or a droplet (#489).
 pub fn parse_actions(text: &str) -> Result<Vec<(String, Value)>, String> {
     let v: Value = serde_json::from_str(text).map_err(|e| format!("actions JSON: {e}"))?;
-    let list = match &v {
-        Value::Array(a) => a.clone(),
-        Value::Object(m) => m.get("actions").and_then(Value::as_array).cloned().ok_or("actions JSON: expected an array or {\"actions\": [...]}")?,
-        _ => return Err("actions JSON: expected an array".into()),
-    };
-    list.into_iter()
-        .enumerate()
-        .map(|(i, a)| {
-            let id = a.get("command").or_else(|| a.get("id")).and_then(Value::as_str).ok_or_else(|| format!("action {i}: missing \"command\""))?;
-            Ok((id.to_owned(), a.get("params").cloned().unwrap_or_else(|| json!({}))))
-        })
-        .collect()
+    photocraft_engine::automate_cmds::parse_action(v.get("actions").unwrap_or(&v), "batch --actions").map_err(|e| e.to_string())
+}
+
+/// Whether `a` and `b` name the same existing folder, however they are spelt (relative, with a
+/// trailing separator, through a symbolic link).
+fn same_dir(a: &Path, b: &Path) -> bool {
+    matches!((std::fs::canonicalize(a), std::fs::canonicalize(b)), (Ok(a), Ok(b)) if a == b)
 }
 
 fn is_input(p: &Path) -> bool {
@@ -266,16 +351,29 @@ fn batch(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
     let text = std::fs::read_to_string(actions_path).map_err(|e| format!("{actions_path}: {e}"))?;
     let actions = parse_actions(&text)?;
     let opts = export_opts(a)?;
+    // Results are saved as `<out>/<stem>.<ext>`, so an `--out` that is the `--in` folder would
+    // replace the originals (#492).
+    if !a.has("--in-place") && same_dir(&in_dir, &out_dir) {
+        return Err(format!(
+            "--out {} is the --in folder, so the results would replace the originals: choose another --out folder, or pass --in-place to overwrite them",
+            out_dir.display()
+        ));
+    }
     std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
     let mut inputs: Vec<PathBuf> =
         std::fs::read_dir(&in_dir).map_err(|e| format!("{}: {e}", in_dir.display()))?.flatten().map(|e| e.path()).filter(|p| is_input(p)).collect();
     inputs.sort();
     let (mut ok, mut failed) = (0, 0);
+    let mut written = photocraft_engine::file_cmds::OutputClaims::default();
+    // `--format .jpg` names outputs `<stem>.jpg`, as `--format jpg` does (#490).
+    let format = a.get("--format").map(|f| f.strip_prefix('.').unwrap_or(f));
     for input in &inputs {
-        let ext = a.get("--format").map(str::to_owned).or_else(|| input.extension().map(|e| e.to_string_lossy().into_owned())).unwrap_or_else(|| "png".into());
+        let ext = format.map(str::to_owned).or_else(|| input.extension().map(|e| e.to_string_lossy().into_owned())).unwrap_or_else(|| "png".into());
         let stem = input.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let target = out_dir.join(format!("{stem}.{ext}"));
+        let target_text = target.to_string_lossy();
         let r = (|| -> Result<Vec<String>, String> {
+            written.check(&target_text)?;
             let mut h = Headless::trusted_local();
             h.open(input).map_err(|e| e.to_string())?;
             for (id, p) in &actions {
@@ -287,6 +385,7 @@ fn batch(a: &Args, out: &mut dyn Write, err: &mut dyn Write) -> R {
         match r {
             Ok(ws) => {
                 ok += 1;
+                written.record(&target_text, &input.to_string_lossy());
                 let _ = writeln!(out, "ok    {} -> {}", input.display(), target.display());
                 warn_all(err, &ws);
             }
@@ -381,4 +480,89 @@ fn mcp(a: &Args) -> R {
     };
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().map_err(|e| e.to_string())?;
     rt.block_on(server.serve_stdio()).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod missing_font_warning_tests {
+    use super::*;
+
+    fn invoke(args: &[&str]) -> (i32, String, String) {
+        let mut output = Vec::new();
+        let mut errors = Vec::new();
+        let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        let code = run(&args, &mut output, &mut errors);
+        (code, String::from_utf8(output).unwrap(), String::from_utf8(errors).unwrap())
+    }
+
+    #[test]
+    fn missing_typeface_is_reported_by_run_info_and_convert() {
+        let family = "DefinitelyMissingPhotoCraftTypeface1251";
+        let folder = std::env::temp_dir().join(format!("photocraft-cli-font-warnings-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let native = folder.join("missing.pcraft");
+        let png = folder.join("missing.png");
+        let native_str = native.to_string_lossy().to_string();
+        let png_str = png.to_string_lossy().to_string();
+        let params = json!({"x": 6, "y": 38, "text": "Missing font warning", "font": family, "size": 20}).to_string();
+
+        let (code, stdout, stderr) = invoke(&[
+            "run",
+            "--new",
+            r#"{"width":256,"height":96,"background":"white"}"#,
+            "--cmd",
+            "type.create",
+            "--params",
+            &params,
+            "--cmd",
+            "type.resolveMissingFonts",
+            "--out",
+            &native_str,
+        ]);
+        assert_eq!(code, 0, "{stderr}");
+        assert_eq!(stderr.matches(family).count(), 1, "multi-command runs should not repeat the same missing font warning");
+        let commands: Vec<Value> = stdout.lines().map(|s| serde_json::from_str(s).unwrap()).collect();
+        assert_eq!(commands.len(), 2, "{stdout}");
+        assert!(commands[0]["warnings"].as_array().unwrap().iter().any(|w| w.as_str().is_some_and(|s| s.contains(family))));
+        assert!(commands[1].get("warnings").is_none(), "only newly detected missing fonts are reported");
+
+        let (code, stdout, stderr) = invoke(&["info", &native_str, "--compact"]);
+        assert_eq!(code, 0, "{stderr}");
+        let info: Value = serde_json::from_str(&stdout).unwrap();
+        assert!(info["warnings"].as_array().unwrap().iter().any(|w| w.as_str().is_some_and(|s| s.contains(family))));
+        assert!(stderr.is_empty(), "info puts warnings in JSON, not stderr");
+
+        let (code, _, stderr) = invoke(&["convert", &native_str, &png_str]);
+        assert_eq!(code, 0, "{stderr}");
+        assert!(stderr.contains(&format!("warning: font '{family}'")), "{stderr}");
+        assert!(png.is_file());
+
+        // Even with no commands, run --out checks the opened document before export.
+        let (code, stdout, stderr) = invoke(&["run", &native_str, "--out", &png_str]);
+        assert_eq!(code, 0, "{stderr}");
+        assert!(stdout.is_empty());
+        assert_eq!(stderr.matches(family).count(), 1);
+
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn no_type_layers_do_not_produce_missing_font_warnings() {
+        let folder = std::env::temp_dir().join(format!("photocraft-cli-no-font-warning-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let native = folder.join("blank.pcraft");
+        let png = folder.join("blank.png");
+        let native_str = native.to_string_lossy().to_string();
+        let png_str = png.to_string_lossy().to_string();
+        let (code, _, stderr) = invoke(&["run", "--new", r#"{"width":16,"height":16}"#, "--out", &native_str]);
+        assert_eq!(code, 0, "{stderr}");
+        assert!(!stderr.contains("font '"), "{stderr}");
+        let (code, stdout, stderr) = invoke(&["info", &native_str, "--compact"]);
+        assert_eq!(code, 0, "{stderr}");
+        let info: Value = serde_json::from_str(&stdout).unwrap();
+        assert!(info["warnings"].as_array().unwrap().iter().all(|w| !w.as_str().unwrap_or_default().contains("font '")));
+        let (code, _, stderr) = invoke(&["convert", &native_str, &png_str]);
+        assert_eq!(code, 0, "{stderr}");
+        assert!(!stderr.contains("font '"), "{stderr}");
+        let _ = std::fs::remove_dir_all(&folder);
+    }
 }

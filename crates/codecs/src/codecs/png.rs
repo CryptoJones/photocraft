@@ -6,7 +6,7 @@ use std::io::{Cursor, Write};
 use crate::Format;
 use crate::error::CodecError;
 use crate::fidelity::Plan;
-use crate::image::{ChannelLayout, Image, Metadata, SampleType};
+use crate::image::{ChannelLayout, DecodeWarning, Image, Metadata, SampleType};
 use crate::options::{EncodeOptions, Limits, PngCompression};
 
 const F: Format = Format::Png;
@@ -18,8 +18,12 @@ fn err(e: impl std::fmt::Display) -> CodecError {
 }
 
 pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError> {
-    let mut decoder = png::Decoder::new_with_limits(Cursor::new(bytes), png::Limits { bytes: limits.alloc_usize() });
+    let mut input = Cursor::new(bytes);
+    let mut decoder = png::Decoder::new_with_limits(&mut input, png::Limits { bytes: limits.alloc_usize() });
     decoder.set_transformations(png::Transformations::EXPAND);
+    // png's lazy text get_text() inflates without consulting its allocation limit.
+    // Read text separately below, without retaining compressed copies in the decoder.
+    decoder.set_ignore_text_chunk(true);
     {
         let info = decoder.read_header_info().map_err(map_png_err)?;
         let (w, h) = info.size();
@@ -27,6 +31,8 @@ pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError>
         limits.check_bytes(w, h, 8)?;
     }
     let mut reader = decoder.read_info().map_err(map_png_err)?;
+    // APNG: the IDAT image is the first frame, or an extra default image when no fcTL precedes it.
+    let images = reader.info().animation_control.map_or(1, |a| u64::from(a.num_frames) + u64::from(reader.info().frame_control.is_none()));
     let (color, depth) = reader.output_color_type();
     let layout = match color {
         png::ColorType::Grayscale => ChannelLayout::Gray,
@@ -44,9 +50,11 @@ pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError>
     let mut buf = vec![0u8; size];
     let out = reader.next_frame(&mut buf).map_err(map_png_err)?;
     buf.truncate(out.buffer_size());
-    // Collect chunks after IDAT (text may live there). Errors here are
-    // tolerated: pixel data is already complete.
-    let _ = reader.finish();
+    // Collect ancillary chunks after IDAT. Tolerate malformed tails once pixels
+    // are complete, but never swallow an allocation-limit failure.
+    if let Err(e @ png::DecodingError::LimitsExceeded) = reader.finish() {
+        return Err(map_png_err(e));
+    }
     if sample == SampleType::U16 {
         for c in buf.as_chunks_mut::<2>().0 {
             let v = u16::from_be_bytes([c[0], c[1]]);
@@ -64,24 +72,14 @@ pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError>
     {
         meta.dpi = Some((d.xppu as f32 * METERS_PER_INCH, d.yppu as f32 * METERS_PER_INCH));
     }
-    for t in &info.uncompressed_latin1_text {
-        meta.text.push((t.keyword.clone(), t.text.clone()));
-    }
-    for t in &info.compressed_latin1_text {
-        if let Ok(s) = t.get_text() {
-            meta.text.push((t.keyword.clone(), s));
-        }
-    }
-    for t in &info.utf8_text {
-        if let Ok(s) = t.get_text() {
-            if t.keyword == XMP_KEYWORD {
-                meta.xmp = Some(s);
-            } else {
-                meta.text.push((t.keyword.clone(), s));
-            }
-        }
-    }
+    drop(reader);
+    let end = usize::try_from(input.position()).map_err(|_| err("invalid PNG reader position"))?;
+    let consumed = bytes.get(..end).ok_or_else(|| err("invalid PNG reader position"))?;
+    read_text_metadata(consumed, limits.alloc_usize(), &mut meta)?;
     img.meta = meta;
+    if images > 1 {
+        img.warnings.push(DecodeWarning::MoreFrames { total: u32::try_from(images).ok() });
+    }
     Ok(img)
 }
 
@@ -90,6 +88,137 @@ fn map_png_err(e: png::DecodingError) -> CodecError {
         png::DecodingError::LimitsExceeded => CodecError::LimitExceeded("PNG decoder memory limit".into()),
         e => err(e),
     }
+}
+
+fn text_limit() -> CodecError {
+    CodecError::LimitExceeded("PNG decoded text metadata exceeds max_alloc".into())
+}
+
+fn split_nul(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
+    let at = bytes.iter().position(|&b| b == 0)?;
+    Some((bytes.get(..at)?, bytes.get(at.checked_add(1)?..)?))
+}
+
+fn latin1_len(bytes: &[u8]) -> Option<usize> {
+    bytes.len().checked_add(bytes.iter().filter(|&&b| b >= 128).count())
+}
+
+/// Read only CRC-valid text chunks, including those after IDAT, with one shared
+/// budget for decoded UTF-8 keywords and values (including overwritten XMP).
+/// Invalid ancillary text stays optional, as it was with png's text decoder.
+fn read_text_metadata(bytes: &[u8], mut remaining: usize, meta: &mut Metadata) -> Result<(), CodecError> {
+    let Some(mut rest) = bytes.get(8..) else { return Ok(()) };
+    let (mut plain, mut compressed, mut international) = (Vec::new(), Vec::new(), Vec::new());
+    while let Some((length, tail)) = rest.split_first_chunk::<4>() {
+        let Some((kind, tail)) = tail.split_first_chunk::<4>() else { break };
+        let length = u32::from_be_bytes(*length);
+        // PNG chunk lengths are at most 2^31-1. Broken tails remain tolerated.
+        if length > i32::MAX as u32 {
+            break;
+        }
+        let Ok(length) = usize::try_from(length) else { break };
+        let Some(data) = tail.get(..length) else { break };
+        let Some((checksum, next)) = tail.get(length..).and_then(|t| t.split_first_chunk::<4>()) else { break };
+        rest = next;
+        if kind == b"IEND" {
+            break;
+        }
+        if !matches!(kind, b"tEXt" | b"zTXt" | b"iTXt") {
+            continue;
+        }
+        let mut crc = flate2::Crc::new();
+        crc.update(kind);
+        crc.update(data);
+        if crc.sum() != u32::from_be_bytes(*checksum) {
+            continue;
+        }
+        let Some((keyword, value)) = split_nul(data) else { continue };
+        if keyword.is_empty() || keyword.len() > 79 {
+            continue;
+        }
+        let (value, deflated, latin1) = match kind {
+            b"tEXt" => (value, false, true),
+            b"zTXt" => {
+                let Some((&0, value)) = value.split_first() else { continue };
+                (value, true, true)
+            }
+            _ => {
+                let Some(([flag, method], value)) = value.split_first_chunk::<2>() else { continue };
+                if *flag > 1 || (*flag == 1 && *method != 0) {
+                    continue;
+                }
+                let Some((language, value)) = split_nul(value) else { continue };
+                let Some((translated, value)) = split_nul(value) else { continue };
+                if !language.is_ascii() || std::str::from_utf8(translated).is_err() {
+                    continue;
+                }
+                (value, *flag == 1, false)
+            }
+        };
+        let keyword_len = latin1_len(keyword).ok_or_else(text_limit)?;
+        let limit = remaining.saturating_sub(keyword_len);
+        let Some(text) = bounded_text(value, deflated, latin1, limit)? else { continue };
+        remaining = remaining.checked_sub(keyword_len).and_then(|left| left.checked_sub(text.len())).ok_or_else(text_limit)?;
+        let keyword: String = keyword.iter().map(|&b| char::from(b)).collect();
+        match kind {
+            b"tEXt" => plain.push((keyword, text)),
+            b"zTXt" => compressed.push((keyword, text)),
+            _ if keyword == XMP_KEYWORD => meta.xmp = Some(text),
+            _ => international.push((keyword, text)),
+        }
+    }
+    // Preserve the previous decoder's grouping of text entries by chunk type.
+    meta.text.extend(plain);
+    meta.text.extend(compressed);
+    meta.text.extend(international);
+    Ok(())
+}
+
+/// No input-sized allocation until its decoded size fits. Inflation uses a
+/// fixed scratch buffer and checks each batch before growing the output.
+fn bounded_text(input: &[u8], compressed: bool, latin1: bool, limit: usize) -> Result<Option<String>, CodecError> {
+    let mut output = Vec::new();
+    let mut append = |bytes: &[u8]| -> Result<(), CodecError> {
+        let added = if latin1 { latin1_len(bytes).ok_or_else(text_limit)? } else { bytes.len() };
+        if output.len().checked_add(added).is_none_or(|len| len > limit) {
+            return Err(text_limit());
+        }
+        output.try_reserve(added).map_err(|_| text_limit())?;
+        if latin1 {
+            // Every Latin-1 code point fits in at most two UTF-8 bytes.
+            let mut utf8 = [0; 2];
+            for &b in bytes {
+                output.extend_from_slice(char::from(b).encode_utf8(&mut utf8).as_bytes());
+            }
+        } else {
+            output.extend_from_slice(bytes);
+        }
+        Ok(())
+    };
+    if compressed {
+        let mut decoder = flate2::Decompress::new(true);
+        let mut scratch = [0; 8192];
+        loop {
+            let start_in = decoder.total_in();
+            let start_out = decoder.total_out();
+            let Some(tail) = usize::try_from(start_in).ok().and_then(|at| input.get(at..)) else { return Ok(None) };
+            let Ok(status) = decoder.decompress(tail, &mut scratch, flate2::FlushDecompress::None) else { return Ok(None) };
+            let Some(batch) = usize::try_from(decoder.total_out() - start_out).ok().and_then(|len| scratch.get(..len)) else { return Ok(None) };
+            append(batch)?;
+            if status == flate2::Status::StreamEnd {
+                break;
+            }
+            if start_in == decoder.total_in() && start_out == decoder.total_out() {
+                return Ok(None); // Truncated stream: never keep partial text.
+            }
+        }
+    } else {
+        if !latin1 && std::str::from_utf8(input).is_err() {
+            return Ok(None);
+        }
+        append(input)?;
+    }
+    Ok(String::from_utf8(output).ok())
 }
 
 fn is_latin1_keyword(k: &str) -> bool {
@@ -259,22 +388,7 @@ fn parallel_idat(data: &[u8], w: usize, h: usize, bpp: usize, level: PngCompress
                             filter_row(row, prev, bpp, &mut scratch, &mut filtered);
                         }
                         let adler = adler32(1, &filtered);
-                        let mut c = flate2::Compress::new(lvl, false);
-                        let mut z = Vec::with_capacity(filtered.len() / 2 + 64);
-                        let last = y1 == h;
-                        let flush = if last { flate2::FlushCompress::Finish } else { flate2::FlushCompress::Sync };
-                        loop {
-                            let consumed = c.total_in() as usize;
-                            if z.capacity() - z.len() < 64 * 1024 {
-                                z.reserve(z.capacity().max(64 * 1024));
-                            }
-                            match c.compress_vec(&filtered[consumed..], &mut z, flush) {
-                                Ok(flate2::Status::StreamEnd) => break,
-                                Ok(_) if !last && c.total_in() as usize == filtered.len() && z.capacity() > z.len() => break,
-                                Ok(_) => {}
-                                Err(_) => return Vec::new(),
-                            }
-                        }
+                        let Some(z) = deflate_band(&filtered, lvl, y1 == h) else { return Vec::new() };
                         out.push((i, z, adler, filtered.len()));
                     }
                     out
@@ -301,6 +415,22 @@ fn parallel_idat(data: &[u8], w: usize, h: usize, bpp: usize, level: PngCompress
     }
     out.extend_from_slice(&adler.to_be_bytes());
     Some(out)
+}
+
+/// Raw deflate of one band: ends on a sync flush, or finishes the stream for the `last` band.
+/// The output buffer is sized past deflate's worst case so that one call takes the whole band
+/// and completes the flush: when a sync flush fills the buffer, miniz_oxide (flate2's Rust
+/// backend) can return before compressing the last lookahead bytes, and the next call only
+/// drains the pending output, so a resumed flush silently drops data. `None` (the caller then
+/// uses the serial encoder) if the single call did not finish.
+fn deflate_band(filtered: &[u8], lvl: flate2::Compression, last: bool) -> Option<Vec<u8>> {
+    let mut c = flate2::Compress::new(lvl, false);
+    // Stored blocks cost 5 bytes per 64 KiB, the flush an empty stored block: 1/8 is ample.
+    let mut z = Vec::with_capacity(filtered.len() + filtered.len() / 8 + 1024);
+    let flush = if last { flate2::FlushCompress::Finish } else { flate2::FlushCompress::Sync };
+    let status = c.compress_vec(filtered, &mut z, flush).ok()?;
+    let done = if last { status == flate2::Status::StreamEnd } else { c.total_in() as usize == filtered.len() && z.len() < z.capacity() };
+    done.then_some(z)
 }
 
 /// One scanline with the adaptive filter choice, appended to `out` (type byte + data).
@@ -437,6 +567,31 @@ mod parallel_tests {
         let b: Vec<u8> = (0..70_001u32).map(|i| (i * 31) as u8).collect();
         let whole: Vec<u8> = a.iter().chain(&b).copied().collect();
         assert_eq!(adler32_combine(adler32(1, &a), adler32(1, &b), b.len()), adler32(1, &whole));
+    }
+
+    #[test]
+    fn bands_that_end_just_past_a_block_keep_all_their_data() {
+        // Deflate output ~0.6 of the input, cut just past one of miniz_oxide's block
+        // boundaries: a sync flush that fills the output buffer there used to lose the
+        // last lookahead bytes, corrupting every band after it.
+        for (k, len) in [(20u32, 136_916usize), (20, 345_044), (24, 195_796), (28, 189_142)] {
+            let mut x = 0x9E37_79B9u32 ^ k;
+            let data: Vec<u8> = (0..len)
+                .map(|_| {
+                    x ^= x << 13;
+                    x ^= x >> 17;
+                    x ^= x << 5;
+                    ((x >> 8) % k) as u8
+                })
+                .collect();
+            for last in [false, true] {
+                let z = deflate_band(&data, flate2::Compression::default(), last).unwrap();
+                let mut d = flate2::Decompress::new(false);
+                let mut back = Vec::with_capacity(len + 1);
+                d.decompress_vec(&z, &mut back, flate2::FlushDecompress::Sync).unwrap();
+                assert!(back == data, "k {k} len {len} last {last}: {} of {len} bytes", back.len());
+            }
+        }
     }
 
     #[test]

@@ -358,6 +358,29 @@ fn apply_image_hand_computed() {
 }
 
 #[test]
+fn apply_image_onto_transparent_layer() {
+    for depth in [8, 16, 32] {
+        let mut s = session_depth(depth);
+        s.execute("edit.fill", json!({"color": "#c08040"})).unwrap();
+        let (r, g, b) = (192.0 / 255.0, 128.0 / 255.0, 64.0 / 255.0);
+        // An empty layer has no pixels to blend with: it takes the source, whatever the mode.
+        s.execute("layer.new.layer", json!({})).unwrap();
+        s.execute("image.applyImage", json!({"blending": "multiply"})).unwrap();
+        let p = px(&s, 3, 3);
+        assert!((p[0] - r).abs() < 0.003 && (p[1] - g).abs() < 0.003 && (p[2] - b).abs() < 0.003 && p[3] > 0.999, "depth {depth}: {p:?}");
+        s.undo();
+        // At 50% opacity the empty layer becomes the source at 50% alpha.
+        s.execute("image.applyImage", json!({"blending": "multiply", "opacity": 50})).unwrap();
+        let p = px(&s, 3, 3);
+        assert!((p[0] - r).abs() < 0.003 && (p[3] - 0.5).abs() < 0.003, "depth {depth}: {p:?}");
+        s.undo();
+        // Preserve Transparency leaves an empty layer empty.
+        s.execute("image.applyImage", json!({"blending": "multiply", "preserveTransparency": true})).unwrap();
+        assert!(px(&s, 3, 3)[3] < 0.001, "depth {depth}");
+    }
+}
+
+#[test]
 fn apply_image_into_alpha_channel() {
     let mut s = session();
     s.execute("edit.fill", json!({"color": "#ffffff"})).unwrap();
@@ -425,6 +448,29 @@ fn split_and_merge_channels() {
     let p = px(&s, 1, 1);
     assert!((p[0] - 1.0).abs() < 0.003 && (p[1] - 128.0 / 255.0).abs() < 0.003 && p[2].abs() < 0.003, "{p:?}");
     assert!(s.execute("channel.merge", json!({"mode": "cmyk"})).is_err());
+}
+
+#[test]
+fn merge_rejects_a_repeated_source_and_keeps_unrelated_documents() {
+    // #934: `documents: [0, 0, 1]` passed validation, then the close loop ran `close(1)`,
+    // `close(0)`, `close(0)` and the last call removed the unrelated RGB document at index 2.
+    let mut s = session();
+    s.execute("channel.split", json!({})).unwrap();
+    assert_eq!(s.documents().len(), 3);
+    s.execute("file.new", json!({"width": 40, "height": 20})).unwrap();
+    s.execute("edit.fill", json!({"color": "#00ff00"})).unwrap();
+    let keep = s.documents()[3].doc.id;
+    let before: Vec<_> = s.documents().iter().map(|d| d.doc.id).collect();
+    let err = s.execute("channel.merge", json!({"mode": "rgb", "documents": [0, 0, 1]})).unwrap_err();
+    assert!(err.to_string().contains("more than once"), "{err}");
+    let after: Vec<_> = s.documents().iter().map(|d| d.doc.id).collect();
+    assert_eq!(after, before, "a rejected merge closes nothing");
+    assert!(s.documents().iter().any(|d| d.doc.id == keep));
+    assert!(s.set_active(3) && s.undo(), "the unrelated document keeps its history");
+    // Distinct indices still merge and close exactly the named sources.
+    s.execute("channel.merge", json!({"mode": "rgb", "documents": [0, 1, 2]})).unwrap();
+    assert_eq!(s.documents().len(), 2);
+    assert!(s.documents().iter().any(|d| d.doc.id == keep));
 }
 
 #[test]

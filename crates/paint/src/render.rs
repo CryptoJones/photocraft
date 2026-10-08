@@ -109,8 +109,18 @@ fn prepare_pattern(b: &BrushSettings) -> Option<Arc<PatternImage>> {
     Some(Arc::new(img))
 }
 
+/// The pixel rectangle `reach` (plus 1 px of anti-aliasing slack) around a dab's centre. The casts
+/// saturate and the arithmetic saturates, so a far or non-finite centre or reach from a direct
+/// caller gives a (possibly empty) rectangle instead of an `i32` overflow (#977).
+pub(crate) fn rect_around(d: &Dab, reach: f32) -> Rect {
+    let rr = (reach.ceil() as i32).saturating_add(1);
+    let (cx, cy) = (d.center.x.floor() as i32, d.center.y.floor() as i32);
+    Rect::new(cx.saturating_sub(rr), cy.saturating_sub(rr), cx.saturating_add(rr).saturating_add(1), cy.saturating_add(rr).saturating_add(1))
+}
+
 impl BrushContext {
     pub fn new(brush: &BrushSettings) -> Self {
+        let brush = brush.bounded_for_render();
         let mips = |t: &TipShape| match t {
             TipShape::Sampled(g) if g.is_valid() => Some(Arc::new(Mips::new(g))),
             _ => None,
@@ -118,8 +128,8 @@ impl BrushContext {
         Self {
             tip: mips(&brush.tip),
             dual_tip: if brush.dual_brush.enabled { mips(&brush.dual_brush.tip) } else { None },
-            texture: prepare_pattern(brush),
-            brush: brush.clone(),
+            texture: prepare_pattern(&brush),
+            brush,
         }
     }
 
@@ -144,9 +154,7 @@ impl BrushContext {
     pub fn dab_rect(&self, d: &Dab, dual: bool) -> Rect {
         let sampled = if dual { self.dual_tip.is_some() } else { self.tip.is_some() };
         let reach = if sampled { d.radius * std::f32::consts::SQRT_2 } else { d.radius };
-        let rr = reach.ceil() as i32 + 1;
-        let (cx, cy) = (d.center.x.floor() as i32, d.center.y.floor() as i32);
-        Rect::new(cx - rr, cy - rr, cx + rr + 1, cy + rr + 1)
+        rect_around(d, reach)
     }
 
     /// Rasterise a dab over `rect` into `out` (tip shape × noise × per-tip texture × wet edges × flow).
@@ -365,6 +373,30 @@ impl CoverageMap {
         v.sort_unstable();
         v
     }
+
+    /// Union two passes of the same brush stroke without applying opacity twice where they
+    /// overlap. The stronger coverage wins, including its per-dab colour when present.
+    fn union_max(&mut self, other: &Self) {
+        self.bounds = self.bounds.union(&other.bounds);
+        for (&key, source) in &other.tiles {
+            let Some(target) = self.tiles.get_mut(&key) else {
+                self.tiles.insert(key, source.clone());
+                self.dirty.insert(key);
+                continue;
+            };
+            for (index, (dst, src)) in target.cov.iter_mut().zip(&source.cov).enumerate() {
+                if *src > *dst {
+                    *dst = *src;
+                    let start = index.saturating_mul(self.nc);
+                    let end = start.saturating_add(self.nc);
+                    if let (Some(dst_color), Some(src_color)) = (target.col.get_mut(start..end), source.col.get(start..end)) {
+                        dst_color.copy_from_slice(src_color);
+                    }
+                }
+            }
+            self.dirty.insert(key);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +420,16 @@ pub struct StrokeRenderer {
 }
 
 impl StrokeRenderer {
+    /// Composite the union of this stroke and a mirrored pass as one stroke. This keeps
+    /// overlapping dabs on a symmetry axis under one opacity ceiling at every bit depth.
+    pub fn composite_union(&self, other: &Self, pre: &Surface, target: &mut Surface, selection: Option<&Surface>, lock_transparency: bool) -> Rect {
+        let mut merged = self.clone();
+        merged.cov.union_max(&other.cov);
+        if let (Some(to), Some(from)) = (&mut merged.dual, &other.dual) {
+            to.union_max(from);
+        }
+        merged.composite(pre, target, selection, lock_transparency, true)
+    }
     /// `fmt` = target pixel format (needed for per-dab colour); `zoom` for smoothing.
     pub fn new(brush: &BrushSettings, fmt: Option<PixelFormat>, zoom: f32) -> Self {
         let per_dab_color = brush.color_dynamics.enabled && !brush.erase && fmt.is_some();
@@ -530,6 +572,27 @@ impl StrokeRenderer {
                 }
             }
         }
+    }
+
+    /// The coverage tiles touched since the last call (or `composite`), as one rectangle clipped to
+    /// the stroke bounds, and forget them: what a live preview that composites its own paint has
+    /// to redraw.
+    pub fn take_dirty_rect(&mut self) -> Rect {
+        let r = self
+            .cov
+            .take_dirty()
+            .into_iter()
+            .fold(Rect::EMPTY, |acc, (tx, ty)| acc.union(&Rect::new(tx * COV_TILE, ty * COV_TILE, (tx + 1) * COV_TILE, (ty + 1) * COV_TILE)));
+        if let Some(d) = self.dual.as_mut() {
+            d.dirty.clear();
+        }
+        r.intersect(&self.bounds())
+    }
+
+    /// Final coverage over `r`, one value per pixel in rows (as [`dense_coverage`](Self::dense_coverage)
+    /// over its bounds).
+    pub fn coverage_in(&self, r: Rect) -> Vec<f32> {
+        (r.y0..r.y1).flat_map(|y| (r.x0..r.x1).map(move |x| (x, y))).map(|(x, y)| self.coverage_at(x, y)).collect()
     }
 
     /// Final stroke coverage at a pixel (stroke-level masks applied, before opacity/selection).

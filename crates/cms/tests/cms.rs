@@ -224,6 +224,66 @@ fn intents_differ_as_expected() {
     assert!(delta_e76(l, [95.0, 0.0, -2.0]) < 0.6, "absolute paper {l:?}");
 }
 
+/// `Builtin::Srgb`'s bytes (a v4 display profile) with the three `wtpt` values replaced.
+fn srgb_with_wtpt(xyz: [i32; 3]) -> Profile {
+    let mut b = Builtin::Srgb.profile().to_bytes().to_vec();
+    let be32 = |b: &[u8], at: usize| u32::from_be_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]) as usize;
+    let count = be32(&b, 128);
+    let rec = (0..count).map(|i| 132 + 12 * i).find(|&r| &b[r..r + 4] == b"wtpt").expect("sRGB has a wtpt tag");
+    let off = be32(&b, rec + 4);
+    assert_eq!(&b[off..off + 4], b"XYZ ");
+    for (i, v) in xyz.iter().enumerate() {
+        b[off + 8 + 4 * i..off + 12 + 4 * i].copy_from_slice(&v.to_be_bytes());
+    }
+    Profile::parse(&b).expect("still a valid profile")
+}
+
+/// A malformed `wtpt` (zero or negative media white) parses, and used to turn the absolute
+/// colorimetric media-white scale into NaN, so every colour through the transform (and through
+/// a paper-simulating proof built from it) came out NaN. It is now refused when the transform
+/// is built; the other intents, which never divide by the white, still work.
+#[test]
+fn absolute_colorimetric_refuses_a_degenerate_media_white() {
+    let mut zero = srgb().clone();
+    zero.white_point = [0.0; 3];
+    assert_eq!(zero.media_white(), [0.0; 3]);
+    let parsed_zero = srgb_with_wtpt([0, 0, 0]);
+    assert_eq!(parsed_zero.media_white(), [0.0; 3], "a v4 display profile's wtpt is used verbatim");
+    let negative = srgb_with_wtpt([-0x10000, 0x10000, 0x10000]);
+    let mut nan = srgb().clone();
+    nan.white_point = [f64::NAN, 1.0, 1.0];
+    for (name, bad) in [("zero", &zero), ("parsed zero", &parsed_zero), ("negative", &negative), ("nan", &nan)] {
+        for (src, dst) in [(srgb(), bad), (bad, srgb())] {
+            match Transform::new(src, dst, Intent::AbsoluteColorimetric, false) {
+                Err(photocraft_cms::CmsError::Invalid(m)) => assert!(m.contains("media white"), "{name}: {m}"),
+                Err(e) => panic!("{name}: wrong error {e}"),
+                Ok(t) => {
+                    let mut out = [0.0f32; 3];
+                    t.eval(&[0.2, 0.4, 0.6], &mut out);
+                    panic!("{name}: built a transform that gives {out:?}");
+                }
+            }
+        }
+        // Proof Colors with Simulate Paper Color proofs through the absolute intent.
+        assert!(Transform::proof(srgb(), bad, srgb(), Intent::AbsoluteColorimetric, false, true).is_err(), "{name}: paper proof");
+        assert!(Transform::proof(srgb(), bad, srgb(), Intent::RelativeColorimetric, true, true).is_err(), "{name}: paper proof, relative first leg");
+        // Without paper simulation the proof leg is relative colorimetric and stays finite.
+        let t = Transform::proof(srgb(), bad, srgb(), Intent::RelativeColorimetric, true, false).unwrap();
+        let mut out = [0.0f32; 3];
+        t.eval(&[0.2, 0.4, 0.6], &mut out);
+        assert!(out.iter().all(|v| v.is_finite()), "{name}: {out:?}");
+        let t = Transform::new(srgb(), bad, Intent::RelativeColorimetric, false).unwrap();
+        t.eval(&[0.2, 0.4, 0.6], &mut out);
+        assert!(out.iter().all(|v| v.is_finite()), "{name}: {out:?}");
+    }
+    // A sane patched white still builds and scales.
+    let d50 = srgb_with_wtpt([0xF6D6, 0x10000, 0xD32D]);
+    let t = Transform::new(srgb(), &d50, Intent::AbsoluteColorimetric, false).unwrap();
+    let mut out = [0.0f32; 3];
+    t.eval(&[0.2, 0.4, 0.6], &mut out);
+    assert!(out.iter().all(|v| v.is_finite()), "{out:?}");
+}
+
 #[test]
 fn black_point_compensation() {
     let bp = photocraft_cms::black_point(cmyk(), Intent::RelativeColorimetric, false).unwrap();
@@ -589,4 +649,53 @@ fn gray_profile_with_reversed_lut_type_reencodes() {
     let mut odd = p.clone();
     odd.description = "re-encoded".into();
     let _ = Profile::parse(&odd.with_encoded_bytes().to_bytes()).unwrap();
+}
+
+/// sRGB the way Photoshop embeds it: a v2 profile whose TRCs are 1024-entry 16-bit tables.
+fn srgb_as_v2_tables() -> Profile {
+    let mut p = srgb().clone();
+    let table = |c: &photocraft_cms::Curve| {
+        photocraft_cms::Curve::Table((0..1024).map(|i| ((c.eval64(i as f64 / 1023.0) * 65535.0).round() / 65535.0) as f32).collect())
+    };
+    let trc = p.trc.clone().unwrap();
+    p.trc = Some([table(&trc[0]), table(&trc[1]), table(&trc[2])]);
+    p.version = (2, 0x10);
+    p.with_encoded_bytes()
+}
+
+#[test]
+fn same_colors_ignores_the_encoding() {
+    let v2 = Profile::parse(&srgb_as_v2_tables().to_bytes()).unwrap();
+    assert_ne!(v2.content_hash(), srgb().content_hash(), "different bytes");
+    assert!(v2.same_colors(srgb()) && srgb().same_colors(&v2));
+    for b in Builtin::ALL {
+        assert!(b.profile().same_colors(b.profile()), "{b:?}");
+        // Re-encoded (fresh bytes, same model): CMYK too, where a round trip is not an identity.
+        let again = Profile::parse(&b.profile().clone().with_encoded_bytes().to_bytes()).unwrap();
+        assert!(again.same_colors(b.profile()), "{b:?} re-encoded");
+    }
+}
+
+#[test]
+fn same_colors_tells_different_spaces_apart() {
+    for other in [Builtin::DisplayP3, Builtin::LinearSrgb, Builtin::AdobeRgbCompat, Builtin::Rec2020, Builtin::CoatedCmyk, Builtin::GrayGamma22] {
+        assert!(!srgb().same_colors(other.profile()), "{other:?}");
+    }
+    assert!(!Builtin::GrayGamma22.profile().same_colors(Builtin::SGray.profile()));
+    // Scaling the red primary's XYZ by 2% makes a different space too.
+    let mut moved = srgb().clone();
+    let m = moved.matrix.as_mut().unwrap();
+    for row in m.iter_mut() {
+        row[0] *= 1.02;
+    }
+    assert!(!moved.with_encoded_bytes().same_colors(srgb()));
+}
+
+/// The sRGB IEC61966-2.1 profile Windows ships (the one Photoshop embeds), when present.
+#[test]
+fn windows_srgb_is_the_builtin_srgb() {
+    let Ok(bytes) = std::fs::read("C:/Windows/System32/spool/drivers/color/sRGB Color Space Profile.icm") else { return };
+    let p = Profile::parse(&bytes).unwrap();
+    assert_ne!(p.content_hash(), srgb().content_hash());
+    assert!(p.same_colors(srgb()));
 }

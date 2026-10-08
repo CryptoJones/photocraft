@@ -51,8 +51,8 @@ in the dialog.
 | macOS 11+ (universal: Apple silicon + Intel) | `photocraft-<v>-macos-universal.dmg`, `photocraft-cli-<v>-macos-universal.zip` | `macos-15` |
 | Windows 10+ x64 | `photocraft-<v>-windows-x64.msi`, `photocraft-<v>-windows-x64-portable.zip` | `windows-latest` |
 | Windows 10+ x86 (32-bit) | `photocraft-<v>-windows-x86.msi`, `photocraft-<v>-windows-x86-portable.zip` | `windows-latest` |
-| Linux x86_64 | `photocraft-<v>-linux-x86_64.{AppImage,deb,rpm,tar.gz,flatpak}` | `ubuntu-22.04` (Flatpak: `ubuntu-24.04`) |
-| Linux aarch64 | `photocraft-<v>-linux-aarch64.{AppImage,deb,rpm,tar.gz,flatpak}` | `ubuntu-22.04-arm` (Flatpak: `ubuntu-24.04-arm`) |
+| Linux x86_64 | `photocraft-<v>-linux-x86_64.{AppImage,AppImage.zsync,deb,rpm,tar.gz,flatpak}` | `ubuntu-22.04` (Flatpak: `ubuntu-24.04`) |
+| Linux aarch64 | `photocraft-<v>-linux-aarch64.{AppImage,AppImage.zsync,deb,rpm,tar.gz,flatpak}` | `ubuntu-22.04-arm` (Flatpak: `ubuntu-24.04-arm`) |
 | FreeBSD 14 x86_64 | `photocraft-<v>-freebsd-x86_64.tar.gz` | FreeBSD 14.3 VM on `ubuntu-latest` |
 | Web | `photocraft-web-<v>.zip` (static site; see [`packaging/web/README.md`](../packaging/web/README.md)) | `ubuntu-latest` |
 
@@ -60,6 +60,14 @@ Every binary reports its version, the commit and the build date: `photocraft --v
 `photocraft-cli --version`, and *Help › About PhotoCraft*. CI sets `PHOTOCRAFT_BUILD_SHA` and
 `PHOTOCRAFT_BUILD_DATE`, and `crates/engine/src/build_info.rs` reads them at compile time. A plain
 `cargo build` doesn't set them and reports `0.2.0 (dev build)`.
+
+Every desktop build job (macOS, Windows, Linux, FreeBSD) also checks out [craft-fonts](https://github.com/storytold/craft-fonts)
+at the commit in `CRAFT_FONTS_REF` (top of `release.yml`) and builds with `CRAFT_FONTS_DIR` and
+`CRAFT_FONTS_REQUIRED=1`, so desktop releases embed its Japanese fonts (the web build embeds none: see
+`docs/development.md` › Fonts) and fail rather than ship without them. The packages carry each font's licence as
+`OFL-<family>.txt` (`copy_font_licences` in `packaging/env.sh`; the portable zip on Windows;
+`Contents/Resources/Licenses` in the macOS app). Bump the pin deliberately, together with the one
+in `ci.yml`. Rules: `../craftrules/standards/fonts.md`; build option: `docs/development.md` › Fonts.
 
 ### macOS
 
@@ -77,6 +85,9 @@ Every binary reports its version, the commit and the build date: `photocraft --v
   ticket is stapled to the app. The app goes on a DMG (`hdiutil`, with an `Applications` link
   to drag onto). The DMG is signed, notarized and stapled too. The script checks the results
   with `codesign --verify --strict`, `stapler validate` and `spctl -a -vvv`.
+  Its Finder window (background, icon size and positions) comes from
+  [`packaging/macos/dmg/`](../packaging/macos/dmg/README.md), and its volume is named `PhotoCraft`
+  without the version, which the window's background needs; the DMG file name keeps the version.
 - **CLI:** the universal `photocraft-cli` is signed with the same Developer ID, the hardened
   runtime and a secure timestamp (identifier `ai.storyteller.photocraft-cli`), zipped, and the zip
   is sent to `notarytool`. Only `.app`, `.dmg` and `.pkg` can hold a stapled ticket, not a bare
@@ -108,10 +119,22 @@ The static C runtime means neither the MSI nor the portable zip needs the Visual
 redistributable, which matters for a standalone installer and costs only about 100 KB. The flag
 goes in `CARGO_TARGET_<TRIPLE>_RUSTFLAGS`, so host build scripts aren't affected.
 
-- `apps/photocraft/build.rs` embeds the icon (`assets/app-icon/photocraft.ico`) and
-  VERSIONINFO with the `winresource` crate. It only does this when targeting Windows. Elsewhere
-  it's a no-op, and the web build doesn't touch that crate.
+- `apps/photocraft/build.rs` and `apps/photocraft-cli/build.rs` embed the icon
+  (`assets/app-icon/photocraft.ico`) and VERSIONINFO with the `winresource` crate
+  (build dependency `0.1`). They only do this when targeting Windows. Elsewhere each
+  script is a no-op, even if `PHOTOCRAFT_REQUIRE_WINRES` is set, and the web build
+  doesn't touch that crate. Both set ProductName to PhotoCraft, CompanyName to
+  Learning Machines LLC and the same copyright line. The GUI description is
+  "PhotoCraft image editor" (`photocraft.exe`). The CLI description is
+  "PhotoCraft command-line interface", with OriginalFilename `photocraft-cli.exe`
+  and InternalName `photocraft-cli`. Version strings are the Cargo package version,
+  so a pre-release tag is kept; the numeric file and product versions are
+  winresource's `major.minor.patch.0`. A missing resource compiler warns, so an
+  optional cross-compile still links. `package.ps1` sets `PHOTOCRAFT_REQUIRE_WINRES=1`.
+  The CLI build script then returns an error naming `rc.exe` or `windres` and does
+  not panic.
 - Release builds use the GUI subsystem, so Start Menu launches don't open a console window.
+  The CLI stays console subsystem 3 so its output reaches the terminal.
 - `photocraft.wxs` (WiX v5) is a per-machine install into Program Files with an advertised
   Start Menu shortcut. PhotoCraft becomes the default app for `.pcraft` and is listed under
   "Open with" for PSD/PSB and image files. It also registers App Paths (Win+R `photocraft`).
@@ -148,9 +171,23 @@ plus a scalable SVG, AppStream metainfo, and a shared-mime-info file for `.pcraf
 
 Why these formats:
 
-- **AppImage** runs on any distribution without installing anything. It's the
+- **AppImage** runs on any distribution without installing anything. The
   download-and-go option and the fallback for distros the packages don't cover. It's built
   with the maintained `AppImage/appimagetool`, whose static runtime doesn't need libfuse2.
+  Each AppImage embeds update information (`gh-releases-zsync|…|latest|…`, #349) and ships
+  with a `.zsync` beside it, so AppImageUpdate, AppImageLauncher and similar tools can find
+  the next release and download only the blocks that changed.
+  Its `AppRun` (`packaging/linux/AppRun`) also integrates with the desktop on launch: on
+  Wayland the dock icon comes from the compositor resolving the window's app_id against an
+  *installed* `.desktop` file, which an AppImage alone never provides — without this every
+  AppImage run shows the generic Wayland logo (#593). Best effort: it installs
+  `~/.local/share/applications/ai.storyteller.photocraft.desktop` with `Exec` rewritten to
+  the AppImage's path (`TryExec` dropped, the binary isn't on the host PATH) and the
+  hicolor icons beside it, rewriting only when the content changed, and any failure leaves
+  the launch untouched. `PHOTOCRAFT_NO_DESKTOP_INTEGRATION=1` opts out; to uninstall, `rm
+  ~/.local/share/applications/ai.storyteller.photocraft.desktop` and `find
+  ~/.local/share/icons/hicolor -name 'ai.storyteller.photocraft*' -delete`. The script is
+  covered by `packaging/linux/apprun-test.sh` in the packaging-lint workflow.
 - **.deb** covers Debian, Ubuntu, Mint, Pop!_OS and elementary. **.rpm** covers Fedora, RHEL
   and its clones, and openSUSE. Both integrate with the menu, MIME and icon caches (the
   `postinst.sh` hook) and uninstall cleanly. Both are built by

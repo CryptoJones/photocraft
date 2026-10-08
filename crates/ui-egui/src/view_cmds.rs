@@ -94,6 +94,12 @@ pub struct ViewOptions {
     /// and the Middle Eastern & South Asian composer.
     pub language_features: String,
     pub middle_eastern_composer: bool,
+    /// Parameters from the last successfully applied New Guide Layout dialog.
+    pub guide_layout: Value,
+}
+
+fn default_guide_layout() -> Value {
+    json!({"columns": 8, "gutter": 20, "rows": 0, "rowGutter": 0, "margin": 0, "centerColumns": false, "clearExisting": false})
 }
 
 impl Default for ViewOptions {
@@ -112,6 +118,7 @@ impl Default for ViewOptions {
             font_preview_size: "medium".into(),
             language_features: "defaultFeatures".into(),
             middle_eastern_composer: false,
+            guide_layout: default_guide_layout(),
         }
     }
 }
@@ -126,6 +133,10 @@ impl ViewOptions {
     }
     pub fn hides_tabs(&self) -> bool {
         self.screen_mode != "standard"
+    }
+    /// Photoshop's full screen modes show no scroll bars.
+    pub fn shows_scrollbars(&self) -> bool {
+        self.screen_mode == "standard"
     }
 }
 
@@ -704,7 +715,27 @@ fn label_of(key: &str) -> String {
             out.push(c);
         }
     }
-    out
+    let translated = tl!(&out);
+    if translated != out {
+        return translated.to_owned();
+    }
+    // Fall back to the Title Case filter label's translation, but keep the sentence-case
+    // English when that is untranslated too (English and partial catalogs read as before).
+    let title = crate::filter_dialog::label(key);
+    if title == crate::filter_dialog::source_label(key) { out } else { title }
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::label_of;
+
+    #[test]
+    fn untranslated_form_labels_stay_sentence_case() {
+        crate::i18n::with_language(crate::i18n::Lang::EN, || {
+            assert_eq!(label_of("useAntialias"), "Use antialias");
+            assert_eq!(label_of("radius"), "Radius");
+        });
+    }
 }
 
 /// Body of a `__form` dialog: text fields, number fields, checkboxes and `__choices` dropdowns.
@@ -740,11 +771,11 @@ pub fn form_body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                 Value::Number(n) => {
                     ui.label(label_of(&k));
                     if let Some(mut i) = n.as_i64() {
-                        ui.add(egui::DragValue::new(&mut i));
+                        ui.add(egui::DragValue::new(&mut i).custom_parser(crate::widgets::parse_num));
                         json!(i)
                     } else {
                         let mut x = n.as_f64().unwrap_or(0.0);
-                        ui.add(egui::DragValue::new(&mut x).speed(0.5));
+                        ui.add(egui::DragValue::new(&mut x).speed(0.5).custom_parser(crate::widgets::parse_num));
                         json!(x)
                     }
                 }
@@ -794,17 +825,19 @@ fn front(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<Val
     let label = photocraft_engine::commands::find(id).map_or(id, |c| c.label);
     let dialog = |app: &mut PhotocraftApp, fields: Value, choices: Value| Some(Ok(json!({"dialog": form(app, id, label, fields, choices)})));
     match id {
-        "file.openAs" => {
-            app.open_dialog_file();
-            Some(Ok(Value::Null))
-        }
+        "file.openAs" => Some(app.open_dialog_file()),
         "file.saveACopy" => Some(save_a_copy(app)),
         "file.placeEmbedded" | "file.placeLinked" => {
-            let (name, bytes) = app.services.pick_open.as_mut().and_then(|f| f())?;
-            let linked = (id == "file.placeLinked").then(|| name.clone());
-            let r = photocraft_engine::file_cmds::place_bytes(&mut app.session, &name, bytes, linked, &json!({})).map_err(|e| e.to_string());
-            app.sync_views();
-            Some(r)
+            let doc = match app.active_doc_id() {
+                Ok(doc) => doc,
+                Err(e) => return Some(Err(e)),
+            };
+            let linked = id == "file.placeLinked";
+            Some(app.pick_file_bytes(move |app, name, bytes| {
+                app.refocus(doc)?;
+                let linked = linked.then(|| name.clone());
+                app.place_bytes(&name, bytes, linked)
+            }))
         }
         "file.fileInfo" => {
             let info = app.session.execute("file.fileInfo", json!({})).ok()?;
@@ -825,7 +858,8 @@ fn front(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<Val
             json!({"from": ["any", "rgb", "grayscale", "cmyk", "lab", "indexed", "bitmap", "duotone", "multichannel"], "to": ["rgb", "grayscale", "cmyk", "lab"]}),
         ),
         "view.newGuideLayout" => {
-            dialog(app, json!({"columns": 8, "gutter": 20, "rows": 0, "rowGutter": 0, "margin": 0, "centerColumns": false, "clearExisting": false}), json!({}))
+            let fields = app.ui.view.guide_layout.clone();
+            dialog(app, fields, json!({}))
         }
         "type.warpText" => {
             let styles: Vec<&str> = std::iter::once("none").chain(photocraft_text::warp::STYLES.iter().map(|(_, s)| *s)).collect();
@@ -895,12 +929,10 @@ fn front(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<Val
             json!({"format": ["jpg", "png", "psd", "tiff"]}),
         ),
         "file.automate.batch" => {
-            let a = &app.ui.actions;
-            let action = a.selected.and_then(|i| a.list.get(i)).or(a.list.first());
-            let Some(action) = action else {
+            let Some(action) = crate::actions::selected_action(app) else {
                 return Some(Err("record an action in the Actions panel first".into()));
             };
-            let steps: Vec<Value> = action.steps.iter().map(|(id, p)| json!([id, p])).collect();
+            let steps = crate::actions::action_steps(action);
             let name = action.name.clone();
             dialog(
                 app,
@@ -976,19 +1008,20 @@ fn front(app: &mut PhotocraftApp, id: &str, params: &Value) -> Option<Result<Val
 /// File › Save a Copy: pick a name, encode with the export service, write; the document's path
 /// and saved state are untouched.
 fn save_a_copy(app: &mut PhotocraftApp) -> Result<Value, String> {
-    let st = app.session.active().ok_or("no document")?;
-    let stem = st.doc.name.rsplit_once('.').map_or(st.doc.name.as_str(), |(a, _)| a).to_string();
-    let suggested = format!("{stem} copy.psd");
-    let path = app.services.pick_save.as_mut().and_then(|f| f(&suggested)).ok_or("cancelled")?;
-    let export = app.services.export.as_ref().ok_or("no exporter configured")?;
     let doc = app.session.active().ok_or("no document")?.doc.clone();
-    let (bytes, warnings) = export(&doc, &path, &crate::ExportSettings::default())?;
-    let write = app.services.write.as_mut().ok_or("no writer configured")?;
-    write(&path, &bytes)?;
-    app.ui.status = format!("Saved a copy as {path}");
-    app.ui.status_error = false;
-    crate::notices::io_warnings(app, &format!("Saved a copy as {}", crate::file_open::display_name(&path)), &warnings);
-    Ok(json!({"path": path, "warnings": warnings}))
+    let stem = doc.name.rsplit_once('.').map_or(doc.name.as_str(), |(a, _)| a);
+    let suggested = format!("{stem} copy.psd");
+    // The copy is of the document as it was when asked.
+    app.pick_save(&suggested, move |app, path| {
+        let export = app.services.export.as_ref().ok_or("no exporter configured")?;
+        let (bytes, warnings) = export(&doc, &path, &crate::ExportSettings::default())?;
+        let write = app.services.write.as_mut().ok_or("no writer configured")?;
+        write(&path, &bytes)?;
+        app.ui.status = format!("Saved a copy as {path}");
+        app.ui.status_error = false;
+        crate::notices::io_warnings(app, &format!("Saved a copy as {}", crate::file_open::display_name(&path)), &warnings);
+        Ok(json!({"path": path, "warnings": warnings}))
+    })
 }
 
 #[cfg(test)]

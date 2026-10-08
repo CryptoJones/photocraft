@@ -240,6 +240,21 @@ fn fit_image_and_conditional_mode_change() {
 }
 
 #[test]
+fn conditional_mode_change_cannot_run_a_mode_change_the_gate_denies() {
+    fn deny_mode(id: &str, _: &Value) -> Result<()> {
+        if id.starts_with("image.mode.") { Err(EngineError::Other(format!("automation command `{id}` is disabled"))) } else { Ok(()) }
+    }
+    let mut s = session(4, 4, 8);
+    s.authorize = Some(deny_mode);
+    let e = s.execute("file.automate.conditionalModeChange", json!({"to": "grayscale"})).unwrap_err();
+    assert!(e.to_string().contains("image.mode.grayscale"), "{e}");
+    assert_eq!(doc(&s).mode, ColorMode::Rgb, "the refused nested step leaves the document alone");
+    // Commands that compose only allowed steps still run.
+    s.execute("file.automate.fitImage", json!({"width": 2, "height": 2})).unwrap();
+    assert_eq!(doc(&s).size.width, 2);
+}
+
+#[test]
 fn flatten_all_layer_effects_and_masks() {
     for depth in [8, 16, 32] {
         let mut s = session(40, 40, depth);
@@ -376,4 +391,80 @@ fn guide_layouts() {
     let g = &doc(&s).guides;
     assert_eq!(g.vertical, vec![10.0, 30.0, 50.0]);
     assert_eq!(g.horizontal, vec![10.0, 20.0, 30.0]);
+}
+
+#[test]
+fn only_layered_files_save_in_place() {
+    for path in ["a.psd", "dir/a.PSB", r"C:\w\a.pcraft", "my.dir/a.psd"] {
+        assert!(saves_in_place(path), "{path}");
+    }
+    // Flat formats, no extension, a dotted folder with an extensionless file, a dot file.
+    for path in ["a.png", "a.jpg", "a", "my.psd/a", ".psd", "a.", ""] {
+        assert!(!saves_in_place(path), "{path}");
+    }
+    assert_eq!(extension("dir/Photo.JPEG").as_deref(), Some("jpeg"));
+    assert_eq!(extension("my.dir/name"), None);
+}
+
+#[test]
+fn templates_open_untitled_without_their_path() {
+    assert!(is_template("dir/card.PSDT") && !is_template("card.psd") && !is_template("psdt"));
+    let dir = tmp("template");
+    let path = format!("{dir}/card.psdt");
+    let mut s = session(8, 8, 8);
+    std::fs::write(&path, encode(doc(&s), "x.psd", None).unwrap().0).unwrap();
+    s.execute("file.openAs", json!({"path": path})).unwrap();
+    s.execute("file.openAs", json!({"path": path, "as": "psd"})).unwrap();
+    let opened: Vec<_> = s.documents()[1..].iter().map(|d| (d.doc.name.as_str(), d.path.as_deref())).collect();
+    assert_eq!(opened, [("Untitled-1", None), ("Untitled-2", None)]);
+}
+
+/// Two inputs with one output name: the first result is kept and the second is an error, never
+/// a silent overwrite listed as written (#422).
+#[test]
+fn batch_reports_inputs_that_share_an_output_name() {
+    let dir = tmp("collide");
+    let input = join(&dir, "in");
+    std::fs::create_dir_all(&input).unwrap();
+    png(&input, "a.png", 8, 8, "#ff0000");
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 8, "height": 8, "background": "#0000ff"})).unwrap();
+    save_doc(doc(&s), &join(&input, "a.jpg"), None).unwrap();
+    png(&input, "B.png", 8, 8, "#00ff00");
+    png(&input, "b.tif", 8, 8, "#00ff00");
+    for (cmd, extra) in [
+        ("file.automate.batch", json!({"steps": [], "format": "jpg"})),
+        ("file.scripts.imageProcessor", json!({})),
+        ("file.automate.lensCorrection", json!({"format": "jpg"})),
+    ] {
+        let out = join(&dir, cmd);
+        let mut p = extra;
+        p["input"] = json!(input);
+        p["output"] = json!(out);
+        let r = s.execute(cmd, p).unwrap();
+        let files = r["files"].as_array().unwrap();
+        let errors = r["errors"].as_array().unwrap();
+        // `a.*` and `B.png`/`b.tif` (names that differ only in case) each collide once.
+        assert_eq!((files.len(), errors.len()), (2, 2), "{cmd}: {r}");
+        assert!(errors.iter().all(|e| e["error"].as_str().unwrap().contains("not written")), "{r}");
+        let mut written: Vec<_> = files.iter().map(|f| f.as_str().unwrap().to_lowercase()).collect();
+        written.dedup();
+        assert_eq!(written.len(), 2, "each listed file is distinct: {r}");
+    }
+    // Keeping each file's format, nothing collides.
+    let out = join(&dir, "same");
+    let r = s.execute("file.automate.batch", json!({"steps": [], "input": input, "output": out})).unwrap();
+    assert_eq!((r["files"].as_array().unwrap().len(), r["errors"].as_array().unwrap().len()), (4, 0), "{r}");
+    // A droplet over two folders holding the same name.
+    let other = join(&dir, "other");
+    std::fs::create_dir_all(&other).unwrap();
+    png(&other, "a.png", 8, 8, "#ffffff");
+    let droplet = join(&dir, "d.pcdroplet");
+    std::fs::write(&droplet, json!({"photocraftDroplet": 1, "name": "d", "action": {"steps": []}, "options": {"format": "png"}}).to_string()).unwrap();
+    let out = join(&dir, "droplet");
+    let r = s.execute("file.automate.runDroplet", json!({"droplet": droplet, "input": [join(&input, "a.png"), other], "output": out})).unwrap();
+    assert_eq!((r["files"].as_array().unwrap().len(), r["errors"].as_array().unwrap().len()), (1, 1), "{r}");
+    let kept = photocraft_io::import("a.png", &std::fs::read(join(&out, "a.png")).unwrap()).unwrap().document;
+    let px = photocraft_compose::render(&kept, Rect::new(1, 1, 2, 2)).px[0];
+    assert!(px[0] > 0.99 && px[1] < 0.01, "the first input's result is kept: {px:?}");
 }

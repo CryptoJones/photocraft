@@ -3,6 +3,30 @@ use photocraft_color::ColorMode;
 
 const DEPTHS: [u64; 3] = [8, 16, 32];
 
+#[test]
+fn clone_preview_matches_source_without_mutating_session() {
+    use crate::presets::clone_source::Mapping;
+    for depth in DEPTHS {
+        let mut s = session(32, 32, depth, "rgb");
+        paint_layer(&mut s, |x, y| [x as f32 / 32.0, y as f32 / 32.0, 0.25, 1.0]);
+        s.execute("cloneSource.set", json!({"source": [8,8]})).unwrap();
+        let revision = s.active().unwrap().revision;
+        let slots = s.presets.clone.clone();
+        let map = Mapping { source: (8.0, 8.0), anchor: (20.0, 20.0), m: [1.0, 0.0, 0.0, 1.0] };
+        let buf = clone_preview(&s, Rect::new(20, 20, 21, 21), &map, "current").unwrap();
+        let expected = rgba(&s, 8, 8);
+        for (actual, expected) in buf.px[0].iter().zip(expected) {
+            assert!((actual - expected).abs() < 0.001);
+        }
+        assert_eq!(s.active().unwrap().revision, revision);
+        assert_eq!(s.presets.clone, slots);
+        assert!(clone_preview(&s, Rect::new(0, 0, 2048, 2048), &map, "current").is_err());
+        assert!(clone_preview(&s, Rect::new(20, 20, 21, 21), &map, "invalid").is_err());
+        let invalid = Mapping { source: (f64::NAN, 0.0), ..map };
+        assert!(clone_preview(&s, Rect::new(0, 0, 1, 1), &invalid, "current").is_err());
+    }
+}
+
 fn session(w: u32, h: u32, depth: u64, mode: &str) -> Session {
     let mut s = Session::new();
     s.execute("file.new", json!({"width": w, "height": h, "depth": depth, "mode": mode})).unwrap();
@@ -63,6 +87,13 @@ fn clone_stamp_copies_exactly_at_all_depths() {
         assert!(s.undo());
         assert!((rgba(&s, 70, 30)[1] - 30.0 / 64.0).abs() <= tol(depth));
     }
+}
+
+#[test]
+fn retouch_rejects_brushes_larger_than_the_raster_budget() {
+    let mut s = session(32, 32, 8, "rgb");
+    let result = s.execute("paint.dodge", json!({"points": [[10, 10]], "size": 1e30}));
+    assert!(result.is_err(), "retouch must reject an oversized brush before footprint allocation");
 }
 
 #[test]
@@ -285,6 +316,7 @@ fn history_brush_errors_when_layer_is_new() {
 fn retouch_commands_are_registered_and_need_a_pixel_layer() {
     let ids = [
         "paint.cloneStamp",
+        "paint.patternStamp",
         "paint.healingBrush",
         "paint.spotHealing",
         "paint.dodge",
@@ -310,8 +342,9 @@ fn retouch_commands_are_registered_and_need_a_pixel_layer() {
 // Paint target (#207): mask, alpha channel, Quick Mask
 // ---------------------------------------------------------------------------------------------
 
-const RETOUCH_IDS: [&str; 10] = [
+const RETOUCH_IDS: [&str; 11] = [
     "paint.cloneStamp",
+    "paint.patternStamp",
     "paint.healingBrush",
     "paint.spotHealing",
     "paint.dodge",
@@ -521,6 +554,25 @@ fn sample_all_layers_smudge_drags_colour_from_below() {
 }
 
 #[test]
+fn sample_all_layers_spot_healing_heals_onto_an_empty_layer() {
+    // #731: the blemish below is healed onto the empty layer.
+    for depth in DEPTHS {
+        let heal = |all: bool| {
+            let mut s = session(100, 30, depth, "rgb");
+            paint_layer(&mut s, blemished(46));
+            s.execute("layer.new.layer", json!({})).unwrap();
+            s.execute("paint.spotHealing", json!({"points": [[50, 24]], "size": 12, "hardness": 100, "sampleAllLayers": all})).unwrap();
+            s
+        };
+        assert_eq!(rgba(&heal(false), 50, 24)[3], 0.0, "depth {depth}: without Sample All Layers the layer stays empty");
+        let s = heal(true);
+        let (p, t) = (rgba(&s, 50, 24), texture(50, 24));
+        assert!(p[3] > 0.99 && (p[0] - t[0]).abs() < 0.1 && (p[1] - t[1]).abs() < 0.1, "depth {depth}: healed, not red: {p:?} want {t:?}");
+        assert_eq!(rgba(&s, 80, 15)[3], 0.0, "depth {depth}: outside the stroke untouched");
+    }
+}
+
+#[test]
 fn smudge_across_a_transparent_edge_has_no_dark_fringe() {
     for depth in DEPTHS {
         let mut s = session(100, 30, depth, "rgb");
@@ -536,5 +588,531 @@ fn smudge_across_a_transparent_edge_has_no_dark_fringe() {
             }
         }
         assert!(n > 5, "depth {depth}: colour dragged into the transparent area");
+    }
+}
+
+/// `texture` with a solid red blemish over `x0..x0+8`, `y 20..28`.
+fn blemished(x0: i32) -> impl Fn(i32, i32) -> [f32; 4] {
+    move |x, y| if (x0..x0 + 8).contains(&x) && (20..28).contains(&y) { [1.0, 0.0, 0.0, 1.0] } else { texture(x, y) }
+}
+
+/// Every pixel of `rect` (x0, y0, x1, y1) is within `t` of the clean texture.
+fn assert_repaired(s: &Session, rect: (i32, i32, i32, i32), t: f32, what: &str) {
+    for y in rect.1..rect.3 {
+        for x in rect.0..rect.2 {
+            let (got, want) = (rgba(s, x, y), texture(x, y));
+            for c in 0..4 {
+                assert!((got[c] - want[c]).abs() < t, "{what} at {x},{y} channel {c}: {got:?} want {want:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn patch_source_repairs_the_selection_with_texture_from_the_drag_target() {
+    for depth in DEPTHS {
+        let mut s = session(96, 48, depth, "rgb");
+        paint_layer(&mut s, blemished(40));
+        s.execute("select.rect", json!({"x": 36, "y": 16, "width": 16, "height": 16})).unwrap();
+        let r = s.execute("paint.patch", json!({"offset": [-30, 2]})).unwrap();
+        assert_eq!(r["offset"], json!([-30, 2]));
+        // Gradient plus noise: the membrane fits the source's colour to the surroundings, the noise
+        // comes from the source, so the repair is close to (not exactly) the clean texture.
+        assert_repaired(&s, (36, 16, 52, 32), 0.07, &format!("depth {depth}"));
+        // Outside the selection nothing changed, including the sampled area.
+        for (x, y) in [(35, 20), (52, 25), (10, 20), (44, 40)] {
+            let (got, want) = (rgba(&s, x, y), texture(x, y));
+            assert!((got[0] - want[0]).abs() <= tol(depth), "depth {depth} untouched {x},{y}: {got:?}");
+        }
+        // One undo step restores the blemish.
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(rgba(&s, 44, 24)[1], 0.0, "depth {depth}: undo brings the blemish back");
+    }
+}
+
+#[test]
+fn patch_destination_repairs_the_drag_target_from_the_selection() {
+    let mut s = session(96, 48, 16, "rgb");
+    paint_layer(&mut s, blemished(40));
+    // Select clean texture and drag it onto the blemish.
+    s.execute("select.rect", json!({"x": 6, "y": 16, "width": 16, "height": 16})).unwrap();
+    s.execute("paint.patch", json!({"offset": [30, 0], "mode": "destination"})).unwrap();
+    assert_repaired(&s, (36, 16, 52, 32), 0.07, "destination");
+    // The selected (source) pixels stay as they were.
+    let (got, want) = (rgba(&s, 10, 20), texture(10, 20));
+    assert!((got[1] - want[1]).abs() < 1e-3, "source untouched: {got:?}");
+}
+
+#[test]
+fn patch_at_the_canvas_edge_stays_opaque_and_matches() {
+    // The blemish touches the left edge; the solve must not pull in the empty pixels beyond it.
+    let mut s = session(64, 48, 8, "rgb");
+    paint_layer(&mut s, blemished(0));
+    s.execute("select.rect", json!({"x": 0, "y": 16, "width": 12, "height": 16})).unwrap();
+    s.execute("paint.patch", json!({"offset": [30, 0]})).unwrap();
+    assert_repaired(&s, (0, 16, 12, 32), 0.07, "edge");
+}
+
+#[test]
+fn patch_follows_a_feathered_selection_and_a_mask_target() {
+    let mut s = session(96, 48, 8, "rgb");
+    paint_layer(&mut s, blemished(40));
+    s.execute("select.rect", json!({"x": 36, "y": 16, "width": 16, "height": 16, "ellipse": true, "feather": 2})).unwrap();
+    s.execute("paint.patch", json!({"offset": [-30, 0]})).unwrap();
+    // The blemish (well inside the ellipse) is gone, a corner outside the ellipse is untouched.
+    assert_repaired(&s, (42, 22, 46, 26), 0.07, "feathered");
+    let (got, want) = (rgba(&s, 36, 16), texture(36, 16));
+    assert!((got[0] - want[0]).abs() <= tol(8), "corner outside the ellipse: {got:?}");
+    // Patching the layer mask works like any retouch target.
+    s.execute("layer.layerMask.revealAll", json!({})).unwrap();
+    s.execute("paint.patch", json!({"offset": [-30, 0], "target": "mask"})).unwrap();
+}
+
+#[test]
+fn patch_fails_gracefully() {
+    let mut s = session(64, 48, 8, "rgb");
+    assert!(s.execute("paint.patch", json!({"offset": [10, 0]})).is_err(), "no selection");
+    s.execute("select.rect", json!({"x": 10, "y": 10, "width": 10, "height": 10})).unwrap();
+    for p in [
+        json!({}),
+        json!({"offset": [10]}),
+        json!({"offset": "far"}),
+        json!({"offset": [1e300, 0]}),
+        json!({"offset": [0, 0]}),
+        json!({"offset": [10, 0], "mode": "bogus"}),
+        json!({"offset": [60, 0]}),
+        json!({"offset": [0, -30]}),
+        json!({"offset": [10, 0], "target": "mask"}),
+        json!({"offset": [10, 0], "target": {"channel": 7}}),
+        json!({"offset": [10, 0], "layer": 999}),
+    ] {
+        assert!(s.execute("paint.patch", p.clone()).is_err(), "{p}");
+    }
+    assert!(s.execute("paint.patch", json!({"offset": [10, 0]})).is_ok());
+}
+
+#[test]
+fn patch_preview_matches_the_command_and_its_coarse_solve_is_close() {
+    let mut s = session(160, 96, 16, "rgb");
+    paint_layer(&mut s, blemished(100));
+    s.execute("select.rect", json!({"x": 80, "y": 4, "width": 60, "height": 60, "ellipse": true, "feather": 3})).unwrap();
+    let p = json!({"offset": [-70, 20]});
+    let rev = s.active().unwrap().revision;
+    let id = s.active().unwrap().active_layer.unwrap();
+    let layer = |d: &Document, x, y| d.layer(id).unwrap().surface().unwrap().rgba(x, y);
+    let (exact, dmg) = patch_preview(&s, &p, u64::MAX, 1).unwrap();
+    let (coarse, _) = patch_preview(&s, &p, 64, 1).unwrap();
+    assert!(dmg.contains(104, 24) && !dmg.contains(20, 24), "{dmg:?}");
+    assert_eq!(s.active().unwrap().revision, rev, "the preview records nothing");
+    s.execute("paint.patch", p).unwrap();
+    let committed = s.active().unwrap().doc.clone();
+    let mut worst = 0.0f32;
+    for y in 0..96 {
+        for x in 0..160 {
+            let (e, c, d) = (layer(&exact, x, y), layer(&coarse, x, y), layer(&committed, x, y));
+            for k in 0..4 {
+                assert!((e[k] - d[k]).abs() < 1e-6, "step 1 is the command at {x},{y}");
+                worst = worst.max((c[k] - d[k]).abs());
+            }
+        }
+    }
+    // 64 cells over a ~64² patch: an 8× coarser membrane. Measured worst pixel 0.022 (under six
+    // 8-bit steps), all in the colour fit: the texture is exact.
+    assert!(worst < 0.03, "coarse preview off by {worst}");
+    assert!(patch_preview(&s, &json!({"offset": [500, 0]}), 64, 1).is_err());
+}
+
+// ---------------------------------------------------------------------------------------------
+// Content-Aware Move
+// ---------------------------------------------------------------------------------------------
+
+/// `texture` with a solid blue object over `x0..x0+12`, `y0..y0+12`.
+fn with_object(x0: i32, y0: i32) -> impl Fn(i32, i32) -> [f32; 4] {
+    move |x, y| if (x0..x0 + 12).contains(&x) && (y0..y0 + 12).contains(&y) { [0.05, 0.1, 0.9, 1.0] } else { texture(x, y) }
+}
+
+fn is_object(px: [f32; 4]) -> bool {
+    px[2] > 0.8 && px[0] < 0.2
+}
+
+fn selected(s: &Session, x: i32, y: i32) -> bool {
+    s.active().unwrap().doc.selection.as_ref().is_some_and(|sel| sel.sample_channel(x, y, 0) > 0.0)
+}
+
+#[test]
+fn content_aware_move_moves_the_object_and_fills_its_place_at_all_depths() {
+    for depth in DEPTHS {
+        let mut s = session(128, 64, depth, "rgb");
+        paint_layer(&mut s, with_object(20, 26));
+        s.execute("select.rect", json!({"x": 16, "y": 22, "width": 20, "height": 20})).unwrap();
+        let r = s.execute("paint.contentAwareMove", json!({"offset": [70, 0]})).unwrap();
+        assert_eq!(r["offset"], json!([70, 0]));
+        assert_eq!(r["mode"], "move");
+        // The object's core is at the new place; its old place holds texture again.
+        for (x, y) in [(93, 32), (95, 30), (98, 35)] {
+            assert!(is_object(rgba(&s, x, y)), "depth {depth}: object at {x},{y}: {:?}", rgba(&s, x, y));
+        }
+        for y in 26..38 {
+            for x in 20..32 {
+                assert!(!is_object(rgba(&s, x, y)), "depth {depth}: old place {x},{y} still shows the object");
+            }
+        }
+        // Far away nothing changed.
+        for (x, y) in [(2, 2), (60, 60), (125, 5)] {
+            let (got, want) = (rgba(&s, x, y), texture(x, y));
+            assert!((got[0] - want[0]).abs() <= tol(depth), "depth {depth}: {x},{y} changed: {got:?}");
+        }
+        // The selection followed the content.
+        assert!(selected(&s, 96, 32) && !selected(&s, 26, 32), "depth {depth}: selection moved");
+        // One step: undo restores pixels and selection, redo brings the move back.
+        s.execute("edit.undo", json!({})).unwrap();
+        assert!(is_object(rgba(&s, 25, 31)) && !is_object(rgba(&s, 95, 31)), "depth {depth}: undo restores the object");
+        assert!(selected(&s, 26, 32) && !selected(&s, 96, 32), "depth {depth}: undo restores the selection");
+        s.execute("edit.redo", json!({})).unwrap();
+        assert!(is_object(rgba(&s, 95, 31)) && !is_object(rgba(&s, 25, 31)), "depth {depth}: redo");
+    }
+}
+
+#[test]
+fn content_aware_extend_keeps_the_original() {
+    let mut s = session(128, 64, 8, "rgb");
+    paint_layer(&mut s, with_object(20, 26));
+    s.execute("select.rect", json!({"x": 16, "y": 22, "width": 20, "height": 20})).unwrap();
+    let r = s.execute("paint.contentAwareMove", json!({"offset": [60, -10], "mode": "extend"})).unwrap();
+    assert_eq!(r["mode"], "extend");
+    assert!(is_object(rgba(&s, 25, 31)), "the original stays");
+    assert!(is_object(rgba(&s, 85, 21)), "the copy lands");
+    assert_eq!(s.active().unwrap().history.undo_label(), Some("Content-Aware Extend"));
+}
+
+#[test]
+fn content_aware_move_structure_and_color_shape_the_result() {
+    // Structure 7, Color 0: the content is copied exactly, edge to edge.
+    let mut s = session(128, 64, 16, "rgb");
+    paint_layer(&mut s, texture);
+    s.execute("select.rect", json!({"x": 10, "y": 10, "width": 24, "height": 24})).unwrap();
+    s.execute("paint.contentAwareMove", json!({"offset": [70, 20], "structure": 7, "mode": "extend"})).unwrap();
+    for (x, y) in [(10, 10), (22, 22), (33, 33)] {
+        let (got, want) = (rgba(&s, x + 70, y + 20), texture(x, y));
+        for c in 0..4 {
+            assert!((got[c] - want[c]).abs() <= tol(16), "strict copy at {x},{y}: {got:?} vs {want:?}");
+        }
+    }
+    // A lower Structure re-synthesises an edge band: the edge differs from a plain copy, the
+    // centre doesn't.
+    let mut s = session(128, 64, 16, "rgb");
+    paint_layer(&mut s, texture);
+    let copy = |s: &Session, x: i32, y: i32| (rgba(s, x + 70, y + 20), rgba(s, x, y));
+    s.execute("select.rect", json!({"x": 10, "y": 10, "width": 24, "height": 24})).unwrap();
+    s.execute("paint.contentAwareMove", json!({"offset": [70, 20], "structure": 1, "mode": "extend"})).unwrap();
+    let (centre, orig) = copy(&s, 22, 22);
+    assert_eq!(centre, orig, "the centre is kept");
+    let edge = (0..24).filter(|i| copy(&s, 10 + i, 10).0 != copy(&s, 10 + i, 10).1).count();
+    assert!(edge > 12, "the top edge row is blended in ({edge} of 24 pixels differ)");
+
+    // Color 10 fits a bright patch to a dark place; Color 0 keeps it bright.
+    let mean = |color: u64| {
+        let mut s = session(128, 64, 32, "rgb");
+        paint_layer(&mut s, |x, _| if x < 64 { [0.8, 0.8, 0.8, 1.0] } else { [0.2, 0.2, 0.2, 1.0] });
+        s.execute("select.rect", json!({"x": 20, "y": 20, "width": 16, "height": 16})).unwrap();
+        s.execute("paint.contentAwareMove", json!({"offset": [70, 0], "structure": 7, "color": color, "mode": "extend"})).unwrap();
+        (94..102).map(|x| rgba(&s, x, 28)[0]).sum::<f32>() / 8.0
+    };
+    let (kept, fitted) = (mean(0), mean(10));
+    assert!((kept - 0.8).abs() < 1e-3, "color 0 keeps the colour: {kept}");
+    assert!(fitted < 0.3, "color 10 adapts to the dark surroundings: {fitted}");
+}
+
+#[test]
+fn content_aware_move_overlapping_at_the_edge_and_on_other_targets() {
+    // A short drag (the content overlaps its old place) from the canvas edge.
+    let mut s = session(96, 48, 8, "rgb");
+    paint_layer(&mut s, with_object(0, 18));
+    s.execute("select.rect", json!({"x": 0, "y": 14, "width": 16, "height": 20})).unwrap();
+    s.execute("paint.contentAwareMove", json!({"offset": [8, 0]})).unwrap();
+    assert!(is_object(rgba(&s, 14, 24)), "object moved right");
+    assert!(!is_object(rgba(&s, 2, 24)), "its old left part is filled: {:?}", rgba(&s, 2, 24));
+    assert!(rgba(&s, 0, 24)[3] > 0.99, "the edge stays opaque");
+
+    // On a transparent layer the old place becomes transparent like its surroundings.
+    let mut s = session(96, 48, 8, "rgb");
+    s.execute("layer.new.layer", json!({})).unwrap();
+    s.execute("paint.pencil", json!({"points": [[30, 24]], "size": 10, "color": "#1020e0"})).unwrap();
+    s.execute("select.rect", json!({"x": 20, "y": 14, "width": 20, "height": 20})).unwrap();
+    s.execute("paint.contentAwareMove", json!({"offset": [40, 0]})).unwrap();
+    assert!(rgba(&s, 30, 24)[3] < 0.05, "old place cleared: {:?}", rgba(&s, 30, 24));
+    assert!(rgba(&s, 70, 24)[3] > 0.95, "object moved: {:?}", rgba(&s, 70, 24));
+
+    // A layer mask and a grayscale document work like any retouch target.
+    s.execute("layer.layerMask.revealAll", json!({})).unwrap();
+    s.execute("paint.contentAwareMove", json!({"offset": [-20, 0], "target": "mask"})).unwrap();
+    let mut g = session(64, 48, 16, "gray");
+    g.execute("select.rect", json!({"x": 4, "y": 4, "width": 10, "height": 10})).unwrap();
+    g.execute("paint.contentAwareMove", json!({"offset": [30, 20], "structure": 2, "color": 5})).unwrap();
+}
+
+#[test]
+fn content_aware_move_samples_all_layers_onto_an_empty_layer() {
+    let mut s = session(128, 64, 8, "rgb");
+    paint_layer(&mut s, with_object(20, 26));
+    s.execute("layer.new.layer", json!({})).unwrap();
+    s.execute("select.rect", json!({"x": 16, "y": 22, "width": 20, "height": 20})).unwrap();
+    // Without Sample All Layers the empty layer has nothing to move.
+    s.execute("paint.contentAwareMove", json!({"offset": [70, 0]})).unwrap();
+    assert!(rgba(&s, 95, 31)[3] < 0.01);
+    s.execute("edit.undo", json!({})).unwrap();
+    s.execute("paint.contentAwareMove", json!({"offset": [70, 0], "sampleAllLayers": true})).unwrap();
+    assert!(is_object(rgba(&s, 95, 31)), "the object is painted onto the empty layer: {:?}", rgba(&s, 95, 31));
+    let fill = rgba(&s, 25, 31);
+    assert!(fill[3] > 0.99 && !is_object(fill), "its old place is covered with fill: {fill:?}");
+    assert!(rgba(&s, 2, 2)[3] < 0.01, "elsewhere the layer stays empty");
+}
+
+#[test]
+fn content_aware_move_fails_gracefully() {
+    let mut s = session(64, 48, 8, "rgb");
+    assert!(!s.is_enabled("paint.contentAwareMove"), "no selection");
+    assert!(s.execute("paint.contentAwareMove", json!({"offset": [10, 0]})).is_err());
+    s.execute("select.rect", json!({"x": 10, "y": 10, "width": 10, "height": 10})).unwrap();
+    assert!(s.is_enabled("paint.contentAwareMove"));
+    for p in [
+        json!({}),
+        json!({"offset": [10]}),
+        json!({"offset": "far"}),
+        json!({"offset": [1e300, 0]}),
+        json!({"offset": [-1e300, 1e300]}),
+        json!({"offset": [0, 0]}),
+        json!({"offset": [0.4, -0.4]}),
+        json!({"offset": [10, 0], "mode": "bogus"}),
+        json!({"offset": [10, 0], "structure": 0}),
+        json!({"offset": [10, 0], "structure": 8}),
+        json!({"offset": [10, 0], "structure": "high"}),
+        json!({"offset": [10, 0], "color": -1}),
+        json!({"offset": [10, 0], "color": 11}),
+        json!({"offset": [10, 0], "color": [1]}),
+        json!({"offset": [50, 0]}),
+        json!({"offset": [0, -30]}),
+        json!({"offset": [10, 0], "target": "mask"}),
+        json!({"offset": [10, 0], "target": {"channel": 7}}),
+        json!({"offset": [10, 0], "layer": 999}),
+    ] {
+        assert!(s.execute("paint.contentAwareMove", p.clone()).is_err(), "{p}");
+    }
+    assert!(s.execute("paint.contentAwareMove", json!({"offset": [10, 0], "structure": 7.0, "color": null})).is_ok());
+}
+
+#[test]
+fn clone_and_heal_with_a_far_source_are_plain_errors() {
+    // Issue #1111: a translation whose offset saturates `Rect::translate` used to sample a
+    // narrower window, relabel it full-size and index past the buffer (a panic the dispatch
+    // guard turned into an internal error). It is a bad-params error, and the layer is untouched.
+    for cmd in ["paint.cloneStamp", "paint.healingBrush"] {
+        let mut s = session(40, 30, 8, "rgb");
+        paint_layer(&mut s, texture);
+        let before = rgba(&s, 10, 10);
+        let steps = s.active().unwrap().history.past_len();
+        for p in [
+            json!({"points": [[10, 10]], "source": [3e9, 0]}),
+            json!({"points": [[10, 10]], "source": [0, -3e9]}),
+            json!({"points": [[10, 10]], "offset": [2147483647, 0]}),
+            json!({"points": [[10, 10], [30, 10]], "source": [2147483640, 0]}),
+        ] {
+            let err = s.execute(cmd, p.clone()).expect_err(&format!("{cmd} {p}"));
+            assert!(matches!(err, EngineError::BadParams { .. }), "{cmd} {p}: {err:?}");
+        }
+        assert_eq!(rgba(&s, 10, 10), before, "{cmd}: a refused stroke changed the layer");
+        assert_eq!(s.active().unwrap().history.past_len(), steps, "{cmd}: a refused stroke recorded a history step");
+        // A source far outside the canvas but inside the coordinate range is still fine: it clones
+        // transparency.
+        s.execute(cmd, json!({"points": [[10, 10]], "source": [1e6, 1e6]})).unwrap();
+        s.execute(cmd, json!({"points": [[10, 10], [30, 10]], "source": [2147483000, 0]})).unwrap();
+    }
+}
+
+fn stamp(s: &mut Session, extra: Value) -> Result<Value> {
+    let mut p = json!({"points": [[16, 16]], "size": 16, "hardness": 100, "pattern": "Checkerboard", "scale": 100, "aligned": true});
+    if let Some(obj) = extra.as_object() {
+        for (k, v) in obj {
+            p[k] = v.clone();
+        }
+    }
+    s.execute("paint.patternStamp", p)
+}
+
+fn checker_at(x: i32, y: i32) -> f32 {
+    if (x.div_euclid(8) + y.div_euclid(8)).rem_euclid(2) == 0 { 0.8 } else { 1.0 }
+}
+
+#[test]
+fn pattern_stamp_paints_the_tile_at_every_depth_and_undoes() {
+    for depth in DEPTHS {
+        let mut s = session(64, 48, depth, "rgb");
+        let before = rgba(&s, 16, 16);
+        let r = stamp(&mut s, json!({"points": [[16, 16]]})).unwrap();
+        assert_eq!(r["aligned"], json!(true));
+        assert_eq!(r["phase"], json!([0.0, 0.0]));
+        assert!(r["pattern"].as_str().is_some_and(|id| !id.is_empty()), "{r}");
+        let got = rgba(&s, 16, 16);
+        let want = checker_at(16, 16);
+        for c in 0..3 {
+            assert!((got[c] - want).abs() <= tol(depth), "depth {depth} {got:?} want {want}");
+        }
+        assert!(got[3] > 0.99, "{got:?}");
+        assert_ne!(got, before);
+        assert!(s.active().unwrap().doc.patterns.iter().any(|p| p.name == "Checkerboard"));
+        assert!(s.undo());
+        assert!((rgba(&s, 16, 16)[0] - before[0]).abs() <= tol(depth));
+        assert!(s.redo());
+        assert!((rgba(&s, 16, 16)[0] - want).abs() <= tol(depth));
+    }
+    let mut g = session(48, 32, 16, "gray");
+    stamp(&mut g, json!({"points": [[16, 16]]})).unwrap();
+    let p = rgba(&g, 16, 16);
+    assert!((p[0] - checker_at(16, 16)).abs() <= tol(16), "{p:?}");
+}
+
+#[test]
+fn pattern_stamp_integer_scale_reproduces_the_tile_in_the_dab() {
+    let mut s = session(32, 32, 8, "rgb");
+    stamp(&mut s, json!({"points": [[8, 8]], "size": 16, "hardness": 100, "phase": [0, 0]})).unwrap();
+    for (x, y) in [(8, 8), (10, 8), (8, 12)] {
+        let got = rgba(&s, x, y);
+        let want = checker_at(x, y);
+        assert!((got[0] - want).abs() <= tol(8) && (got[1] - want).abs() <= tol(8), "({x},{y}) {got:?} want {want}");
+    }
+}
+
+#[test]
+fn pattern_stamp_scaled_tiles_have_no_gaps() {
+    for scale in [50.0, 200.0] {
+        let mut s = session(64, 48, 8, "rgb");
+        stamp(&mut s, json!({"points": [[24, 24]], "size": 24, "hardness": 100, "scale": scale, "phase": [0, 0]})).unwrap();
+        let mut holes = 0;
+        for y in 20..28 {
+            for x in 20..28 {
+                if rgba(&s, x, y)[3] < 0.5 {
+                    holes += 1;
+                }
+            }
+        }
+        assert_eq!(holes, 0, "scale {scale}: transparent holes inside the dab");
+    }
+}
+
+#[test]
+fn pattern_stamp_aligned_keeps_document_phase_across_strokes() {
+    let mut s = session(80, 40, 8, "rgb");
+    stamp(&mut s, json!({"points": [[10, 16]], "size": 8, "hardness": 100, "aligned": true, "phase": [0, 0]})).unwrap();
+    let a = rgba(&s, 10, 16);
+    stamp(&mut s, json!({"points": [[18, 16]], "size": 8, "hardness": 100, "aligned": true, "phase": [0, 0]})).unwrap();
+    let b = rgba(&s, 18, 16);
+    assert!((a[0] - checker_at(10, 16)).abs() <= tol(8), "{a:?}");
+    assert!((b[0] - checker_at(18, 16)).abs() <= tol(8), "{b:?}");
+    assert!((a[0] - b[0]).abs() > 0.05, "aligned wallpaper: (10,16) and (18,16) sit on different cells");
+}
+
+#[test]
+fn pattern_stamp_unaligned_restarts_at_each_stroke() {
+    let mut s = session(80, 40, 8, "rgb");
+    let r1 = stamp(&mut s, json!({"points": [[10, 16]], "size": 8, "hardness": 100, "aligned": false})).unwrap();
+    assert_eq!(r1["phase"], json!([10.0, 16.0]));
+    let a = rgba(&s, 10, 16);
+    let r2 = stamp(&mut s, json!({"points": [[40, 16]], "size": 8, "hardness": 100, "aligned": false})).unwrap();
+    assert_eq!(r2["phase"], json!([40.0, 16.0]));
+    let b = rgba(&s, 40, 16);
+    assert!((a[0] - b[0]).abs() <= tol(8), "each stroke's first point is the tile origin: {a:?} vs {b:?}");
+}
+
+#[test]
+fn pattern_stamp_impressionist_is_seeded_and_replayable() {
+    let pts = json!([[20, 20], [36, 22], [52, 20]]);
+    let params = json!({"points": pts, "size": 12, "hardness": 80, "pattern": "Bricks", "impressionist": true, "aligned": true});
+    let mut a = session(80, 40, 8, "rgb");
+    a.execute("paint.patternStamp", params.clone()).unwrap();
+    let mut samples = [[0.0f32; 4]; 3];
+    for (i, x) in [20, 36, 52].into_iter().enumerate() {
+        samples[i] = rgba(&a, x, 20);
+    }
+    assert!(a.undo());
+    a.execute("paint.patternStamp", params.clone()).unwrap();
+    for (i, x) in [20, 36, 52].into_iter().enumerate() {
+        let got = rgba(&a, x, 20);
+        for c in 0..4 {
+            assert!((got[c] - samples[i][c]).abs() < 1e-6, "replay x={x} {got:?} vs {:?}", samples[i]);
+        }
+    }
+    let mut b = session(80, 40, 8, "rgb");
+    let mut off = params.clone();
+    off["impressionist"] = json!(false);
+    b.execute("paint.patternStamp", off).unwrap();
+    let smooth = rgba(&b, 36, 20);
+    let noisy = samples[1];
+    assert!((noisy[0] - smooth[0]).abs() > 1e-4 || (noisy[1] - smooth[1]).abs() > 1e-4, "impressionist should jitter the phase: {noisy:?} vs {smooth:?}");
+}
+
+#[test]
+fn pattern_stamp_tile_seam_matches_an_untilled_reference() {
+    let mut s = session(96, 96, 8, "rgb");
+    stamp(&mut s, json!({"points": [[64, 48]], "size": 32, "hardness": 100, "phase": [0, 0]})).unwrap();
+    let pat = s.patterns.items.iter().find(|p| p.name == "Checkerboard").cloned().expect("builtin");
+    let tile = photocraft_compose::pattern::Tile::new(&pat).expect("tile");
+    let place = photocraft_compose::pattern::Placement::new(photocraft_geom::Rect::EMPTY, false, (0.0, 0.0), 1.0, 0.0);
+    let col = photocraft_geom::Rect::new(64, 40, 65, 56);
+    let reference = photocraft_compose::pattern::render(&tile, &place, col);
+    for (i, y) in (40..56).enumerate() {
+        let got = rgba(&s, 64, y);
+        let want = reference[i];
+        for c in 0..3 {
+            assert!((got[c] - want[c]).abs() <= tol(8), "y={y} {got:?} vs {want:?}");
+        }
+    }
+}
+
+#[test]
+fn pattern_stamp_rejects_hostile_input() {
+    let mut s = session(64, 48, 8, "rgb");
+    assert!(s.execute("paint.patternStamp", json!({"points": [], "pattern": "Checkerboard"})).is_err());
+    assert!(s.execute("paint.patternStamp", json!({"pattern": "Checkerboard"})).is_err());
+    assert!(s.execute("paint.patternStamp", json!({"points": [[16, 16]], "pattern": "no-such-pattern"})).is_err());
+    assert!(s.execute("paint.patternStamp", json!({"points": [[16, 16]], "pattern": "Checkerboard", "size": 1e30})).is_err());
+    assert!(s.execute("paint.patternStamp", json!({"points": [[1e7, 0]], "pattern": "Checkerboard", "size": 8})).is_err());
+    assert!(s.execute("paint.patternStamp", json!({"points": [[f64::NAN, 0]], "pattern": "Checkerboard", "size": 8})).is_err());
+    assert!(s.execute("paint.patternStamp", json!({"points": [[0, 0], [9000, 9000]], "pattern": "Checkerboard", "size": 5000, "hardness": 100})).is_err());
+    let fmt = photocraft_color::PixelFormat::new(photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8, false);
+    s.patterns.items.push(photocraft_doc::Pattern {
+        id: "empty-pat".into(),
+        name: "EmptyTile".into(),
+        width: 0,
+        height: 0,
+        surface: photocraft_raster::Surface::new(fmt),
+    });
+    assert!(s.execute("paint.patternStamp", json!({"points": [[8, 8]], "pattern": "EmptyTile", "size": 8})).is_err());
+    s.execute("layer.setProps", json!({"locks": {"pixels": true}})).unwrap();
+    assert!(stamp(&mut s, json!({"points": [[16, 16]]})).is_err());
+}
+
+/// The live Clone Stamp shows what the commit paints: the same pixels, fed in pieces or at once,
+/// with soft overlapping dabs (built-up coverage) and opacity.
+#[test]
+fn live_clone_matches_the_commit() {
+    let mut s = session(96, 64, 8, "rgb");
+    paint_layer(&mut s, texture);
+    let p = json!({"points": [[50, 30], [60, 34], [70, 30], [80, 36]], "source": [20, 20], "size": 14, "hardness": 40, "opacity": 70});
+    let pts = |v: &[[f64; 2]]| v.iter().map(|q| StrokePoint::new(q[0], q[1], 1.0)).collect::<Vec<_>>();
+    let mut live =
+        LiveRetouch::begin(&s, "paint.cloneStamp", &json!({"points": [[50, 30]], "source": [20, 20], "size": 14, "hardness": 40, "opacity": 70})).unwrap();
+    live.push(&pts(&[[60.0, 34.0], [70.0, 30.0]])).unwrap();
+    live.push(&pts(&[[80.0, 36.0]])).unwrap();
+    let shown = live.doc.clone();
+    s.execute("paint.cloneStamp", p).unwrap();
+    let id = s.active().unwrap().active_layer.unwrap();
+    let (a, b) = (shown.layer(id).unwrap().surface().unwrap(), s.active().unwrap().doc.layer(id).unwrap().surface().unwrap());
+    for y in 20..46 {
+        for x in 40..92 {
+            let (got, want) = (a.rgba(x, y), b.rgba(x, y));
+            for c in 0..4 {
+                assert!((got[c] - want[c]).abs() <= tol(8), "({x}, {y}): live {got:?} vs commit {want:?}");
+            }
+        }
     }
 }

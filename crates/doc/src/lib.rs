@@ -9,6 +9,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod adjust;
+pub mod advanced;
 pub mod analysis;
 pub mod blend_if;
 pub mod comps;
@@ -26,6 +27,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub use adjust::Adjustment;
+pub use advanced::{AdvancedBlending, Knockout};
 pub use analysis::{CountGroup, Measurement, MeasurementScale, Note, Ruler};
 pub use blend_if::{BlendIf, BlendRange};
 pub use comps::{Artboard, ArtboardBackground, CompAppearance, CompLayerState, LayerComp};
@@ -86,6 +88,18 @@ pub struct Locks {
     pub all: bool,
 }
 
+impl Locks {
+    pub fn union(self, o: Locks) -> Locks {
+        Locks {
+            transparency: self.transparency || o.transparency,
+            pixels: self.pixels || o.pixels,
+            position: self.position || o.position,
+            artboard: self.artboard || o.artboard,
+            all: self.all || o.all,
+        }
+    }
+}
+
 /// Photoshop layer colour labels.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LabelColor {
@@ -98,6 +112,97 @@ pub enum LabelColor {
     Blue,
     Violet,
     Gray,
+    Seafoam,
+    Indigo,
+    Magenta,
+    Fuchsia,
+}
+
+impl LabelColor {
+    /// Display order, independent of the PSD sheet-colour indices.
+    pub const ALL: [Self; 12] = [
+        Self::None,
+        Self::Red,
+        Self::Orange,
+        Self::Yellow,
+        Self::Green,
+        Self::Seafoam,
+        Self::Blue,
+        Self::Indigo,
+        Self::Magenta,
+        Self::Fuchsia,
+        Self::Violet,
+        Self::Gray,
+    ];
+
+    /// Stable, language-independent command and inspection value.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Red => "red",
+            Self::Orange => "orange",
+            Self::Yellow => "yellow",
+            Self::Green => "green",
+            Self::Seafoam => "seafoam",
+            Self::Blue => "blue",
+            Self::Indigo => "indigo",
+            Self::Magenta => "magenta",
+            Self::Fuchsia => "fuchsia",
+            Self::Violet => "violet",
+            Self::Gray => "gray",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "No Color",
+            Self::Red => "Red",
+            Self::Orange => "Orange",
+            Self::Yellow => "Yellow",
+            Self::Green => "Green",
+            Self::Seafoam => "Seafoam",
+            Self::Blue => "Blue",
+            Self::Indigo => "Indigo",
+            Self::Magenta => "Magenta",
+            Self::Fuchsia => "Fuchsia",
+            Self::Violet => "Violet",
+            Self::Gray => "Gray",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.id() == id)
+    }
+}
+
+#[cfg(test)]
+mod label_color_tests {
+    use super::LabelColor;
+
+    #[test]
+    fn layer_color_ids_and_existing_serialized_names_stay_stable() {
+        for (name, color) in [
+            ("None", LabelColor::None),
+            ("Red", LabelColor::Red),
+            ("Orange", LabelColor::Orange),
+            ("Yellow", LabelColor::Yellow),
+            ("Green", LabelColor::Green),
+            ("Blue", LabelColor::Blue),
+            ("Violet", LabelColor::Violet),
+            ("Gray", LabelColor::Gray),
+        ] {
+            assert_eq!(serde_json::to_value(color).unwrap(), name);
+            assert_eq!(serde_json::from_value::<LabelColor>(serde_json::json!(name)).unwrap(), color);
+        }
+        for c in LabelColor::ALL {
+            assert_eq!(LabelColor::from_id(c.id()), Some(c));
+            assert_eq!(serde_json::from_value::<LabelColor>(serde_json::to_value(c).unwrap()).unwrap(), c);
+        }
+        for id in ["", "Red", "0", "unknown", "🔴"] {
+            assert_eq!(LabelColor::from_id(id), None);
+        }
+        assert!(serde_json::from_value::<LabelColor>(serde_json::json!("Unknown")).is_err());
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -162,6 +267,14 @@ pub struct Effects {
     /// top-left.
     pub reference: Option<(f64, f64)>,
 }
+
+/// Deepest group nesting a document may hold: a layer inside this many nested groups is the
+/// deepest legal one. Everything that walks the layer tree (engine lookups, the layers panel,
+/// PSD export, `.pcraft` save and load) recurses once per level, so deeper trees risk
+/// overflowing the 1 MiB main-thread stacks of Windows and wasm. PSD import and the engine
+/// commands that nest layers (`layer.groupLayers`, `layer.moveTo`, Artboard from Layers) enforce
+/// this up front; `photocraft-format` refuses to save deeper trees.
+pub const MAX_GROUP_DEPTH: usize = 100;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Group {
@@ -310,7 +423,7 @@ fn normalize_runs<S: Clone>(text: &str, runs: Vec<(usize, S)>, base: S) -> Vec<(
         if at >= total {
             break;
         }
-        let mut end = (at + len).min(total);
+        let mut end = at.saturating_add(len).min(total);
         while !text.is_char_boundary(end) {
             end += 1;
         }
@@ -354,12 +467,27 @@ pub struct SmartObject {
     /// Layer › Smart Objects › Stack Mode: when set, the source's top-level layers are combined
     /// per pixel with this statistic instead of composited.
     pub stack_mode: Option<StackMode>,
+    /// Distort / Perspective (or an imported placement whose corners aren't a parallelogram): the
+    /// full projective map from source pixels to document pixels, row-major 3×3. It overrides
+    /// `transform`, which then holds its affine approximation at the source origin.
+    pub perspective: Option<[f64; 9]>,
 }
 
 impl SmartObject {
     /// A smart object with no filters and no PSD data.
     pub fn new(source: SmartSource, transform: Affine, cache: Option<Surface>) -> Self {
-        Self { source, transform, smart_filters: Vec::new(), cache, psd_raw: None, filters_enabled: true, filter_mask: None, warp: None, stack_mode: None }
+        Self {
+            source,
+            transform,
+            smart_filters: Vec::new(),
+            cache,
+            psd_raw: None,
+            filters_enabled: true,
+            filter_mask: None,
+            warp: None,
+            stack_mode: None,
+            perspective: None,
+        }
     }
 }
 
@@ -460,6 +588,9 @@ pub struct Layer {
     /// outside which the layer's pixels are hidden. Default = everything blends. PSD layer-record
     /// blending ranges.
     pub blend_if: BlendIf,
+    /// Blending Options › Advanced Blending: knockout, blend interior effects / clipped layers as
+    /// group, transparency shapes layer, layer / vector mask hides effects. Default = Photoshop's.
+    pub advanced: AdvancedBlending,
     /// Layer › Video Layers frame stack (None for a normal layer).
     pub video: Option<VideoData>,
 }
@@ -486,6 +617,7 @@ impl Layer {
             link_group: None,
             excluded_channels: 0,
             blend_if: BlendIf::default(),
+            advanced: AdvancedBlending::default(),
             video: None,
         }
     }
@@ -728,6 +860,27 @@ impl Document {
         Rect::from_size(self.size)
     }
 
+    /// Nesting depth of the deepest layer: 0 for a root-level layer, 1 inside one group, and so
+    /// on. Computed over an explicit stack, so it cannot overflow on any tree it measures.
+    pub fn max_group_depth(&self) -> usize {
+        let mut max = 0;
+        let mut stack: Vec<(&[Layer], usize)> = vec![(&self.layers, 0)];
+        while let Some((layers, depth)) = stack.pop() {
+            if layers.is_empty() {
+                continue;
+            }
+            max = max.max(depth);
+            for l in layers {
+                if let Some(ch) = l.children()
+                    && !ch.is_empty()
+                {
+                    stack.push((ch, depth + 1));
+                }
+            }
+        }
+        max
+    }
+
     /// Depth-first walk yielding `(path, depth, layer)` bottom-to-top.
     pub fn walk(&self) -> Vec<(LayerPath, usize, &Layer)> {
         fn rec<'a>(layers: &'a [Layer], prefix: &mut LayerPath, out: &mut Vec<(LayerPath, usize, &'a Layer)>) {
@@ -753,6 +906,17 @@ impl Document {
         self.walk().into_iter().find(|(_, _, l)| l.id == id).map(|(p, _, _)| p)
     }
 
+    /// The locks in force on the layer at `path`: its own and those of every group around it,
+    /// since locking a group locks its contents.
+    pub fn locks_at(&self, path: &[usize]) -> Locks {
+        (1..=path.len()).filter_map(|n| self.layer_at(path.get(..n)?)).fold(Locks::default(), |a, l| a.union(l.locks))
+    }
+
+    /// [`Self::locks_at`] for the layer `id`.
+    pub fn effective_locks(&self, id: LayerId) -> Locks {
+        self.path_of(id).map_or_else(Locks::default, |p| self.locks_at(&p))
+    }
+
     pub fn layer(&self, id: LayerId) -> Option<&Layer> {
         let path = self.path_of(id)?;
         self.layer_at(&path)
@@ -761,6 +925,28 @@ impl Document {
     pub fn layer_mut(&mut self, id: LayerId) -> Option<&mut Layer> {
         let path = self.path_of(id)?;
         self.layer_at_mut(&path)
+    }
+
+    /// A [`Layer::link_group`] id no layer uses yet: one above the highest stored id, or, when a
+    /// loaded file already holds `u64::MAX` (#961), the smallest free id from 1. Never wraps, so a
+    /// new link can't join an unrelated group. `None` only if every id is taken.
+    pub fn unused_link_group(&self) -> Option<u64> {
+        let mut used: Vec<u64> = self.walk().iter().filter_map(|(_, _, l)| l.link_group).collect();
+        used.sort_unstable();
+        used.dedup();
+        if let Some(next) = used.last().map_or(Some(1), |g| g.checked_add(1)) {
+            return Some(next);
+        }
+        let mut free = 1u64;
+        for g in used {
+            if g > free {
+                break;
+            }
+            if g == free {
+                free = free.checked_add(1)?;
+            }
+        }
+        Some(free)
     }
 
     pub fn layer_at(&self, path: &[usize]) -> Option<&Layer> {
@@ -827,6 +1013,23 @@ impl Document {
         (1..=names.len() + 1).map(|n| format!("{base} {n}")).find(|n| !names.contains(n.as_str())).unwrap_or_else(|| base.to_string())
     }
 
+    /// Name for a copy of a layer named `name`, unique in the document: "Layer 1 copy", then
+    /// "Layer 1 copy 2", "Layer 1 copy 3"… A name that already ends in "copy" (or "copy N") is
+    /// numbered from its root rather than growing another "copy".
+    pub fn copy_name(&self, name: &str) -> String {
+        let root = match name.rsplit_once(" copy") {
+            Some((root, rest)) if rest.is_empty() || rest.strip_prefix(' ').is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) => root,
+            _ => name,
+        };
+        let names: std::collections::HashSet<&str> = self.walk().into_iter().map(|(_, _, l)| l.name.as_str()).collect();
+        let first = format!("{root} copy");
+        if !names.contains(first.as_str()) {
+            return first;
+        }
+        // At most `names.len() + 1` candidates are needed, so the search always succeeds.
+        (2..=names.len() + 2).map(|n| format!("{root} copy {n}")).find(|n| !names.contains(n.as_str())).unwrap_or(first)
+    }
+
     /// Top-most layer id, useful as the default active layer.
     pub fn top_layer(&self) -> Option<LayerId> {
         self.layers.last().map(|l| l.id)
@@ -839,6 +1042,29 @@ mod tests {
 
     fn doc() -> Document {
         Document::with_background("t", Size::new(100, 50), ColorMode::Rgb, SampleType::U8, Color::WHITE)
+    }
+
+    #[test]
+    fn unused_link_group_never_wraps() {
+        let mut d = doc();
+        assert_eq!(d.unused_link_group(), Some(1));
+        let with = |d: &mut Document, groups: &[u64]| {
+            d.layers.truncate(1);
+            for g in groups {
+                let mut l = Layer::raster("l", PixelFormat::RGBA8);
+                l.link_group = Some(*g);
+                d.layers.push(l);
+            }
+        };
+        with(&mut d, &[3, 7]);
+        assert_eq!(d.unused_link_group(), Some(8));
+        with(&mut d, &[u64::MAX - 1]);
+        assert_eq!(d.unused_link_group(), Some(u64::MAX));
+        // A stored maximal id would wrap to 0 (#961): take the smallest free id instead.
+        with(&mut d, &[u64::MAX]);
+        assert_eq!(d.unused_link_group(), Some(1));
+        with(&mut d, &[0, 1, 2, 4, u64::MAX]);
+        assert_eq!(d.unused_link_group(), Some(3));
     }
 
     #[test]
@@ -855,11 +1081,54 @@ mod tests {
     }
 
     #[test]
+    fn max_group_depth_counts_nesting_without_recursing() {
+        let mut d = doc();
+        let bg = d.layers[0].id;
+        let mut chain = Layer::raster("L", d.pixel_format());
+        for _ in 0..3 {
+            chain = Layer::group("G", vec![chain]);
+        }
+        d.insert_above(Some(bg), chain);
+        assert_eq!(d.max_group_depth(), 3);
+        // An unfilled group does not add a level (nothing lives inside it).
+        d.insert_above(Some(bg), Layer::group("empty", vec![]));
+        assert_eq!(d.max_group_depth(), 3);
+    }
+
+    #[test]
     fn pixel_format_follows_mode_and_depth() {
         let d = Document::new("c", Size::new(1, 1), ColorMode::Cmyk, SampleType::U16);
         assert_eq!(d.pixel_format(), PixelFormat::new(ColorMode::Cmyk, SampleType::U16, true));
         let b = Document::new("b", Size::new(1, 1), ColorMode::Bitmap, SampleType::U8);
         assert_eq!(b.pixel_format().mode, ColorMode::Grayscale);
+    }
+
+    #[test]
+    fn text_runs_with_maximal_lengths_normalize_to_text_length() {
+        let t = TextLayer {
+            text: "ab".into(),
+            runs: vec![
+                text::TextRun { len: 1, style: text::CharStyle::default() },
+                text::TextRun { len: usize::MAX, style: text::CharStyle { size_pt: 24.0, ..Default::default() } },
+            ],
+            paragraphs: vec![
+                text::ParagraphRun { len: 1, style: text::ParagraphStyle::default() },
+                text::ParagraphRun { len: usize::MAX, style: text::ParagraphStyle { align: text::TextAlign::Center, ..Default::default() } },
+            ],
+            ..Default::default()
+        };
+
+        let chars = t.char_runs();
+        assert_eq!(chars.iter().map(|r| r.len).sum::<usize>(), t.text.len());
+        assert_eq!(chars.len(), 2);
+        assert_eq!(chars[1].len, 1);
+        assert_eq!(chars[1].style.size_pt, 24.0);
+
+        let paragraphs = t.paragraph_runs();
+        assert_eq!(paragraphs.iter().map(|r| r.len).sum::<usize>(), t.text.len());
+        assert_eq!(paragraphs.len(), 2);
+        assert_eq!(paragraphs[1].len, 1);
+        assert_eq!(paragraphs[1].style.align, text::TextAlign::Center);
     }
 
     #[test]
@@ -893,6 +1162,21 @@ mod tests {
         let n = d.insert_above(Some(inner_id), Layer::raster("n", d.pixel_format()));
         assert_eq!(d.path_of(n), Some(vec![1, 1]));
         assert_eq!(d.layer_count(), 4);
+    }
+
+    #[test]
+    fn a_locked_group_locks_its_contents() {
+        let mut d = doc();
+        let inner = Layer::raster("inner", d.pixel_format());
+        let inner_id = inner.id;
+        let mut g = Layer::group("G", vec![Layer::group("H", vec![inner])]);
+        g.locks.position = true;
+        let gid = d.insert_above(None, g);
+        d.layer_mut(inner_id).unwrap().locks.pixels = true;
+        let k = d.effective_locks(inner_id);
+        assert!(k.position && k.pixels && !k.all);
+        assert!(!d.effective_locks(gid).pixels, "a child's lock doesn't lock its group");
+        assert_eq!(d.effective_locks(LayerId(u64::MAX)), Locks::default());
     }
 
     #[test]
