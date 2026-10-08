@@ -1,6 +1,6 @@
-//! Photoshop's Color Picker (Foreground / Background Color) dialog: a 2D colour field and a slider
-//! for the selected component (H, S, B, R, G or B radio), new/current swatches, and HSB, RGB, Lab,
-//! CMYK and hex fields. The colour lives in the dialog fields (`color` as `#rrggbb`, plus the HSB
+//! The Color Picker (Foreground / Background Color) dialog: a 2D colour field and a slider
+//! for the selected component (H, S, B, R, G, B, L, a or b radio), new/current swatches beside OK
+//! and Cancel, and HSB, RGB, Lab, CMYK and hex fields. The colour lives in the dialog fields (`color` as `#rrggbb`, plus the HSB
 //! floats so hue survives greys), so `ui.dialog.set` drives it; OK runs `tools.setColors`.
 //! While it is the top dialog the image is its eyedropper, as in Photoshop: the pointer over the
 //! canvas is a pipette, and a click or drag there samples into the new colour ([`sample_at`]).
@@ -13,8 +13,120 @@ use crate::state::DialogKind;
 use crate::theme::Tokens;
 use crate::widgets;
 
-/// Radio components, Photoshop order: H, S, B, R, G, B.
-pub const MODES: &[(&str, &str)] = &[("h", "H:"), ("s", "S:"), ("v", "B:"), ("r", "R:"), ("g", "G:"), ("b", "B:")];
+/// The colour model a radio component belongs to.
+#[derive(Clone, Copy)]
+enum Space {
+    Hsv,
+    Rgb,
+    Lab,
+}
+
+/// A radio component: the slider sets component `z` of `space`, the field `x` across and `y` up.
+struct Mode {
+    key: &'static str,
+    label: &'static str,
+    space: Space,
+    z: usize,
+    x: usize,
+    y: usize,
+}
+
+const fn mode(key: &'static str, label: &'static str, space: Space, z: usize, x: usize, y: usize) -> Mode {
+    Mode { key, label, space, z, x, y }
+}
+
+/// Radio components in dialog order: H, S, B, R, G, B, then L, a, b.
+const MODES: &[Mode] = &[
+    mode("h", "H:", Space::Hsv, 0, 1, 2),
+    mode("s", "S:", Space::Hsv, 1, 0, 2),
+    mode("v", "B:", Space::Hsv, 2, 0, 1),
+    mode("r", "R:", Space::Rgb, 0, 2, 1),
+    mode("g", "G:", Space::Rgb, 1, 2, 0),
+    mode("b", "B:", Space::Rgb, 2, 0, 1),
+    mode("lab-l", "L:", Space::Lab, 0, 1, 2),
+    mode("lab-a", "a:", Space::Lab, 1, 2, 0),
+    mode("lab-b", "b:", Space::Lab, 2, 1, 0),
+];
+
+impl Space {
+    /// Range of component `i`.
+    fn range(self, i: usize) -> (f32, f32) {
+        match (self, i) {
+            (Self::Hsv, 0) => (0.0, 360.0),
+            (Self::Lab, 0) => (0.0, 100.0),
+            (Self::Lab, _) => (-128.0, 127.0),
+            _ => (0.0, 1.0),
+        }
+    }
+
+    /// Scale from a component to the number its field shows.
+    fn shown(self, i: usize) -> f32 {
+        match (self, i) {
+            (Self::Hsv, 0) | (Self::Lab, _) => 1.0,
+            (Self::Hsv, _) => 100.0,
+            (Self::Rgb, _) => 255.0,
+        }
+    }
+
+    fn get(self, now: &Components) -> [f32; 3] {
+        match self {
+            Self::Hsv => now.hsv,
+            Self::Rgb => now.rgb,
+            Self::Lab => now.lab,
+        }
+    }
+
+    fn to_rgb(self, v: [f32; 3]) -> [f32; 3] {
+        match self {
+            Self::Hsv => hsv_to_rgb(v[0], v[1], v[2]),
+            Self::Rgb => v,
+            Self::Lab => photocraft_color::convert::lab_to_srgb(v).map(|c| c.clamp(0.0, 1.0)),
+        }
+    }
+
+    /// The edit that sets the colour to `v`, keeping `v` so hue and out-of-gamut Lab survive.
+    fn edit(self, v: [f32; 3]) -> ([f32; 3], Keep) {
+        let keep = match self {
+            Self::Hsv => Keep::Hsv(v),
+            Self::Rgb => Keep::Nothing,
+            Self::Lab => Keep::Lab(v),
+        };
+        (self.to_rgb(v), keep)
+    }
+}
+
+impl Mode {
+    /// `v` with component `i` at `t` (0..1) of its range.
+    fn set(&self, mut v: [f32; 3], i: usize, t: f32) -> [f32; 3] {
+        let (lo, hi) = self.space.range(i);
+        v[i] = lo + t * (hi - lo);
+        v
+    }
+
+    fn norm(&self, v: [f32; 3], i: usize) -> f32 {
+        let (lo, hi) = self.space.range(i);
+        (v[i] - lo) / (hi - lo)
+    }
+
+    /// Components at field position (x, y) in 0..1 (y down) with the slider at `z` (0..1).
+    fn at(&self, v: [f32; 3], z: f32, x: f32, y: f32) -> [f32; 3] {
+        self.set(self.set(self.set(v, self.z, z), self.x, x), self.y, 1.0 - y)
+    }
+
+    /// Field position and slider value of `v` (inverse of [`Mode::at`]).
+    fn locate(&self, v: [f32; 3]) -> (f32, f32, f32) {
+        (self.norm(v, self.x), 1.0 - self.norm(v, self.y), self.norm(v, self.z))
+    }
+
+    /// Slider colour at `z`: the hue slider shows pure hues, the others the current colour.
+    fn slider_rgb(&self, v: [f32; 3], z: f32) -> [f32; 3] {
+        if self.key == "h" { hsv_to_rgb(z * 360.0, 1.0, 1.0) } else { self.space.to_rgb(self.set(v, self.z, z)) }
+    }
+}
+
+fn find_mode(key: &str) -> &'static Mode {
+    MODES.iter().find(|m| m.key == key).unwrap_or(&MODES[0])
+}
 
 pub fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 3] {
     let h = (h.rem_euclid(360.0)) / 60.0;
@@ -60,44 +172,6 @@ pub fn parse_hex(s: &str) -> Option<[f32; 3]> {
     // `get`, not `[..]`: typed text may be multi-byte, and a byte range can split a character.
     let c = |i: usize| u8::from_str_radix(h.get(i..i + 2)?, 16).ok().map(|v| f32::from(v) / 255.0);
     Some([c(0)?, c(2)?, c(4)?])
-}
-
-/// The colour at field position (x, y) in 0..1 (y down) for `mode` with the slider at `z` (0..1),
-/// given the current HSV/RGB (used for the components the field doesn't vary).
-pub fn field_color(mode: &str, z: f32, x: f32, y: f32) -> [f32; 3] {
-    match mode {
-        "s" => hsv_to_rgb(x * 360.0, z, 1.0 - y),
-        "v" => hsv_to_rgb(x * 360.0, 1.0 - y, z),
-        "r" => [z, 1.0 - y, x],
-        "g" => [1.0 - y, z, x],
-        "b" => [x, 1.0 - y, z],
-        _ => hsv_to_rgb(z * 360.0, x, 1.0 - y),
-    }
-}
-
-/// Field position and slider value of a colour in `mode` (inverse of [`field_color`]).
-pub fn locate(mode: &str, hsv: [f32; 3], rgb: [f32; 3]) -> (f32, f32, f32) {
-    let h = hsv[0] / 360.0;
-    match mode {
-        "s" => (h, 1.0 - hsv[2], hsv[1]),
-        "v" => (h, 1.0 - hsv[1], hsv[2]),
-        "r" => (rgb[2], 1.0 - rgb[1], rgb[0]),
-        "g" => (rgb[2], 1.0 - rgb[0], rgb[1]),
-        "b" => (rgb[0], 1.0 - rgb[1], rgb[2]),
-        _ => (hsv[1], 1.0 - hsv[2], h),
-    }
-}
-
-/// Colour for slider position `z` (0..1) in `mode`, other components from the current colour.
-fn slider_color(mode: &str, z: f32, hsv: [f32; 3], rgb: [f32; 3]) -> [f32; 3] {
-    match mode {
-        "s" => hsv_to_rgb(hsv[0], z, hsv[2]),
-        "v" => hsv_to_rgb(hsv[0], hsv[1], z),
-        "r" => [z, rgb[1], rgb[2]],
-        "g" => [rgb[0], z, rgb[2]],
-        "b" => [rgb[0], rgb[1], z],
-        _ => hsv_to_rgb(z * 360.0, 1.0, 1.0),
-    }
 }
 
 fn c32(c: [f32; 3]) -> Color32 {
@@ -168,6 +242,7 @@ pub struct Components {
 /// Component values an edit stores next to the new `color`. sRGB alone loses them: greys have no
 /// hue, and Lab or CMYK values outside sRGB are clamped. Typing "60" into L passes through L = 6
 /// first; without the stored Lab the clamped colour would change `a` and `b` under the user.
+#[derive(Clone, Copy)]
 enum Keep {
     Nothing,
     Hsv([f32; 3]),
@@ -235,166 +310,192 @@ fn grid_mesh(rect: Rect, n: usize, color: impl Fn(f32, f32) -> [f32; 3]) -> Mesh
     m
 }
 
-pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
-    let t = Tokens::get(ui.ctx());
-    let mode = f.get("__mode").and_then(Value::as_str).unwrap_or("h").to_string();
+/// The dialog's width: its body, with no room left over.
+pub const WIDTH: f32 = 580.0;
+
+/// The dialog body, with its own OK and Cancel stacked beside the swatches. Returns `Some(true)`
+/// for OK and `Some(false)` for Cancel.
+pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) -> Option<bool> {
+    let m = find_mode(f.get("__mode").and_then(Value::as_str).unwrap_or("h"));
     let now = current(f);
-    let (rgb, hsv) = (now.rgb, now.hsv);
-    let (fx, fy, fz) = locate(&mode, hsv, rgb);
+    let v = m.space.get(&now);
+    let mut edit = None;
+    let mut outcome = None;
     ui.horizontal_top(|ui| {
-        // Colour field.
-        let (field, resp) = ui.allocate_exact_size(vec2(256.0, 256.0), Sense::click_and_drag());
-        ui.painter().add(grid_mesh(field, 32, |x, y| field_color(&mode, fz, x, y)));
-        ui.painter().rect_stroke(field, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
-        let marker = pos2(field.left() + fx * field.width(), field.top() + fy * field.height());
-        ui.painter().circle_stroke(marker, 5.0, Stroke::new(1.5, if hsv[2] > 0.6 && hsv[1] < 0.4 { Color32::BLACK } else { Color32::WHITE }));
-        if let Some(p) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
-            let (x, y) = (((p.x - field.left()) / field.width()).clamp(0.0, 1.0), ((p.y - field.top()) / field.height()).clamp(0.0, 1.0));
-            let c = field_color(&mode, fz, x, y);
-            let keep = match mode.as_str() {
-                "h" => Keep::Hsv([fz * 360.0, x, 1.0 - y]),
-                "s" => Keep::Hsv([x * 360.0, fz, 1.0 - y]),
-                "v" => Keep::Hsv([x * 360.0, 1.0 - y, fz]),
-                _ => Keep::Nothing,
-            };
-            set_rgb(f, c, keep);
-        }
-        ui.add_space(6.0);
-        // Component slider (hue runs 360° at the top to 0° at the bottom, like Photoshop).
-        let (strip, sresp) = ui.allocate_exact_size(vec2(20.0, 256.0), Sense::click_and_drag());
-        ui.painter().add(grid_mesh(strip, 32, |_, y| slider_color(&mode, 1.0 - y, hsv, rgb)));
-        let sy = strip.top() + (1.0 - fz) * strip.height();
-        for (x, dir) in [(strip.left() - 1.0, 1.0f32), (strip.right() + 1.0, -1.0)] {
-            let tri = vec![pos2(x, sy), pos2(x - 6.0 * dir, sy - 4.0), pos2(x - 6.0 * dir, sy + 4.0)];
-            ui.painter().add(egui::Shape::convex_polygon(tri, t.text, Stroke::NONE));
-        }
-        if let Some(p) = sresp.interact_pointer_pos().filter(|_| sresp.dragged() || sresp.clicked()) {
-            let z = 1.0 - ((p.y - strip.top()) / strip.height()).clamp(0.0, 1.0);
-            let h = match mode.as_str() {
-                "h" => Some([z * 360.0, hsv[1], hsv[2]]),
-                "s" => Some([hsv[0], z, hsv[2]]),
-                "v" => Some([hsv[0], hsv[1], z]),
-                _ => None,
-            };
-            match h {
-                Some(h) => set_rgb(f, hsv_to_rgb(h[0], h[1], h[2]), Keep::Hsv(h)),
-                None => set_rgb(f, slider_color(&mode, z, hsv, rgb), Keep::Nothing),
-            }
-        }
-        ui.add_space(14.0);
         ui.vertical(|ui| {
-            // new / current swatches.
-            ui.label(egui::RichText::new(tl!("new")).size(11.0).color(t.text_dim));
-            let (sw, _) = ui.allocate_exact_size(vec2(64.0, 72.0), Sense::hover());
-            let orig = f.get("__orig").and_then(Value::as_str).and_then(parse_hex).unwrap_or(rgb);
-            ui.painter().rect_filled(Rect::from_min_size(sw.min, vec2(64.0, 36.0)), 0.0, c32(rgb));
-            let cur = Rect::from_min_size(sw.min + vec2(0.0, 36.0), vec2(64.0, 36.0));
-            ui.painter().rect_filled(cur, 0.0, c32(orig));
-            ui.painter().rect_stroke(sw, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
-            let click_cur = ui.interact(cur, ui.id().with("cp-current"), Sense::click());
-            if click_cur.on_hover_text(tl!("Click to restore the current colour")).clicked() {
-                set_rgb(f, orig, Keep::Nothing);
-            }
-            ui.label(egui::RichText::new(tl!("current")).size(11.0).color(t.text_dim));
-            ui.add_space(10.0);
+            edit = color_field(ui, m, v, now.lab[0] > 60.0).or(edit);
+            ui.add_space(16.0);
             let mut web = f.get("__webOnly").and_then(Value::as_bool).unwrap_or(false);
             if widgets::checkbox(ui, &mut web, tl!("Only Web Colors")).changed() {
                 f.insert("__webOnly".into(), json!(web));
-                set_rgb(f, rgb, Keep::Nothing);
+                edit = Some((now.rgb, Keep::Nothing));
             }
         });
-        ui.add_space(10.0);
-        ui.vertical(|ui| fields(ui, f, &mode, &now));
+        ui.add_space(12.0);
+        edit = slider(ui, m, v).or(edit);
+        ui.add_space(12.0);
+        ui.vertical(|ui| {
+            ui.horizontal_top(|ui| {
+                edit = swatches(ui, f, now.rgb).or(edit);
+                ui.add_space(28.0);
+                ui.vertical(|ui| {
+                    if widgets::primary_button(ui, tl!("OK"), 116.0).clicked() {
+                        outcome = Some(true);
+                    }
+                    ui.add_space(4.0);
+                    if widgets::secondary_button(ui, tl!("Cancel"), 116.0).clicked() {
+                        outcome = Some(false);
+                    }
+                });
+            });
+            ui.add_space(22.0);
+            edit = fields(ui, f, &now).or(edit);
+        });
     });
+    if let Some((c, keep)) = edit {
+        set_rgb(f, c, keep);
+    }
+    outcome
 }
 
-/// Component radios and numeric fields: HSB, RGB, Lab, CMYK and hex.
-fn fields(ui: &mut egui::Ui, f: &mut Map<String, Value>, mode: &str, now: &Components) {
+/// The 2D colour field: the selected component's slider value, the other two across and up.
+fn color_field(ui: &mut egui::Ui, m: &Mode, v: [f32; 3], light: bool) -> Edit {
     let t = Tokens::get(ui.ctx());
-    let &Components { rgb, hsv, lab, cmyk } = now;
-    let mut edit: Option<([f32; 3], Keep)> = None;
-    let mut new_mode: Option<&str> = None;
-    egui::Grid::new("cp-fields").num_columns(4).spacing([6.0, 4.0]).show(ui, |ui| {
-        let vals = [hsv[0], hsv[1] * 100.0, hsv[2] * 100.0, rgb[0] * 255.0, rgb[1] * 255.0, rgb[2] * 255.0];
-        let units = ["°", "%", "%", "", "", ""];
-        let ranges = [0.0..=360.0, 0.0..=100.0, 0.0..=100.0, 0.0..=255.0, 0.0..=255.0, 0.0..=255.0];
-        for i in 0..6 {
-            let (key, label) = MODES[i];
-            let on = mode == key;
-            let (r, resp) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::click());
+    let (fx, fy, fz) = m.locate(v);
+    let (field, resp) = ui.allocate_exact_size(vec2(256.0, 256.0), Sense::click_and_drag());
+    ui.painter().add(grid_mesh(field, 32, |x, y| m.space.to_rgb(m.at(v, fz, x, y))));
+    ui.painter().rect_stroke(field, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
+    let marker = pos2(field.left() + fx * field.width(), field.top() + fy * field.height());
+    ui.painter().circle_stroke(marker, 5.0, Stroke::new(1.5, if light { Color32::BLACK } else { Color32::WHITE }));
+    let p = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked())?;
+    let (x, y) = (((p.x - field.left()) / field.width()).clamp(0.0, 1.0), ((p.y - field.top()) / field.height()).clamp(0.0, 1.0));
+    Some(m.space.edit(m.at(v, fz, x, y)))
+}
+
+/// The selected component's slider, top to bottom from the high end (hue runs 360° down to 0°).
+fn slider(ui: &mut egui::Ui, m: &Mode, v: [f32; 3]) -> Edit {
+    let t = Tokens::get(ui.ctx());
+    let (strip, resp) = ui.allocate_exact_size(vec2(20.0, 256.0), Sense::click_and_drag());
+    ui.painter().add(grid_mesh(strip, 32, |_, y| m.slider_rgb(v, 1.0 - y)));
+    let sy = strip.top() + (1.0 - m.norm(v, m.z)) * strip.height();
+    for (x, dir) in [(strip.left() - 1.0, 1.0f32), (strip.right() + 1.0, -1.0)] {
+        let tri = vec![pos2(x, sy), pos2(x - 7.0 * dir, sy - 5.0), pos2(x - 7.0 * dir, sy + 5.0)];
+        ui.painter().add(egui::Shape::convex_polygon(tri, t.text, Stroke::new(1.0, t.field_border)));
+    }
+    let p = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked())?;
+    let z = 1.0 - ((p.y - strip.top()) / strip.height()).clamp(0.0, 1.0);
+    Some(m.space.edit(m.set(v, m.z, z)))
+}
+
+/// The new colour over the current one; clicking the current one restores it.
+fn swatches(ui: &mut egui::Ui, f: &Map<String, Value>, rgb: [f32; 3]) -> Edit {
+    let t = Tokens::get(ui.ctx());
+    let label = |ui: &mut egui::Ui, text: &str| ui.add_sized(vec2(62.0, 16.0), egui::Label::new(egui::RichText::new(text).color(t.text_dim)));
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 2.0;
+        label(ui, tl!("new"));
+        let (sw, _) = ui.allocate_exact_size(vec2(62.0, 70.0), Sense::hover());
+        let orig = f.get("__orig").and_then(Value::as_str).and_then(parse_hex).unwrap_or(rgb);
+        let (new, cur) = sw.split_top_bottom_at_fraction(0.5);
+        ui.painter().rect_filled(new, 0.0, c32(rgb));
+        ui.painter().rect_filled(cur, 0.0, c32(orig));
+        ui.painter().rect_stroke(sw, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
+        label(ui, tl!("current"));
+        let restore = ui.interact(cur, ui.id().with("cp-current"), Sense::click());
+        restore.on_hover_text(tl!("Click to restore the current colour")).clicked().then_some((orig, Keep::Nothing))
+    })
+    .inner
+}
+
+type Edit = Option<([f32; 3], Keep)>;
+
+/// A field row: radio (or room for one), label, `field` and unit, at fixed widths so the rows line up.
+fn row<R>(ui: &mut egui::Ui, radio: Option<bool>, label: &str, unit: &str, field: impl FnOnce(&mut egui::Ui) -> R) -> (bool, R) {
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let (r, resp) = ui.allocate_exact_size(vec2(14.0, 14.0), if radio.is_some() { Sense::click() } else { Sense::hover() });
+        if let Some(on) = radio {
             ui.painter().circle_stroke(r.center(), 5.5, Stroke::new(1.2, if on { t.accent } else { t.text_faint }));
             if on {
                 ui.painter().circle_filled(r.center(), 3.0, t.accent);
             }
-            if resp.clicked() {
-                new_mode = Some(key);
+        }
+        let text = egui::RichText::new(label).color(t.text_dim);
+        ui.add_sized(vec2(18.0, 24.0), egui::Label::new(text).halign(egui::Align::Max));
+        let inner = field(ui);
+        ui.add_sized(vec2(12.0, 24.0), egui::Label::new(egui::RichText::new(unit).color(t.text_faint)).halign(egui::Align::Min));
+        (resp.clicked(), inner)
+    })
+    .inner
+}
+
+/// A radio component row; clicking the radio makes it the field's component.
+fn component_row(ui: &mut egui::Ui, f: &mut Map<String, Value>, m: &Mode, now: &Components, width: f32) -> Edit {
+    let on = f.get("__mode").and_then(Value::as_str).unwrap_or("h") == m.key;
+    let unit = match m.key {
+        "h" => "°",
+        "s" | "v" => "%",
+        _ => "",
+    };
+    let (scale, (lo, hi)) = (m.space.shown(m.z), m.space.range(m.z));
+    let mut v = m.space.get(now);
+    let mut x = (v[m.z] * scale).round();
+    let (clicked, resp) = row(ui, Some(on), tl!(m.label), unit, |ui| widgets::value_field(ui, &mut x, lo * scale..=hi * scale, "", width));
+    if clicked {
+        f.insert("__mode".into(), json!(m.key));
+    }
+    v[m.z] = x / scale;
+    resp.changed().then(|| m.space.edit(v))
+}
+
+/// Component fields: H S B, R G B and hex on the left; L a b and C M Y K on the right.
+fn fields(ui: &mut egui::Ui, f: &mut Map<String, Value>, now: &Components) -> Edit {
+    let mut edit = None;
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing = vec2(10.0, 0.0);
+        ui.vertical(|ui| {
+            for (i, m) in MODES[..6].iter().enumerate() {
+                if i == 3 {
+                    ui.add_space(6.0);
+                }
+                edit = component_row(ui, f, m, now, 44.0).or(edit);
             }
-            ui.label(egui::RichText::new(tl!(&label)).color(t.text_dim));
-            let mut v = vals[i].round();
-            if widgets::value_field(ui, &mut v, ranges[i].clone(), "", 54.0).changed() {
-                let (mut h, mut c) = (hsv, rgb);
-                if i < 3 {
-                    h[i] = if i == 0 { v } else { v / 100.0 };
-                    c = hsv_to_rgb(h[0], h[1], h[2]);
-                    edit = Some((c, Keep::Hsv(h)));
-                } else {
-                    c[i - 3] = v / 255.0;
-                    edit = Some((c, Keep::Nothing));
+            ui.add_space(6.0);
+            edit = row(ui, None, "#", "", |ui| hex_field(ui, now.rgb)).1.or(edit);
+        });
+        ui.vertical(|ui| {
+            for m in &MODES[6..] {
+                edit = component_row(ui, f, m, now, 44.0).or(edit);
+            }
+            ui.add_space(6.0);
+            for (i, label) in ["C:", "M:", "Y:", "K:"].into_iter().enumerate() {
+                let mut x = (now.cmyk[i] * 100.0).round();
+                if row(ui, None, tl!(label), "%", |ui| widgets::value_field(ui, &mut x, 0.0..=100.0, "", 44.0)).1.changed() {
+                    let mut k = now.cmyk;
+                    k[i] = x / 100.0;
+                    edit = Some((photocraft_color::convert::cmyk_to_rgb(k).map(|c| c.clamp(0.0, 1.0)), Keep::Cmyk(k)));
                 }
             }
-            ui.label(egui::RichText::new(units[i]).color(t.text_faint));
-            ui.end_row();
-        }
-        for (i, (label, v, range)) in [("L:", lab[0], 0.0..=100.0), ("a:", lab[1], -128.0..=127.0), ("b:", lab[2], -128.0..=127.0)].into_iter().enumerate() {
-            ui.label("");
-            ui.label(egui::RichText::new(tl!(&label)).color(t.text_dim));
-            let mut x = v.round();
-            if widgets::value_field(ui, &mut x, range, "", 54.0).changed() {
-                let mut l = lab;
-                l[i] = x;
-                edit = Some((photocraft_color::convert::lab_to_srgb(l).map(|c| c.clamp(0.0, 1.0)), Keep::Lab(l)));
-            }
-            ui.label("");
-            ui.end_row();
-        }
-        for (i, label) in ["C:", "M:", "Y:", "K:"].into_iter().enumerate() {
-            ui.label("");
-            ui.label(egui::RichText::new(tl!(&label)).color(t.text_dim));
-            let mut x = (cmyk[i] * 100.0).round();
-            if widgets::value_field(ui, &mut x, 0.0..=100.0, "", 54.0).changed() {
-                let mut k = cmyk;
-                k[i] = x / 100.0;
-                edit = Some((photocraft_color::convert::cmyk_to_rgb(k).map(|c| c.clamp(0.0, 1.0)), Keep::Cmyk(k)));
-            }
-            ui.label(egui::RichText::new("%").color(t.text_faint));
-            ui.end_row();
-        }
-        ui.label("");
-        ui.label(egui::RichText::new("#").color(t.text_dim));
-        // While the field has focus it shows what is being typed, not the colour: rebuilding it from
-        // the colour every frame would throw away every keystroke until six valid digits were in.
-        let id = ui.id().with("cp-hex");
-        let typing = if ui.memory(|m| m.has_focus(id)) { ui.data(|d| d.get_temp::<String>(id)) } else { None };
-        let mut h = typing.unwrap_or_else(|| hex(rgb).trim_start_matches('#').to_string());
-        let r = ui.add(egui::TextEdit::singleline(&mut h).id(id).char_limit(6).desired_width(54.0).font(crate::theme::mono(12.0)));
-        if r.has_focus() {
-            ui.data_mut(|d| d.insert_temp(id, h.clone()));
-        } else {
-            ui.data_mut(|d| d.remove::<String>(id));
-        }
-        if r.changed()
-            && let Some(c) = parse_hex(&h)
-        {
-            edit = Some((c, Keep::Nothing));
-        }
-        ui.end_row();
+        });
     });
-    if let Some(m) = new_mode {
-        f.insert("__mode".into(), json!(m));
+    edit
+}
+
+/// The hex field. While it has focus it shows what is being typed, not the colour: rebuilding it
+/// from the colour every frame would throw away every keystroke until six valid digits were in.
+fn hex_field(ui: &mut egui::Ui, rgb: [f32; 3]) -> Edit {
+    let id = ui.id().with("cp-hex");
+    let typing = if ui.memory(|m| m.has_focus(id)) { ui.data(|d| d.get_temp::<String>(id)) } else { None };
+    let mut h = typing.unwrap_or_else(|| hex(rgb).trim_start_matches('#').to_string());
+    let edit = egui::TextEdit::singleline(&mut h).id(id).char_limit(6).font(crate::theme::mono(12.0)).vertical_align(egui::Align::Center);
+    let r = ui.add_sized(vec2(84.0, 24.0), edit);
+    if r.has_focus() {
+        ui.data_mut(|d| d.insert_temp(id, h.clone()));
+    } else {
+        ui.data_mut(|d| d.remove::<String>(id));
     }
-    if let Some((c, keep)) = edit {
-        set_rgb(f, c, keep);
-    }
+    if r.changed() { parse_hex(&h).map(|c| (c, Keep::Nothing)) } else { None }
 }
 
 /// OK: set the foreground or background colour.
@@ -511,13 +612,25 @@ mod tests {
 
     #[test]
     fn field_and_locate_are_inverse_in_every_mode() {
-        let rgb = [0.8, 0.3, 0.2];
-        let hsv = rgb_to_hsv(rgb);
-        for (m, _) in MODES {
-            let (x, y, z) = locate(m, hsv, rgb);
-            let c = field_color(m, z, x, y);
-            assert_eq!(hex(c), hex(rgb), "mode {m}");
+        let mut f = Map::new();
+        f.insert("color".into(), json!("#cc4d33"));
+        let now = current(&f);
+        for m in MODES {
+            let v = m.space.get(&now);
+            let (x, y, z) = m.locate(v);
+            assert_eq!(hex(m.space.to_rgb(m.at(v, z, x, y))), "#cc4d33", "mode {}", m.key);
+            assert_eq!(hex(m.space.to_rgb(m.set(v, m.z, z))), "#cc4d33", "slider {}", m.key);
         }
+    }
+
+    #[test]
+    fn the_l_field_spans_a_across_and_b_up() {
+        let m = find_mode("lab-l");
+        let lab = photocraft_color::convert::srgb_to_lab(parse_hex("#336699").unwrap());
+        let (_, _, z) = m.locate(lab);
+        assert_eq!(m.at(lab, z, 0.0, 0.0)[1..], [-128.0, 127.0]);
+        assert_eq!(m.at(lab, z, 1.0, 1.0)[1..], [127.0, -128.0]);
+        assert_eq!(find_mode("nonsense").key, "h");
     }
 
     #[test]

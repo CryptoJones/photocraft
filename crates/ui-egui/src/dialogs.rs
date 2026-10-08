@@ -108,7 +108,9 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 800.0
             } else if about_tabs {
                 700.0
-            } else if d.kind == DialogKind::LayerStyle || d.fields.contains_key("__export") || crate::color_picker_ui::owns(&d.fields) {
+            } else if crate::color_picker_ui::owns(&d.fields) {
+                crate::color_picker_ui::WIDTH
+            } else if d.kind == DialogKind::LayerStyle || d.fields.contains_key("__export") {
                 600.0
             } else {
                 440.0
@@ -172,7 +174,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 DialogKind::Command if crate::rasterize_prompt::owns(&fields) => crate::rasterize_prompt::body(ui, &fields),
                 DialogKind::Command if crate::variables_ui::owns(&fields) => crate::variables_ui::body(app, ui, &mut fields),
                 DialogKind::Command if crate::file_ui::owns(&fields) => crate::file_ui::body(app, ui, &mut fields),
-                DialogKind::Command if crate::color_picker_ui::owns(&fields) => crate::color_picker_ui::body(ui, &mut fields),
+                DialogKind::Command if crate::color_picker_ui::owns(&fields) => outcome = crate::color_picker_ui::body(ui, &mut fields),
                 DialogKind::Command if crate::color_range_ui::owns(&fields) => crate::color_range_ui::body(app, ui, &mut fields),
                 DialogKind::Command if crate::prefs_ui::owns(&fields) => crate::prefs_ui::body(app, ui, &mut fields),
                 DialogKind::Command if fields.contains_key("__export") => crate::export_dialog::body(app, ui, &mut fields),
@@ -197,7 +199,12 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             // (larger) size, so a dialog whose body gets shorter would never shrink back.
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                if matches!(d.kind, DialogKind::About | DialogKind::Error) {
+                if crate::color_picker_ui::owns(&fields) {
+                    // OK and Cancel are in its body, beside the swatches.
+                    if outcome.is_none() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        outcome = Some(true);
+                    }
+                } else if matches!(d.kind, DialogKind::About | DialogKind::Error) {
                     if dialog_buttons(ui, &[DialogButton::new(ButtonRole::Default, tl!("OK"), 84.0)]).is_some() {
                         outcome = Some(false);
                     }

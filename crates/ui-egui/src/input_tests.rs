@@ -4,6 +4,7 @@
 
 use egui::{Key, Modifiers, Pos2, pos2, vec2};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use serde_json::json;
 
 use crate::PhotocraftApp;
@@ -211,6 +212,21 @@ fn color_picker_samples_the_image_under_its_pipette() {
     h.run_steps(2);
     assert!(h.state().ui.dialogs.is_empty());
     assert_eq!(h.state().session.tools.foreground, [1.0, 0.0, 0.0, 1.0]);
+}
+
+/// The Color Picker's OK and Cancel sit beside its swatches: Cancel keeps the old colour, OK applies.
+#[test]
+fn color_picker_ok_and_cancel_buttons() {
+    let mut h = harness();
+    for (button, want) in [("Cancel", [0.0, 0.0, 0.0, 1.0]), ("OK", [1.0, 0.0, 0.0, 1.0])] {
+        let id = crate::color_picker_ui::open(h.state_mut(), "foreground");
+        h.state_mut().ui.dialog_mut(id).unwrap().fields.insert("color".into(), json!("#ff0000"));
+        h.run_steps(3);
+        h.get_by_label(button).click();
+        h.run_steps(2);
+        assert!(h.state().ui.dialogs.is_empty(), "{button} closes the picker");
+        assert_eq!(h.state().session.tools.foreground, want, "{button}");
+    }
 }
 
 /// Type tool (#206): Alt+←/→ at a collapsed caret kerns the pair before it by 20/1000 em (100
