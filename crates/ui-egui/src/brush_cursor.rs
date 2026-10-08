@@ -153,7 +153,7 @@ mod tests {
         ctx.set_zoom_factor(1.25);
         let mut input = egui::RawInput::default();
         input.viewports.entry(egui::ViewportId::ROOT).or_default().native_pixels_per_point = Some(2.0);
-        let _ = ctx.run(input, |_| {});
+        let _ = ctx.run_ui(input, |_| {});
         assert_eq!(ctx.pixels_per_point(), 2.5);
         assert_eq!(native_scale(&ctx), if cfg!(target_os = "macos") { 1.25 } else { 2.5 });
     }
