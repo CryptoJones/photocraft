@@ -962,7 +962,7 @@ fn lut_layers<'a>(doc: &'a Document, ids: Option<&[LayerId]>) -> Result<Vec<&'a 
 
 /// Bake the chosen adjustment stack against an identity RGB lattice.
 /// Source order always follows the document stack, even if an explicit list is reversed.
-pub fn bake_cube_layers(doc: &Document, size: usize, title: &str, layers: &[&Layer]) -> String {
+fn bake_cube_layers(doc: &Document, size: usize, title: &str, layers: &[&Layer]) -> String {
     let n = size;
     let (w, h) = ((n * n) as u32, n as u32);
     let mut lattice = Document::new("lut", photocraft_doc::Size::new(w, h), ColorMode::Rgb, photocraft_color::SampleType::F32);
