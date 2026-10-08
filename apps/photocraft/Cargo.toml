@@ -12,6 +12,8 @@ build = "build.rs"
 # it; official builds (CI, packaging/, release) build with `--features heif`.
 heif = ["photocraft-codecs/heif"]
 local-ml = ["photocraft-engine/local-ml"]
+# App-owned OAuth in the system browser; no network or credentials in default builds.
+chatgpt = ["photocraft-engine/chatgpt"]
 
 [lints]
 workspace = true

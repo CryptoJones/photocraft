@@ -23,6 +23,9 @@ Optional CPU models for Object Selection, Select Subject and Remove Background a
 `--features local-ml`. Weights remain separate, explicit downloads. See [local models](local-models.md)
 for Preferences, CLI, provenance and native runtime packaging details.
 
+The optional native `chatgpt` feature adds app-owned Sign in with ChatGPT account settings.
+It sends no inference requests; see [ChatGPT sign-in](chatgpt-sign-in.md) for scope and validation.
+
 ## Fonts (craft-fonts)
 
 Font assets shared by the Crafting Apps live in [storytold/craft-fonts](https://github.com/storytold/craft-fonts), never in this repo: don't commit font files here (Inter and JetBrains Mono in `assets/fonts/` are the only exceptions; new fonts go to craft-fonts). The rules are in `craftrules/standards/fonts.md` in a sibling `craftrules` checkout (see below); that repository is not public, so outside contributors can ask a maintainer for the rules that apply to their change.
