@@ -165,6 +165,21 @@ fn layer_m(l: &Layer, sink: &mut dyn Sink) -> LayerM {
             stack_mode: s.stack_mode,
             perspective: s.perspective,
         },
+        LayerContent::Deep(d) => ContentM::Deep {
+            x: d.x,
+            y: d.y,
+            width: d.width,
+            height: d.height,
+            channels: d
+                .channels
+                .iter()
+                .map(|c| crate::manifest::DeepChannelM {
+                    name: c.name.clone(),
+                    samples: sink.blob(&std::sync::Arc::new(c.samples.iter().flat_map(|v| v.to_le_bytes()).collect())),
+                })
+                .collect(),
+            counts: sink.blob(&std::sync::Arc::new(d.counts.iter().flat_map(|v| v.to_le_bytes()).collect())),
+        },
     };
     LayerM {
         id: l.id.0,
@@ -454,6 +469,36 @@ impl Loader<'_> {
                     stack_mode: *stack_mode,
                     perspective: perspective.filter(|p| p.iter().all(|v| v.is_finite())),
                 })
+            }
+            ContentM::Deep { x, y, width, height, channels, counts } => {
+                let counts_bytes = self.fetch.blob(counts)?;
+                let counts_v: Vec<u64> = counts_bytes.as_chunks::<8>().0.iter().map(|c| u64::from_le_bytes(*c)).collect();
+                let npx = usize::try_from(*width).unwrap_or(usize::MAX / 2).saturating_mul(usize::try_from(*height).unwrap_or(0));
+                if counts_v.len() != npx + 1 {
+                    return Err(crate::FormatError::LimitExceeded(format!(
+                        "deep counts hold {} entries, expected width*height+1 = {}",
+                        counts_v.len(),
+                        npx + 1
+                    )));
+                }
+                let total = counts_v.last().copied().unwrap_or(0) as usize;
+                let mut channels_v = Vec::with_capacity(channels.len());
+                for c in channels {
+                    let bytes = self.fetch.blob(&c.samples)?;
+                    if bytes.len() != total * 4 {
+                        return Err(crate::FormatError::LimitExceeded(format!(
+                            "deep channel `{}` holds {} samples, expected {}",
+                            c.name,
+                            bytes.len() / 4,
+                            total
+                        )));
+                    }
+                    channels_v.push(photocraft_doc::DeepChannel {
+                        name: c.name.clone(),
+                        samples: bytes.as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect(),
+                    });
+                }
+                LayerContent::Deep(photocraft_doc::DeepData { x: *x, y: *y, width: *width, height: *height, channels: channels_v, counts: counts_v })
             }
         };
         let mask = match &m.mask {
