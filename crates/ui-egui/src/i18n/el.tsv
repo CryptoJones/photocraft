@@ -3358,3 +3358,6 @@ fontWeight	Thin	Πολύ λεπτά
 # Saved New Document presets (#1516)
 	Preset Name	Όνομα προεπιλογής
 	No saved presets yet.	Δεν υπάρχουν ακόμη αποθηκευμένες προεπιλογές.
+
+	AVIF uses 8-bit sRGB. ICC, EXIF and XMP metadata are not preserved.	Το AVIF χρησιμοποιεί sRGB 8 bit. Τα μεταδεδομένα ICC, EXIF και XMP δεν διατηρούνται.
+	File size is shown after export.	Το μέγεθος του αρχείου εμφανίζεται μετά την εξαγωγή.

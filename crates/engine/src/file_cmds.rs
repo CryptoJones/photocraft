@@ -115,6 +115,7 @@ pub(crate) fn list_images(dir: &str) -> Result<Vec<String>> {
 }
 
 /// Extensions the batch commands pick up from a folder.
+#[cfg(not(target_arch = "wasm32"))]
 const OPENABLE: &[&str] = &[
     "psd", "psb", "pcraft", "png", "jpg", "jpeg", "tif", "tiff", "webp", "gif", "bmp", "tga", "exr", "hdr", "qoi", "ico", "pnm", "ppm", "pgm", "heic", "heif",
     "hif", "dng", "cr2", "nef", "nrw", "arw", "pef", "svg", "svgz",
@@ -188,7 +189,7 @@ pub(crate) fn import(name: &str, bytes: &[u8]) -> Result<Document> {
     photocraft_io::import(name, bytes).map(|r| r.document).map_err(|e| EngineError::Other(format!("{name}: {e}")))
 }
 
-/// What a headless save writes beyond the format: JPEG quality and TIFF layers.
+/// What a headless save writes beyond the format: JPEG/AVIF quality and TIFF layers.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct SaveOpts {
     /// Photoshop's 0–12 JPEG scale.
@@ -1127,7 +1128,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Save a Copy…",
             &["File"],
             Some("Cmd+Alt+S"),
-            r##"{"path":str (format from the extension),"quality":0..12? (JPEG),"layers":bool=true,"tiffLayers":bool=false (TIFF: keep the layers; flat by default)}"##,
+            r##"{"path":str (format from the extension),"quality":0..12? (JPEG/AVIF),"layers":bool=true,"tiffLayers":bool=false (TIFF: keep the layers; flat by default)}"##,
             native_doc,
             save_a_copy
         ),

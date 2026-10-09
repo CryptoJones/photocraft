@@ -165,7 +165,7 @@ impl Format {
     /// Maximum encodable dimensions, if the format has a hard limit.
     pub fn max_dimensions(self) -> Option<(u32, u32)> {
         match self {
-            Format::Jpeg | Format::Gif => Some((65535, 65535)),
+            Format::Jpeg | Format::Gif | Format::Avif => Some((65535, 65535)),
             Format::WebP => Some((16384, 16384)),
             Format::Ico => Some((256, 256)),
             _ => None,
