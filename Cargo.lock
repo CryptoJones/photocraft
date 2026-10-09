@@ -4387,6 +4387,7 @@ dependencies = [
  "egui_extras",
  "egui_kittest",
  "log",
+ "percent-encoding",
  "photocraft-algo",
  "photocraft-cms",
  "photocraft-codecs",
