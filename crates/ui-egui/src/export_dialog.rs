@@ -395,14 +395,16 @@ mod tests {
 
     #[test]
     fn drawing_avif_controls_keeps_options_valid_for_confirmation() {
+        use crate::file_dialog::{FileDialogAnswer, FileDialogRequest};
         use std::{cell::RefCell, rc::Rc};
         let calls = Rc::new(RefCell::new(Vec::new()));
         let picker_calls = calls.clone();
         let writer_calls = calls.clone();
         let services = crate::Services {
-            pick_save: Some(Box::new(move |suggested| {
+            file_dialog: Some(Box::new(move |request, _parent, reply| {
+                let FileDialogRequest::Save { suggested } = request else { panic!("expected a save dialog") };
                 picker_calls.borrow_mut().push(format!("pick {suggested}"));
-                Some("chosen-destination.avif".into())
+                reply.send(Some(FileDialogAnswer::SaveTo("chosen-destination.avif".into())));
             })),
             export: Some(Box::new(|doc, path, settings| {
                 let options = photocraft_io::ExportOptions {
@@ -436,8 +438,11 @@ mod tests {
             assert!(fields[name].as_u64().is_some(), "{name} must be an integer after drawing");
         }
         let result = confirm(&mut app, &fields).unwrap();
-        assert_eq!(result["path"], "chosen-destination.avif");
-        assert!(result["bytes"].as_u64().unwrap() > 0);
+        assert_eq!(result, json!({"fileDialog": "save"}));
+        assert!(app.file_dialog_open());
+        assert!(calls.borrow().is_empty(), "confirmation queues the dialog before exporting");
+        app.poll_file_dialog(&ctx, None);
+        assert!(!app.file_dialog_open());
         assert_eq!(&*calls.borrow(), &["pick Untitled.avif", "write chosen-destination.avif"]);
         assert!(app.ui.status.starts_with("Exported chosen-destination.avif"));
     }
