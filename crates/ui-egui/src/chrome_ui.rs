@@ -87,7 +87,7 @@ pub fn status_info_text(doc: &Document, key: &str, tool: &str, profile: &str) ->
             let (_, layered) = document_sizes(doc);
             crate::i18n::fmt(tl!("Scratch: {size}"), &[("size", &fmt_bytes(layered))])
         }
-        "efficiency" => tl!("Efficiency: 100%").into(),
+        "efficiency" => tl_id!("ui-efficiency-100-e01e1d2574731f1e").into(),
         "tool" => tool.to_string(),
         "layers" => {
             let n = doc.layer_count();
@@ -123,7 +123,7 @@ fn profile_name(doc: &Document) -> String {
 pub fn status_bar_pro(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let (Some(st), Some(i)) = (app.session.active(), app.session.active_index()) else {
-        ui.label(RichText::new(tl!("No document")).color(t.text_dim));
+        ui.label(RichText::new(tl_id!("ui-no-document-6ab533559b7cf7fd")).color(t.text_dim));
         return;
     };
     let text = status_info_text(&st.doc, &app.ui.chrome.status_info, tl!(app.ui.tool.label()), &profile_name(&st.doc));
@@ -135,7 +135,7 @@ pub fn status_bar_pro(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         ui.painter().rect_filled(r, t.radius_sm, t.hover);
     }
     icons::paint(ui, r, "chevron-right", 11.0, t.text_dim);
-    let resp = resp.on_hover_text(tl!("Show"));
+    let resp = resp.on_hover_text(tl_id!("ui-show-0b05e02380ff65f2"));
     egui::Popup::menu(&resp).show(|ui| {
         ui.set_min_width(200.0);
         for (key, label) in STATUS_INFO {
@@ -162,7 +162,7 @@ pub fn home_button(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let on = app.ui.chrome.shows_home(n, auto);
     // With no documents and auto-show on, Home can't be dismissed (there's nothing behind it).
     let can_toggle = n > 0 || !auto;
-    if icons::button(ui, "house", 26.0, on && can_toggle, tl!("Home")).clicked() && can_toggle {
+    if icons::button(ui, "house", 26.0, on && can_toggle, tl_id!("ui-home-5086f582d5199414")).clicked() && can_toggle {
         app.ui.chrome.home = if on { None } else { Some(n) };
     }
 }

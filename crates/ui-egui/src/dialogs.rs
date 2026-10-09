@@ -142,7 +142,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                         ui.add(egui::Label::new(egui::RichText::new(l).font(crate::theme::mono(12.0))).selectable(true));
                     }
                     ui.add_space(8.0);
-                    if crate::widgets::secondary_button(ui, tl!("Copy"), 84.0).clicked() {
+                    if crate::widgets::secondary_button(ui, tl_id!("ui-copy-83ceddac8fb7324e"), 84.0).clicked() {
                         ui.ctx().copy_text(lines.join("\n"));
                     }
                 }

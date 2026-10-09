@@ -44,7 +44,7 @@ pub struct PresetUi {
 
 impl PresetUi {
     pub fn shape(&self) -> &str {
-        if self.custom_shape.is_empty() { tl!("Heart") } else { &self.custom_shape }
+        if self.custom_shape.is_empty() { tl_id!("ui-heart-180d22fcf815a8f5") } else { &self.custom_shape }
     }
 }
 
@@ -259,7 +259,7 @@ pub(crate) fn browser(
     if let Some((p, key, mut text)) = st.renaming.clone().filter(|r| r.0 == panel) {
         let mut done = None;
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(tl!("Name:")).color(t.text_dim).size(11.5));
+            ui.label(egui::RichText::new(tl_id!("ui-name-48d899dd92fbc032")).color(t.text_dim).size(11.5));
             let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(ui.available_width() - 4.0));
             if !r.has_focus() && !r.lost_focus() {
                 r.request_focus();
@@ -302,11 +302,11 @@ pub(crate) fn browser(
                 }
             }
             hresp.context_menu(|ui| {
-                if ui.button(tl!("Rename Group…")).clicked() {
+                if ui.button(tl_id!("ui-rename-group-2cdd688082a286d6")).clicked() {
                     st.renaming = Some((panel.to_string(), format!("group:{}", g.name), g.name.clone()));
                     ui.close();
                 }
-                if ui.button(tl!("Delete Group")).clicked() {
+                if ui.button(tl_id!("ui-delete-group-69cde2a4a0964f07")).clicked() {
                     ev.push(Ev::DeleteGroup(g.name.clone()));
                     ui.close();
                 }
@@ -375,15 +375,15 @@ pub(crate) fn browser(
                     dropped = Some((it.key.clone(), pp));
                 }
                 resp.context_menu(|ui| {
-                    if ui.button(tl!("Rename…")).clicked() {
+                    if ui.button(tl_id!("ui-rename-6c41bd2755ee176b")).clicked() {
                         st.renaming = Some((panel.to_string(), it.key.clone(), it.name.clone()));
                         ui.close();
                     }
-                    if ui.button(tl!("Delete")).clicked() {
+                    if ui.button(tl_id!("ui-delete-af3196ad6b727abc")).clicked() {
                         ev.push(Ev::Delete(it.key.clone()));
                         ui.close();
                     }
-                    ui.menu_button(tl!("Move to"), |ui| {
+                    ui.menu_button(tl_id!("ui-move-to-a3507ac7694de6b7"), |ui| {
                         for gname in group_names.iter().filter(|n| **n != g.name) {
                             if ui.button(gname).clicked() {
                                 ev.push(Ev::Move(it.key.clone(), gname.clone()));
@@ -407,12 +407,13 @@ pub(crate) fn browser(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         let mut s = size;
-        ui.add_sized(vec2(90.0, 18.0), egui::Slider::new(&mut s, MIN_THUMB..=96.0).show_value(false)).on_hover_text(tl!("Thumbnail size (smallest: list)"));
+        ui.add_sized(vec2(90.0, 18.0), egui::Slider::new(&mut s, MIN_THUMB..=96.0).show_value(false))
+            .on_hover_text(tl_id!("ui-thumbnail-size-smallest-list-ce169a9491757e60"));
         if (s - size).abs() > 0.01 {
             st.sizes.insert(panel.to_string(), s);
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if crate::icons::button(ui, "trash", 24.0, false, tl!("Delete")).clicked()
+            if crate::icons::button(ui, "trash", 24.0, false, tl_id!("ui-delete-af3196ad6b727abc")).clicked()
                 && let Some(k) = selected.clone()
             {
                 ev.push(Ev::Delete(k));
@@ -420,7 +421,7 @@ pub(crate) fn browser(
             if crate::icons::button(ui, "plus", 24.0, false, new_tip).clicked() {
                 ev.push(Ev::New);
             }
-            if crate::icons::button(ui, "folder-plus", 24.0, false, tl!("Create new group")).clicked() {
+            if crate::icons::button(ui, "folder-plus", 24.0, false, tl_id!("ui-create-new-group-0e2da49a211536da")).clicked() {
                 ev.push(Ev::NewGroup);
             }
         });
@@ -497,10 +498,17 @@ pub fn gradients_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let canvas = app.last_canvas_rect;
     let mut st = std::mem::take(&mut app.ui.presets_ui);
     let max_h = (ui.available_height() - 40.0).clamp(90.0, 260.0);
-    let events = browser(ui, &mut st, "gradients", &groups, Place { canvas, max_h, new_tip: tl!("Create new gradient") }, &mut |ui, r, gi, ii| {
-        let stops = groups_src[gi].items[ii].resolve(fg, bg);
-        paint_gradient(ui, r, &stops);
-    });
+    let events = browser(
+        ui,
+        &mut st,
+        "gradients",
+        &groups,
+        Place { canvas, max_h, new_tip: tl_id!("ui-create-new-gradient-da448cbf9b15b11f") },
+        &mut |ui, r, gi, ii| {
+            let stops = groups_src[gi].items[ii].resolve(fg, bg);
+            paint_gradient(ui, r, &stops);
+        },
+    );
     app.ui.presets_ui = st;
     for e in events {
         match &e {
@@ -545,11 +553,17 @@ pub fn patterns_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let mut st = std::mem::take(&mut app.ui.presets_ui);
     let max_h = (ui.available_height() - 40.0).clamp(90.0, 280.0);
     let ctx = ui.ctx().clone();
-    let events =
-        browser(ui, &mut st, "patterns", &groups, Place { canvas, max_h, new_tip: tl!("Create new pattern from the selection") }, &mut |ui, r, gi, ii| {
+    let events = browser(
+        ui,
+        &mut st,
+        "patterns",
+        &groups,
+        Place { canvas, max_h, new_tip: tl_id!("ui-create-new-pattern-from-the-selection-52d621d30068f22c") },
+        &mut |ui, r, gi, ii| {
             let tex = pattern_texture(&ctx, &pats[gi][ii]);
             ui.painter().image(tex.id(), r, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), Color32::WHITE);
-        });
+        },
+    );
     app.ui.presets_ui = st;
     for e in events {
         match &e {
@@ -600,7 +614,7 @@ fn float_window(
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(tl!(&title)).color(t.text).size(12.0).strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if crate::icons::button(ui, "x", 20.0, false, tl!("Close")).clicked() {
+                    if crate::icons::button(ui, "x", 20.0, false, tl_id!("ui-close-bac64c1b2e060ee5")).clicked() {
                         close = true;
                     }
                 });
@@ -615,16 +629,16 @@ fn float_window(
 /// Draws the open floating panels (Styles, Shapes, Tool Presets, Clone Source).
 pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
     let p = app.ui.presets_ui.clone();
-    if p.styles && float_window(app, ctx, "styles", tl!("Styles"), 250.0, 0.0, styles_panel) {
+    if p.styles && float_window(app, ctx, "styles", tl_id!("ui-styles-86fe8972a2bb4389"), 250.0, 0.0, styles_panel) {
         app.ui.presets_ui.styles = false;
     }
-    if p.shapes && float_window(app, ctx, "shapes", tl!("Shapes"), 250.0, 280.0, shapes_panel) {
+    if p.shapes && float_window(app, ctx, "shapes", tl_id!("ui-shapes-6d2794dc59437a41"), 250.0, 280.0, shapes_panel) {
         app.ui.presets_ui.shapes = false;
     }
-    if p.tool_presets && float_window(app, ctx, "toolPresets", tl!("Tool Presets"), 250.0, 560.0, tool_presets_panel) {
+    if p.tool_presets && float_window(app, ctx, "toolPresets", tl_id!("ui-tool-presets-bcdaf1a14550b39d"), 250.0, 560.0, tool_presets_panel) {
         app.ui.presets_ui.tool_presets = false;
     }
-    if p.clone_source && float_window(app, ctx, "cloneSource", tl!("Clone Source"), 270.0, 840.0, clone_source_panel) {
+    if p.clone_source && float_window(app, ctx, "cloneSource", tl_id!("ui-clone-source-ebc959ffa1910091"), 270.0, 840.0, clone_source_panel) {
         app.ui.presets_ui.clone_source = false;
     }
 }
@@ -650,7 +664,7 @@ pub fn styles_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         &mut st,
         "styles",
         &groups,
-        Place { canvas, max_h: 300.0, new_tip: tl!("Create new style from the selected layer") },
+        Place { canvas, max_h: 300.0, new_tip: tl_id!("ui-create-new-style-from-the-selected-layer-538e544b12b2bb51") },
         &mut |ui, r, gi, ii| {
             ui.painter().rect_filled(r, 2.0, t.field);
             ui.painter().image(texes[gi][ii].id(), r, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), Color32::WHITE);
@@ -694,7 +708,7 @@ pub fn shapes_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         &mut st,
         "shapes",
         &groups,
-        Place { canvas, max_h: 300.0, new_tip: tl!("Create new shape from the current path") },
+        Place { canvas, max_h: 300.0, new_tip: tl_id!("ui-create-new-shape-from-the-current-path-0cc18054fa919f95") },
         &mut |ui, r, gi, ii| {
             let tex = shape_texture(&ctx, &src[gi].items[ii]);
             ui.painter().image(tex.id(), r.shrink(2.0), Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), t.text);
@@ -739,7 +753,7 @@ fn shape_fill(app: &PhotocraftApp) -> Value {
 /// Options-bar shape picker for the Custom Shape tool.
 pub fn shape_picker(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
-    ui.label(egui::RichText::new(tl!("Shape:")).color(t.text_dim).size(12.0));
+    ui.label(egui::RichText::new(tl_id!("ui-shape-6d27cbdc5943d7b6")).color(t.text_dim).size(12.0));
     let groups = photocraft_engine::presets::shapes::all_groups(&app.session);
     let cur = app.ui.presets_ui.shape().to_string();
     let ctx = ui.ctx().clone();
@@ -845,7 +859,7 @@ pub fn tool_presets_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // Rename field.
     if let Some((_, key, mut text)) = app.ui.presets_ui.renaming.clone().filter(|r| r.0 == "toolPresets") {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(tl!("Name:")).color(t.text_dim).size(11.5));
+            ui.label(egui::RichText::new(tl_id!("ui-name-48d899dd92fbc032")).color(t.text_dim).size(11.5));
             let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(ui.available_width() - 4.0));
             if !r.has_focus() && !r.lost_focus() {
                 r.request_focus();
@@ -863,7 +877,7 @@ pub fn tool_presets_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     egui::ScrollArea::vertical().id_salt("tool-presets").max_height(260.0).auto_shrink([false, true]).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
         if items.is_empty() {
-            empty(ui, if only { tl!("No presets for the current tool.") } else { tl!("No tool presets.") });
+            empty(ui, if only { tl_id!("ui-no-presets-for-the-current-tool-652f0d1fff59c221") } else { tl_id!("ui-no-tool-presets-d36fc42f8a32fad0") });
         }
         for (name, tool) in &items {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
@@ -879,11 +893,11 @@ pub fn tool_presets_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 pick = Some(name.clone());
             }
             resp.context_menu(|ui| {
-                if ui.button(tl!("Rename Tool Preset…")).clicked() {
+                if ui.button(tl_id!("ui-rename-tool-preset-534fdde880250528")).clicked() {
                     app.ui.presets_ui.renaming = Some(("toolPresets".into(), name.clone(), name.clone()));
                     ui.close();
                 }
-                if ui.button(tl!("Delete Tool Preset")).clicked() {
+                if ui.button(tl_id!("ui-delete-tool-preset-e7022a3b74746641")).clicked() {
                     action = Some(("tool.presets.edit".into(), json!({"action": "delete", "preset": name})));
                     ui.close();
                 }
@@ -893,14 +907,14 @@ pub fn tool_presets_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.add_space(4.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
-        crate::widgets::checkbox(ui, &mut app.ui.presets_ui.current_tool_only, tl!("Current Tool Only"));
+        crate::widgets::checkbox(ui, &mut app.ui.presets_ui.current_tool_only, tl_id!("ui-current-tool-only-9ab1db14411bfe68"));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if crate::icons::button(ui, "trash", 24.0, false, tl!("Delete tool preset")).clicked()
+            if crate::icons::button(ui, "trash", 24.0, false, tl_id!("ui-delete-tool-preset-c6b1a864e5ac0481")).clicked()
                 && let Some(n) = selected.clone()
             {
                 action = Some(("tool.presets.edit".into(), json!({"action": "delete", "preset": n})));
             }
-            if crate::icons::button(ui, "plus", 24.0, false, tl!("Create new tool preset")).clicked() {
+            if crate::icons::button(ui, "plus", 24.0, false, tl_id!("ui-create-new-tool-preset-7d4d468ee6c87460")).clicked() {
                 let label = cur.label().to_string();
                 let opts = json!({"toolOptions": serde_json::to_value(&app.ui.tool_options).unwrap_or_default()});
                 action = Some(("tool.presets.new".into(), json!({"name": label, "tool": tool_id(cur), "options": opts})));
@@ -992,15 +1006,15 @@ pub fn clone_source_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             action = Some(json!({"rotation": rot}));
         }
         ui.horizontal(|ui| {
-            if crate::icons::button(ui, "arrow-left-right", 22.0, slot.flip_h, tl!("Flip Horizontal")).clicked() {
+            if crate::icons::button(ui, "arrow-left-right", 22.0, slot.flip_h, tl_id!("ui-flip-horizontal-46d0ebbcbd11f28c")).clicked() {
                 action = Some(json!({"flipH": !slot.flip_h}));
             }
-            if crate::icons::button(ui, "rotate-cw", 22.0, false, tl!("Reset Transform")).clicked() {
+            if crate::icons::button(ui, "rotate-cw", 22.0, false, tl_id!("ui-reset-transform-c6a67438b8b36cb2")).clicked() {
                 run(app, "cloneSource.resetTransform", json!({}));
             }
         });
         ui.horizontal(|ui| {
-            if crate::icons::button(ui, "scaling", 22.0, slot.flip_v, tl!("Flip Vertical")).clicked() {
+            if crate::icons::button(ui, "scaling", 22.0, slot.flip_v, tl_id!("ui-flip-vertical-b40a32988287497e")).clicked() {
                 action = Some(json!({"flipV": !slot.flip_v}));
             }
         });
@@ -1015,24 +1029,24 @@ pub fn clone_source_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // Overlay options.
     let mut o = cs.overlay.clone();
     let before = o.clone();
-    crate::widgets::checkbox(ui, &mut o.show, tl!("Show Overlay"));
+    crate::widgets::checkbox(ui, &mut o.show, tl_id!("ui-show-overlay-2b962662d8b5b07e"));
     ui.horizontal(|ui| {
         ui.add_space(18.0);
-        ui.label(egui::RichText::new(tl!("Opacity:")).color(t.text_dim).size(11.5));
+        ui.label(egui::RichText::new(tl_id!("ui-opacity-b3b2ce99002fac62")).color(t.text_dim).size(11.5));
         crate::widgets::value_field(ui, &mut o.opacity, 0.0..=100.0, "%", 56.0);
         let opts = [
-            ("normal".to_string(), tl!("Normal")),
-            ("darken".to_string(), tl!("Darken")),
-            ("lighten".to_string(), tl!("Lighten")),
-            ("difference".to_string(), tl!("Difference")),
+            ("normal".to_string(), tl_id!("ui-normal-63acd193c4316f68")),
+            ("darken".to_string(), tl_id!("ui-darken-a1fc662b2b849eb8")),
+            ("lighten".to_string(), tl_id!("ui-lighten-ec047e5803ae908e")),
+            ("difference".to_string(), tl_id!("ui-difference-1a4cde7bc40e78f0")),
         ];
         crate::widgets::dropdown(ui, "clone-overlay-mode", &mut o.blend, &opts, 90.0);
     });
     ui.horizontal(|ui| {
         ui.add_space(18.0);
-        crate::widgets::checkbox(ui, &mut o.clipped, tl!("Clipped"));
-        crate::widgets::checkbox(ui, &mut o.auto_hide, tl!("Auto Hide"));
-        crate::widgets::checkbox(ui, &mut o.invert, tl!("Invert"));
+        crate::widgets::checkbox(ui, &mut o.clipped, tl_id!("ui-clipped-74ee674fbd696c6a"));
+        crate::widgets::checkbox(ui, &mut o.auto_hide, tl_id!("ui-auto-hide-a778e2af88226044"));
+        crate::widgets::checkbox(ui, &mut o.invert, tl_id!("ui-invert-34256b9eee178d2f"));
     });
     if o != before {
         run(

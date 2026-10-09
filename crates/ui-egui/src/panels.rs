@@ -235,7 +235,7 @@ pub fn toolbar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 }
             }
             let ctx = ui.ctx().clone();
-            if t.pro && icons::button(ui, "ellipsis", bx, false, tl!("Edit Toolbar…")).clicked() {
+            if t.pro && icons::button(ui, "ellipsis", bx, false, tl_id!("ui-edit-toolbar-a11e5956c01bb540")).clicked() {
                 let _ = crate::menus::invoke(app, &ctx, "edit.toolbar", json!({}));
             }
             ui.add_space(if t.pro { 8.0 } else { 14.0 });
@@ -248,13 +248,13 @@ pub fn toolbar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     "square-dashed",
                     bx,
                     quick_mask,
-                    if quick_mask { tl!("Edit in Standard Mode  (Q)") } else { tl!("Edit in Quick Mask Mode  (Q)") },
+                    if quick_mask { tl_id!("ui-edit-in-standard-mode-q-bbbe310f07228224") } else { tl_id!("ui-edit-in-quick-mask-mode-q-db7789a2b660e3cc") },
                 )
                 .clicked()
                 {
                     let _ = crate::menus::invoke(app, &ctx, "select.editInQuickMaskMode", json!({}));
                 }
-                let sm = icons::button(ui, "app-window", bx, false, tl!("Change Screen Mode  (F)"));
+                let sm = icons::button(ui, "app-window", bx, false, tl_id!("ui-change-screen-mode-f-446946dc244de0a1"));
                 if sm.clicked() {
                     let _ = crate::menus::invoke(app, &ctx, "view.screenMode.cycle", json!({}));
                 }
@@ -262,9 +262,9 @@ pub fn toolbar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 egui::Popup::context_menu(&sm).show(|ui| {
                     ui.set_min_width(220.0);
                     for (id, label) in [
-                        ("view.screenMode.standard", tl!("Standard Screen Mode")),
-                        ("view.screenMode.fullScreenWithMenuBar", tl!("Full Screen Mode With Menu Bar")),
-                        ("view.screenMode.fullScreen", tl!("Full Screen Mode")),
+                        ("view.screenMode.standard", tl_id!("ui-standard-screen-mode-ae7a0a3b1b169109")),
+                        ("view.screenMode.fullScreenWithMenuBar", tl_id!("ui-full-screen-mode-with-menu-bar-2562bda5b1e8119f")),
+                        ("view.screenMode.fullScreen", tl_id!("ui-full-screen-mode-ebd524f582ec9d2d")),
                     ] {
                         let on = crate::view_cmds::checked(app, id).unwrap_or(false);
                         if ui.add(egui::Button::selectable(on, label)).clicked() {
@@ -309,17 +309,17 @@ fn color_chips(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // Photoshop: clicking a chip opens the Color Picker for that colour.
     let bg_resp = ui.interact(bg, ui.id().with("bgchip"), Sense::click());
     let fg_resp = ui.interact(fg, ui.id().with("fgchip"), Sense::click());
-    if fg_resp.on_hover_text(tl!("Set foreground color")).clicked() {
+    if fg_resp.on_hover_text(tl_id!("ui-set-foreground-color-ab148f6fba123d15")).clicked() {
         crate::color_picker_ui::open(app, "foreground");
-    } else if bg_resp.on_hover_text(tl!("Set background color")).clicked() {
+    } else if bg_resp.on_hover_text(tl_id!("ui-set-background-color-876066fdd53af1ec")).clicked() {
         crate::color_picker_ui::open(app, "background");
     }
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        if icons::button(ui, "arrow-left-right", 18.0, false, tl!("Swap colours (X)")).clicked() {
+        if icons::button(ui, "arrow-left-right", 18.0, false, tl_id!("ui-swap-colours-x-270e4107f5b1db82")).clicked() {
             let _ = app.run("tools.swapColors", json!({}));
         }
-        if icons::button(ui, "contrast", 18.0, false, tl!("Default colours (D)")).clicked() {
+        if icons::button(ui, "contrast", 18.0, false, tl_id!("ui-default-colours-d-702fa2ae170283a6")).clicked() {
             let _ = app.run("tools.defaultColors", json!({}));
         }
     });
@@ -416,7 +416,7 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     if ui.available_width() >= DISCORD_ROOM {
                         let discord = egui::Button::image_and_text(
                             icons::image("message-square", 14.0, t.text_dim),
-                            egui::RichText::new(tl!("Discord")).color(t.text_dim).size(12.0),
+                            egui::RichText::new(tl_id!("ui-discord-24d9ec8219751a5d")).color(t.text_dim).size(12.0),
                         )
                         .frame(false);
                         if ui.add(discord).on_hover_text(format!("Join the ArtCraft Discord ({})", crate::links::DISCORD)).clicked() {
@@ -700,7 +700,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         brush_preset_chip(ui, b, &mut app.ui);
                         crate::brush_picker::settings_toggle(app, ui);
                         widgets::vline(ui, 22.0);
-                        opt_label(ui, tl!("Mode"));
+                        opt_label(ui, tl_id!("ui-mode-2134d5591dda2af8"));
                         let mut mode = b.mode;
                         let opts: Vec<(BlendMode, &str)> = BlendMode::LAYER_MODES.iter().map(|m| (*m, m.label())).collect();
                         if widgets::dropdown(ui, "brush-mode", &mut mode, &opts, 96.0) {
@@ -719,7 +719,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         smoothing_field(ui, b, 58.0);
                         smoothing_options(ui, b);
                         widgets::vline(ui, 22.0);
-                        if icons::button(ui, "circle-dot", 24.0, b.pressure_size, tl!("Always use pressure for size")).clicked() {
+                        if icons::button(ui, "circle-dot", 24.0, b.pressure_size, tl_id!("ui-always-use-pressure-for-size-d64c186313fb8678")).clicked() {
                             b.pressure_size = !b.pressure_size;
                         }
                         symmetry_menu(app, ui);
@@ -734,7 +734,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                             widgets::value_field(ui, &mut b.size, 1.0..=photocraft_engine::paint::MAX_BRUSH_SIZE, "px", 76.0);
                             widgets::vline(ui, 22.0);
                         }
-                        opt_label(ui, tl!("Mode"));
+                        opt_label(ui, tl_id!("ui-mode-2134d5591dda2af8"));
                         let mut mode = b.mode;
                         let opts: Vec<(BlendMode, &str)> = BlendMode::LAYER_MODES.iter().map(|m| (*m, m.label())).collect();
                         if widgets::dropdown(ui, "pencil-mode", &mut mode, &opts, 96.0) {
@@ -744,13 +744,13 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         opt_label(ui, tl!("Smoothing"));
                         smoothing_field(ui, b, if t.pro { 58.0 } else { 66.0 });
                         widgets::vline(ui, 22.0);
-                        widgets::checkbox(ui, &mut app.ui.tool_options.pencil_auto_erase, tl!("Auto Erase"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.pencil_auto_erase, tl_id!("ui-auto-erase-8a68e4bc3af7d82e"));
                     }
                     Tool::Brush | Tool::Eraser => {
                         brush_preset_chip(ui, b, &mut app.ui);
                         crate::brush_picker::settings_toggle(app, ui);
                         widgets::vline(ui, 22.0);
-                        opt_label(ui, tl!("Size"));
+                        opt_label(ui, tl_id!("ui-size-16021b2387e0b7d6"));
                         widgets::value_field(ui, &mut b.size, 1.0..=2500.0, "px", 76.0);
                         widgets::vline(ui, 22.0);
                         percent_field(ui, tl!("Hardness"), &mut b.hardness, 0.0..=100.0, 66.0);
@@ -759,8 +759,8 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         opt_label(ui, tl!("Smoothing"));
                         smoothing_field(ui, b, 66.0);
                         widgets::vline(ui, 22.0);
-                        widgets::toggle(ui, &mut b.pressure_size, tl!("Pressure for Size"));
-                        widgets::toggle(ui, &mut b.pressure_opacity, tl!("Pressure for Opacity"));
+                        widgets::toggle(ui, &mut b.pressure_size, tl_id!("ui-pressure-for-size-dc0ad4062f620320"));
+                        widgets::toggle(ui, &mut b.pressure_opacity, tl_id!("ui-pressure-for-opacity-1419a5a294af5dca"));
                     }
                     Tool::MixerBrush => {
                         brush_preset_chip(ui, b, &mut app.ui);
@@ -780,7 +780,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     Tool::RectMarquee | Tool::EllipseMarquee if t.pro => {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         for (i, (icon, tip)) in [
-                            ("square", tl!("New selection").to_string()),
+                            ("square", tl_id!("ui-new-selection-c4b0a8bde20282ed").to_string()),
                             ("plus", crate::i18n::fmt(tl!("Add to selection  ({key})"), &[("key", &crate::shortcuts::pretty("Shift"))])),
                             ("minus", crate::i18n::fmt(tl!("Subtract from selection  ({key})"), &[("key", &crate::shortcuts::pretty("Alt"))])),
                             (
@@ -798,16 +798,16 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         ui.spacing_mut().item_spacing.x = 8.0;
                         widgets::vline(ui, 22.0);
                         let o = &mut app.ui.tool_options;
-                        opt_label(ui, tl!("Feather"));
+                        opt_label(ui, tl_id!("ui-feather-2e85a6a1b4fad6f6"));
                         widgets::value_field(ui, &mut o.feather, 0.0..=1000.0, "px", 62.0);
                         // Photoshop greys Anti-alias for the Rectangular Marquee (its edges are always hard).
-                        ui.add_enabled_ui(app.ui.tool == Tool::EllipseMarquee, |ui| widgets::checkbox(ui, &mut o.anti_alias, tl!("Anti-alias")));
+                        ui.add_enabled_ui(app.ui.tool == Tool::EllipseMarquee, |ui| widgets::checkbox(ui, &mut o.anti_alias, tl_id!("ui-anti-alias-b3b588f74fa6d366")));
                         widgets::vline(ui, 22.0);
-                        opt_label(ui, tl!("Style"));
+                        opt_label(ui, tl_id!("ui-style-16b6e977baee2fa0"));
                         let styles = [
-                            ("normal".to_string(), tl!("Normal")),
-                            ("fixedRatio".to_string(), tl!("Fixed Ratio")),
-                            ("fixedSize".to_string(), tl!("Fixed Size")),
+                            ("normal".to_string(), tl_id!("ui-normal-63acd193c4316f68")),
+                            ("fixedRatio".to_string(), tl_id!("ui-fixed-ratio-336b1393c344f288")),
+                            ("fixedSize".to_string(), tl_id!("ui-fixed-size-5659f2e446e849d0")),
                         ];
                         if widgets::dropdown(ui, "marquee-style", &mut o.marquee_style, &styles, 96.0) {
                             (o.marquee_width, o.marquee_height) = if o.marquee_style == "fixedSize" { (64.0, 64.0) } else { (1.0, 1.0) };
@@ -815,25 +815,25 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         let fixed = o.marquee_style != "normal";
                         let (unit, range) = if o.marquee_style == "fixedSize" { ("px", 1.0..=300_000.0) } else { ("", 0.001..=999.0) };
                         ui.add_enabled_ui(fixed, |ui| {
-                            opt_label(ui, tl!("Width"));
+                            opt_label(ui, tl_id!("ui-width-8a3f14717826d8d1"));
                             widgets::value_field(ui, &mut o.marquee_width, range.clone(), unit, 62.0);
-                            if icons::button(ui, "arrow-left-right", 22.0, false, tl!("Swaps height and width")).clicked() {
+                            if icons::button(ui, "arrow-left-right", 22.0, false, tl_id!("ui-swaps-height-and-width-1311adeefea08931")).clicked() {
                                 std::mem::swap(&mut o.marquee_width, &mut o.marquee_height);
                             }
-                            opt_label(ui, tl!("Height"));
+                            opt_label(ui, tl_id!("ui-height-82338e1bfdd91f20"));
                             widgets::value_field(ui, &mut o.marquee_height, range, unit, 62.0);
                         });
                         widgets::vline(ui, 22.0);
-                        if widgets::secondary_button(ui, tl!("Select and Mask…"), 0.0).clicked() {
+                        if widgets::secondary_button(ui, tl_id!("ui-select-and-mask-1cb641c106af13d2"), 0.0).clicked() {
                             let _ = crate::menus::invoke(app, ui.ctx(), "select.selectAndMask", json!({}));
                         }
                     }
                     Tool::Lasso | Tool::PolygonLasso | Tool::MagneticLasso if t.pro => {
                         selection_mode_buttons(app, ui);
                         widgets::vline(ui, 22.0);
-                        opt_label(ui, tl!("Feather"));
+                        opt_label(ui, tl_id!("ui-feather-2e85a6a1b4fad6f6"));
                         widgets::value_field(ui, &mut app.ui.tool_options.feather, 0.0..=1000.0, "px", 62.0);
-                        widgets::checkbox(ui, &mut app.ui.tool_options.anti_alias, tl!("Anti-alias"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.anti_alias, tl_id!("ui-anti-alias-b3b588f74fa6d366"));
                         widgets::vline(ui, 22.0);
                         if app.ui.tool == Tool::MagneticLasso {
                             let o = &mut app.ui.tool_options;
@@ -878,32 +878,32 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     Tool::MagicWand => {
                         selection_mode_buttons(app, ui);
                         widgets::vline(ui, 22.0);
-                        opt_label(ui, tl!("Tolerance"));
+                        opt_label(ui, tl_id!("ui-tolerance-618678642eb8bb3e"));
                         widgets::value_field(ui, &mut app.ui.tool_options.tolerance, 0.0..=255.0, "", 58.0);
-                        widgets::checkbox(ui, &mut app.ui.tool_options.anti_alias, tl!("Anti-alias"));
-                        widgets::checkbox(ui, &mut app.ui.tool_options.contiguous, tl!("Contiguous"));
-                        widgets::checkbox(ui, &mut app.ui.tool_options.sample_all_layers, tl!("Sample All Layers"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.anti_alias, tl_id!("ui-anti-alias-b3b588f74fa6d366"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.contiguous, tl_id!("ui-contiguous-0db31a8029e64f7f"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.sample_all_layers, tl_id!("ui-sample-all-layers-fd67756ff1544318"));
                         widgets::vline(ui, 22.0);
-                        if widgets::secondary_button(ui, tl!("Select Subject"), 0.0).clicked() {
+                        if widgets::secondary_button(ui, tl_id!("ui-select-subject-1dd3504bf72b6c67"), 0.0).clicked() {
                             let _ = app.run("select.subject", json!({}));
                         }
-                        if widgets::secondary_button(ui, tl!("Select and Mask…"), 0.0).clicked() {
+                        if widgets::secondary_button(ui, tl_id!("ui-select-and-mask-1cb641c106af13d2"), 0.0).clicked() {
                             let _ = crate::menus::invoke(app, ui.ctx(), "select.selectAndMask", json!({}));
                         }
                     }
                     Tool::PaintBucket if t.pro => {
-                        opt_label(ui, tl!("Fill"));
+                        opt_label(ui, tl_id!("ui-fill-9a017e8f907356c6"));
                         let mut src = u8::from(app.ui.tool_options.bucket_fill_pattern);
-                        if widgets::dropdown(ui, "bucket-src", &mut src, &[(0u8, tl!("Foreground")), (1, tl!("Pattern"))], 100.0) {
+                        if widgets::dropdown(ui, "bucket-src", &mut src, &[(0u8, tl_id!("ui-foreground-fff61f5769e5eef6")), (1, tl_id!("ui-pattern-a83ea4fbb23afb1f"))], 100.0) {
                             app.ui.tool_options.bucket_fill_pattern = src == 1;
                         }
-                        opt_label(ui, tl!("Opacity"));
+                        opt_label(ui, tl_id!("ui-opacity-5acd4a937a68dd2c"));
                         widgets::value_field(ui, &mut app.ui.tool_options.fill_opacity, 1.0..=100.0, "%", 62.0);
-                        opt_label(ui, tl!("Tolerance"));
+                        opt_label(ui, tl_id!("ui-tolerance-618678642eb8bb3e"));
                         widgets::value_field(ui, &mut app.ui.tool_options.tolerance, 0.0..=255.0, "", 58.0);
-                        widgets::checkbox(ui, &mut app.ui.tool_options.anti_alias, tl!("Anti-alias"));
-                        widgets::checkbox(ui, &mut app.ui.tool_options.contiguous, tl!("Contiguous"));
-                        widgets::checkbox(ui, &mut app.ui.tool_options.sample_all_layers, tl!("All Layers"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.anti_alias, tl_id!("ui-anti-alias-b3b588f74fa6d366"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.contiguous, tl_id!("ui-contiguous-0db31a8029e64f7f"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.sample_all_layers, tl_id!("ui-all-layers-bf480d822a927800"));
                     }
                     Tool::Gradient if t.pro => {
                         // Live "Gradient" (a Gradient Fill layer) or "Classic gradient" (pixels).
@@ -916,11 +916,11 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         let before = app.ui.tool_options.clone();
                         for (style, icon, tip) in [
-                            ("linear", "blend", tl!("Linear Gradient")),
-                            ("radial", "circle", tl!("Radial Gradient")),
-                            ("angle", "rotate-cw", tl!("Angle Gradient")),
-                            ("reflected", "arrow-left-right", tl!("Reflected Gradient")),
-                            ("diamond", "diamond", tl!("Diamond Gradient")),
+                            ("linear", "blend", tl_id!("ui-linear-gradient-338cbad54132fd92")),
+                            ("radial", "circle", tl_id!("ui-radial-gradient-7567608180aa2bb4")),
+                            ("angle", "rotate-cw", tl_id!("ui-angle-gradient-a076cc5dd1828536")),
+                            ("reflected", "arrow-left-right", tl_id!("ui-reflected-gradient-6c5e3c479dbe643b")),
+                            ("diamond", "diamond", tl_id!("ui-diamond-gradient-bd1721ae5b6bae3b")),
                         ] {
                             if icons::button(ui, icon, 24.0, app.ui.tool_options.gradient_style == style, tip).clicked() {
                                 app.ui.tool_options.gradient_style = style.into();
@@ -933,8 +933,8 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         widgets::dropdown(ui, "gradient-blend-mode", &mut app.ui.tool_options.gradient_blend_mode, &opts, 96.0);
                         opt_label(ui, tl!("Opacity"));
                         widgets::value_field(ui, &mut app.ui.tool_options.fill_opacity, 1.0..=100.0, "%", 62.0);
-                        widgets::checkbox(ui, &mut app.ui.tool_options.gradient_reverse, tl!("Reverse"));
-                        widgets::checkbox(ui, &mut app.ui.tool_options.gradient_dither, tl!("Dither"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.gradient_reverse, tl_id!("ui-reverse-ca95c3c55e05662b"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.gradient_dither, tl_id!("ui-dither-7b21c9863aa04d13"));
                         // Live mode: the options also change a selected gradient fill layer.
                         crate::gradient_ui::options_changed(app, &before);
                     }
@@ -945,7 +945,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         // Custom ratio fields (Photoshop shows the preset's numbers here).
                         let (mut rw, mut rh) = crate::chrome_ui::crop_ratio(&o.crop_ratio, 0.0, 0.0).map_or((0.0, 0.0), |(w, h)| (w as f32, h as f32));
                         let cw = widgets::value_field(ui, &mut rw, 0.0..=99_999.0, "", 54.0).changed();
-                        let swap = icons::button(ui, "arrow-left-right", 22.0, false, tl!("Swaps height and width")).clicked();
+                        let swap = icons::button(ui, "arrow-left-right", 22.0, false, tl_id!("ui-swaps-height-and-width-1311adeefea08931")).clicked();
                         let ch = widgets::value_field(ui, &mut rh, 0.0..=99_999.0, "", 54.0).changed();
                         if swap {
                             std::mem::swap(&mut rw, &mut rh);
@@ -954,11 +954,11 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                             o.crop_ratio = format!("{}:{}", widgets::fmt_num(rw as f64), widgets::fmt_num(rh as f64));
                         }
                         widgets::vline(ui, 22.0);
-                        if widgets::secondary_button(ui, tl!("Clear"), 0.0).clicked() {
+                        if widgets::secondary_button(ui, tl_id!("ui-clear-f10f4b1b4d6dc250"), 0.0).clicked() {
                             o.crop_ratio.clear();
                         }
-                        let _ = icons::button(ui, "grid-3x3", 24.0, true, tl!("Overlay: Rule of Thirds"));
-                        widgets::checkbox(ui, &mut o.crop_delete, tl!("Delete Cropped Pixels"));
+                        let _ = icons::button(ui, "grid-3x3", 24.0, true, tl_id!("ui-overlay-rule-of-thirds-f359ab2ded516918"));
+                        widgets::checkbox(ui, &mut o.crop_delete, tl_id!("ui-delete-cropped-pixels-0d87be0d9eb46134"));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if icons::button(
                                 ui,
@@ -971,7 +971,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                             {
                                 crate::canvas::commit_crop(app);
                             }
-                            if icons::button(ui, "ban", 26.0, false, tl!("Cancel current crop operation  (Esc)")).clicked() {
+                            if icons::button(ui, "ban", 26.0, false, tl_id!("ui-cancel-current-crop-operation-esc-64acb78407270459")).clicked() {
                                 app.ui.crop_rect = None;
                             }
                         });
@@ -980,22 +980,22 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     Tool::Type | Tool::VerticalType => crate::type_tool::options_bar(app, ui),
                     Tool::Move if t.pro => {
                         let o = &mut app.ui.tool_options;
-                        widgets::checkbox(ui, &mut o.move_auto_select, tl!("Auto-Select:"));
+                        widgets::checkbox(ui, &mut o.move_auto_select, tl_id!("ui-auto-select-cca09c0e4bd20fdb"));
                         widgets::dropdown(
                             ui,
                             "move-target",
                             &mut o.move_target,
-                            &[("layer".to_string(), tl!("Layer")), ("group".to_string(), tl!("Group"))],
+                            &[("layer".to_string(), tl_id!("ui-layer-6e58524791aa8870")), ("group".to_string(), tl_id!("ui-group-6208d6be485ccb06"))],
                             76.0,
                         );
                         widgets::vline(ui, 22.0);
-                        widgets::checkbox(ui, &mut o.move_show_transform, tl!("Show Transform Controls"));
+                        widgets::checkbox(ui, &mut o.move_show_transform, tl_id!("ui-show-transform-controls-82d860e45090ae14"));
                         widgets::vline(ui, 22.0);
                         ui.spacing_mut().item_spacing.x = 0.0;
                         for (icon, tip, cmd) in [
-                            ("panels-top-left", tl!("Align left edges"), "layer.align.leftEdges"),
-                            ("app-window", tl!("Align horizontal centers"), "layer.align.horizontalCenters"),
-                            ("panel-right", tl!("Align right edges"), "layer.align.rightEdges"),
+                            ("panels-top-left", tl_id!("ui-align-left-edges-bf8d67cbc0005643"), "layer.align.leftEdges"),
+                            ("app-window", tl_id!("ui-align-horizontal-centers-b59418644d7b5402"), "layer.align.horizontalCenters"),
+                            ("panel-right", tl_id!("ui-align-right-edges-9115675396aa8fd8"), "layer.align.rightEdges"),
                         ] {
                             let on = app.session.is_enabled(cmd);
                             if ui.add_enabled_ui(on, |ui| icons::button(ui, icon, 24.0, false, tip)).inner.clicked() {
@@ -1003,7 +1003,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                             }
                         }
                         ui.add_space(6.0);
-                        let more = icons::button(ui, "ellipsis", 24.0, false, tl!("Align and distribute"));
+                        let more = icons::button(ui, "ellipsis", 24.0, false, tl_id!("ui-align-and-distribute-2fcd60949c7e135c"));
                         egui::Popup::menu(&more).show(|ui| {
                             ui.set_min_width(200.0);
                             let mut section = |ui: &mut egui::Ui, title: &str, prefix: &str| {
@@ -1015,9 +1015,9 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                                     }
                                 }
                             };
-                            section(ui, tl!("Align"), "layer.align.");
+                            section(ui, tl_id!("ui-align-307736ed010955a4"), "layer.align.");
                             ui.separator();
-                            section(ui, tl!("Distribute"), "layer.distribute.");
+                            section(ui, tl_id!("ui-distribute-02fde1a3b3be0e84"), "layer.distribute.");
                         });
                     }
                     Tool::RectMarquee | Tool::EllipseMarquee => hint(
@@ -1042,7 +1042,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         ),
                     ),
                     Tool::Zoom => {
-                        widgets::checkbox(ui, &mut app.ui.tool_options.zoom_scrubby, tl!("Scrubby Zoom"));
+                        widgets::checkbox(ui, &mut app.ui.tool_options.zoom_scrubby, tl_id!("ui-scrubby-zoom-be94ebd193e23a8a"));
                         hint(
                             ui,
                             &crate::i18n::fmt(
@@ -1050,7 +1050,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                                 &[("key", &crate::shortcuts::pretty("Alt"))],
                             ),
                         );
-                        if widgets::secondary_button(ui, tl!("Fit Screen"), 0.0).clicked()
+                        if widgets::secondary_button(ui, tl_id!("ui-fit-screen-43eef5ff790d232e"), 0.0).clicked()
                             && let Some(i) = app.session.active_index()
                         {
                             app.ui.views[i].fit_pending = true;
@@ -1207,7 +1207,7 @@ pub fn status_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     widgets::vline(ui, 16.0);
                     label(ui, &crate::i18n::trn(crate::i18n::current(), layers as u64, "{n} layer", "{n} layers"));
                 } else {
-                    label(ui, tl!("No document"));
+                    label(ui, tl_id!("ui-no-document-6ab533559b7cf7fd"));
                 }
                 if !app.ui.status.is_empty() {
                     widgets::vline(ui, 16.0);
@@ -1217,7 +1217,7 @@ pub fn status_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if app.session.active().is_some()
                         && !t.pro
-                        && widgets::secondary_button(ui, tl!("Fit"), 0.0).clicked()
+                        && widgets::secondary_button(ui, tl_id!("ui-fit-ed694a7e452fc686"), 0.0).clicked()
                         && let Some(i) = app.session.active_index()
                     {
                         app.ui.views[i].fit_pending = true;
@@ -1249,11 +1249,11 @@ pub fn right_dock(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             ui.spacing_mut().item_spacing.y = 4.0;
             use crate::dock::Group;
             let entries: [(&str, &str, Group); 5] = [
-                ("sliders-horizontal", tl!("Properties"), Group::Properties),
-                ("navigation", tl!("Navigator"), Group::Navigator),
-                ("palette", tl!("Color & Swatches"), Group::Color),
-                ("layers", tl!("Layers"), Group::Layers),
-                ("clock", tl!("History"), Group::History),
+                ("sliders-horizontal", tl_id!("ui-properties-3ab113a0301f1b96"), Group::Properties),
+                ("navigation", tl_id!("ui-navigator-b8ea9a061d794748"), Group::Navigator),
+                ("palette", tl_id!("ui-color-swatches-ac06e00181a24994"), Group::Color),
+                ("layers", tl_id!("ui-layers-2a9bd29c84c51d19"), Group::Layers),
+                ("clock", tl_id!("ui-history-bdf6cf5fc8a783a1"), Group::History),
             ];
             for (icon, name, g) in entries {
                 // Studio floats Properties outside the dock.
@@ -1342,7 +1342,7 @@ fn dock_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, group: crate::dock::Gro
 fn info_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else {
-        empty(ui, tl!("No document"));
+        empty(ui, tl_id!("ui-no-document-6ab533559b7cf7fd"));
         return;
     };
     let (rev, size) = (st.revision, st.doc.size);
@@ -1410,7 +1410,7 @@ fn info_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 fn navigator(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(idx) = app.session.active_index() else {
-        empty(ui, tl!("No document"));
+        empty(ui, tl_id!("ui-no-document-6ab533559b7cf7fd"));
         return;
     };
     let ctx = ui.ctx().clone();
@@ -1443,7 +1443,7 @@ fn navigator(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.painter().rect_stroke(vr, 2.0, Stroke::new(1.5, Color32::from_rgb(255, 84, 84)), StrokeKind::Middle);
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        label(ui, tl!("Zoom"));
+        label(ui, tl_id!("ui-zoom-e5becce8b6372d80"));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             for (lbl, z) in [("200%", 2.0), ("100%", 1.0)] {
                 if widgets::pill_tab(ui, lbl, (v.zoom - z).abs() < 1e-3).clicked() {
@@ -1451,7 +1451,7 @@ fn navigator(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     app.ui.views[idx].fit_pending = false;
                 }
             }
-            if widgets::pill_tab(ui, tl!("Fit"), false).clicked() {
+            if widgets::pill_tab(ui, tl_id!("ui-fit-ed694a7e452fc686"), false).clicked() {
                 app.ui.views[idx].fit_pending = true;
             }
         });
@@ -1555,7 +1555,7 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // A new active layer opens its parent groups and is scrolled into view (#152).
     let reveal = crate::layer_reveal::track(app, ui.ctx());
     let Some(st) = app.session.active() else {
-        empty(ui, tl!("No document"));
+        empty(ui, tl_id!("ui-no-document-6ab533559b7cf7fd"));
         return;
     };
     let doc = st.doc.clone();
@@ -1573,7 +1573,13 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             ui.painter().rect_filled(r, t.radius_sm, t.field);
             ui.painter().rect_stroke(r, t.radius_sm, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
             icons::paint(ui, Rect::from_center_size(r.left_center() + vec2(11.0, 0.0), vec2(14.0, 14.0)), "search", 11.0, t.text_faint);
-            ui.painter().text(r.left_center() + vec2(22.0, 0.0), Align2::LEFT_CENTER, tl!("Kind"), egui::FontId::proportional(11.5), t.text_dim);
+            ui.painter().text(
+                r.left_center() + vec2(22.0, 0.0),
+                Align2::LEFT_CENTER,
+                tl_id!("ui-kind-8a583c65ea499095"),
+                egui::FontId::proportional(11.5),
+                t.text_dim,
+            );
             ui.add_space(4.0);
             for (kind, icon, tip) in [
                 ("pixel", "image", tl!("Filter for pixel layers")),
@@ -1625,8 +1631,8 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         // Docks zero the item spacing: keep the Opacity and Fill fields apart (#155).
         ui.add_space((theme::ROW_GAP - ui.spacing().item_spacing.y).max(0.0));
         ui.horizontal(|ui| {
-            let lock_label = if t.pro { tl!("Lock:") } else { tl!("Lock") };
-            let fill_label = if t.pro { tl!("Fill:") } else { tl!("Fill") };
+            let lock_label = if t.pro { tl_id!("ui-lock-6cefb43affebd8e6") } else { tl_id!("ui-lock-3868ab5ee29314b8") };
+            let fill_label = if t.pro { tl_id!("ui-fill-23e109f273fcce34") } else { tl_id!("ui-fill-9a017e8f907356c6") };
             // In a narrow panel with long translated labels, drop the "Lock:" text (the icons keep
             // their tooltips) rather than let the Fill label run over the lock icons.
             let gap = ui.spacing().item_spacing.x;
@@ -1639,11 +1645,11 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 let lk = l.locks;
                 for (key, icon, tip, on) in [
-                    ("transparency", "grid-3x3", tl!("Lock transparent pixels"), lk.transparency),
-                    ("pixels", "brush", tl!("Lock image pixels"), lk.pixels),
-                    ("position", "move", tl!("Lock position"), lk.position),
-                    ("artboard", "scan", tl!("Prevent auto-nesting in and out of Artboards and Frames"), lk.artboard),
-                    ("all", "lock", tl!("Lock all"), lk.all),
+                    ("transparency", "grid-3x3", tl_id!("ui-lock-transparent-pixels-3711c22c2e7610cb"), lk.transparency),
+                    ("pixels", "brush", tl_id!("ui-lock-image-pixels-553d71a83d7ce972"), lk.pixels),
+                    ("position", "move", tl_id!("ui-lock-position-d46fbf94de0db11b"), lk.position),
+                    ("artboard", "scan", tl_id!("ui-prevent-auto-nesting-in-and-out-of-artbo-6e413012244001b3"), lk.artboard),
+                    ("all", "lock", tl_id!("ui-lock-all-8a9d3c40141f890b"), lk.all),
                 ] {
                     if icons::button(ui, icon, 20.0, on, tip).clicked() {
                         actions.push(("layer.setProps".into(), json!({"layer": l.id.0, "locks": { key: !on }})));
@@ -1652,7 +1658,7 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             }
             if !t.pro {
                 let locked = l.locks.transparency || l.locks.position || l.locks.all;
-                if icons::button(ui, if locked { "lock" } else { "lock-open" }, 22.0, locked, tl!("Lock layer")).clicked() {
+                if icons::button(ui, if locked { "lock" } else { "lock-open" }, 22.0, locked, tl_id!("ui-lock-layer-89d5bfae04caa8bd")).clicked() {
                     actions.push(simple_lock_toggle(bg, l));
                 }
             }
@@ -1776,11 +1782,11 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     }
                 }
                 ui.separator();
-                if ui.button(tl!("Solid Color…")).clicked() {
+                if ui.button(tl_id!("ui-solid-color-89cc3a91fad7e467")).clicked() {
                     actions.push(("layer.newFillLayer.solidColor".into(), json!({})));
                     ui.close();
                 }
-                if ui.button(tl!("Gradient…")).clicked() {
+                if ui.button(tl_id!("ui-gradient-2c1439766080a2dd")).clicked() {
                     actions.push(("layer.newFillLayer.gradient".into(), json!({})));
                     ui.close();
                 }
@@ -1797,10 +1803,10 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 let alt = ui.input(|i| i.modifiers.alt);
                 actions.push((crate::layer_menu_ui::add_mask_command(doc.selection.is_some(), alt).into(), json!({})));
             }
-            let fx = fx_button(ui, 26.0, tl!("Add a layer style"));
+            let fx = fx_button(ui, 26.0, tl_id!("ui-add-a-layer-style-b914a2094abf44cd"));
             egui::Popup::menu(&fx).show(|ui| {
                 ui.set_min_width(180.0);
-                if ui.button(tl!("Blending Options…")).clicked() {
+                if ui.button(tl_id!("ui-blending-options-d6dcf4c4308fb5dc")).clicked() {
                     crate::layer_style::open(app, None);
                     ui.close();
                 }
@@ -1814,7 +1820,7 @@ fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             });
             // Photoshop's footer starts with Link Layers (enabled with two or more layers selected).
             let can_link = app.session.is_enabled("layer.linkLayers");
-            if ui.add_enabled_ui(can_link, |ui| icons::button(ui, "link", 26.0, false, tl!("Link layers"))).inner.clicked() {
+            if ui.add_enabled_ui(can_link, |ui| icons::button(ui, "link", 26.0, false, tl_id!("ui-link-layers-b3ca5a7fc8a1cb73"))).inner.clicked() {
                 actions.push(("layer.linkLayers".into(), json!({})));
             }
         });
@@ -2212,7 +2218,7 @@ fn channels(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 fn history(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else {
-        empty(ui, tl!("No document"));
+        empty(ui, tl_id!("ui-no-document-6ab533559b7cf7fd"));
         return;
     };
     let doc = st.doc.clone();
@@ -2273,9 +2279,9 @@ fn history(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let _ = icons::button(ui, "trash", 24.0, false, tl!("Delete current state"));
-                let _ = icons::button(ui, "scan", 24.0, false, tl!("Create new snapshot"));
-                let _ = icons::button(ui, "file-plus", 24.0, false, tl!("Create new document from current state"));
+                let _ = icons::button(ui, "trash", 24.0, false, tl_id!("ui-delete-current-state-c41ce9df8de24134"));
+                let _ = icons::button(ui, "scan", 24.0, false, tl_id!("ui-create-new-snapshot-249a9cbbc6a87cc3"));
+                let _ = icons::button(ui, "file-plus", 24.0, false, tl_id!("ui-create-new-document-from-current-state-8dc2fc4035bfc4ea"));
             });
         });
     }
@@ -2326,9 +2332,9 @@ pub fn properties_window(app: &mut PhotocraftApp, ctx: &egui::Context) {
         frame.show(ui, |ui| {
             ui.set_width(width - 28.0);
             let title = ui.horizontal(|ui| {
-                ui.label(RichText::new(tl!("Properties")).font(theme::semibold(13.5)).color(t.text));
+                ui.label(RichText::new(tl_id!("ui-properties-3ab113a0301f1b96")).font(theme::semibold(13.5)).color(t.text));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if icons::button(ui, "minus", 22.0, false, tl!("Hide Properties")).clicked() {
+                    if icons::button(ui, "minus", 22.0, false, tl_id!("ui-hide-properties-4fa61e83445a32b4")).clicked() {
                         app.ui.panels.properties = false;
                     }
                 });
@@ -2389,11 +2395,11 @@ fn adjustment_controls(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: LayerId, 
     if let Some(l) = layer {
         ui.horizontal(|ui| {
             let mut vis = l.visible;
-            if widgets::toggle(ui, &mut vis, tl!("Adjustment visible")).changed() {
+            if widgets::toggle(ui, &mut vis, tl_id!("ui-adjustment-visible-117568739b34362e")).changed() {
                 let _ = app.run("layer.setProps", json!({"layer": id.0, "visible": vis}));
             }
             let mut clip = l.clipped;
-            if widgets::toggle(ui, &mut clip, tl!("Clip to layer below")).changed() {
+            if widgets::toggle(ui, &mut clip, tl_id!("ui-clip-to-layer-below-65fed993dff9f7da")).changed() {
                 let _ = app.run("layer.setProps", json!({"layer": id.0, "clipped": clip}));
             }
         });
@@ -2424,12 +2430,12 @@ fn layer_controls(app: &mut PhotocraftApp, ui: &mut egui::Ui, layer: &Layer) {
         ui.add_space(6.0);
     }
     let mut o = layer.opacity * 100.0;
-    let r = widgets::slider_row(ui, tl!("Opacity"), &mut o, 0.0..=100.0, "%", None);
+    let r = widgets::slider_row(ui, tl_id!("ui-opacity-5acd4a937a68dd2c"), &mut o, 0.0..=100.0, "%", None);
     if r.drag_stopped() || (r.changed() && !r.dragged()) {
         let _ = app.run("layer.setProps", json!({"layer": layer.id.0, "opacity": o / 100.0}));
     }
     let mut f = layer.fill_opacity * 100.0;
-    let r = widgets::slider_row(ui, tl!("Fill"), &mut f, 0.0..=100.0, "%", None);
+    let r = widgets::slider_row(ui, tl_id!("ui-fill-9a017e8f907356c6"), &mut f, 0.0..=100.0, "%", None);
     if r.drag_stopped() || (r.changed() && !r.dragged()) {
         let _ = app.run("layer.setProps", json!({"layer": layer.id.0, "fill": f / 100.0}));
     }
@@ -2439,7 +2445,7 @@ fn layer_controls(app: &mut PhotocraftApp, ui: &mut egui::Ui, layer: &Layer) {
 fn properties_body(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.active() else {
-        empty(ui, tl!("No properties"));
+        empty(ui, tl_id!("ui-no-properties-5e9fb4da28181271"));
         return;
     };
     // Photoshop shows the Document properties when nothing or the Background layer is selected.
@@ -2484,25 +2490,25 @@ fn properties_body(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 /// Photoshop's Adjustments panel: a grid of one-click adjustment layers.
 fn adjustments_grid(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
-    ui.label(RichText::new(tl!("Add an adjustment")).color(t.text_dim));
+    ui.label(RichText::new(tl_id!("ui-add-an-adjustment-61e7fb5dee73eca8")).color(t.text_dim));
     ui.add_space(4.0);
     let items: [(&str, &str, &str); 16] = [
-        ("brightnessContrast", "sun", tl!("Brightness/Contrast")),
-        ("levels", "gauge", tl!("Levels")),
-        ("curves", "pen-tool", tl!("Curves")),
-        ("exposure", "scan", tl!("Exposure")),
-        ("vibrance", "sparkles", tl!("Vibrance")),
-        ("hueSaturation", "droplet", tl!("Hue/Saturation")),
-        ("colorBalance", "blend", tl!("Color Balance")),
-        ("blackWhite", "contrast", tl!("Black & White")),
-        ("photoFilter", "circle-dot", tl!("Photo Filter")),
-        ("channelMixer", "sliders-horizontal", tl!("Channel Mixer")),
-        ("invert", "squares-subtract", tl!("Invert")),
-        ("posterize", "layers", tl!("Posterize")),
-        ("threshold", "square", tl!("Threshold")),
-        ("gradientMap", "palette", tl!("Gradient Map")),
-        ("selectiveColor", "swatch-book", tl!("Selective Color")),
-        ("colorLookup", "grid-3x3", tl!("Color Lookup")),
+        ("brightnessContrast", "sun", tl_id!("ui-brightness-contrast-50f7ae49abfa659f")),
+        ("levels", "gauge", tl_id!("ui-levels-f1706a8deada7dc4")),
+        ("curves", "pen-tool", tl_id!("ui-curves-155231e8ddfaeaa7")),
+        ("exposure", "scan", tl_id!("ui-exposure-d0f5f8782db60d4e")),
+        ("vibrance", "sparkles", tl_id!("ui-vibrance-3ff37da63ba389ed")),
+        ("hueSaturation", "droplet", tl_id!("ui-hue-saturation-4c48b2cfc6116e48")),
+        ("colorBalance", "blend", tl_id!("ui-color-balance-681e6e384510defe")),
+        ("blackWhite", "contrast", tl_id!("ui-black-white-3409104e8d55c181")),
+        ("photoFilter", "circle-dot", tl_id!("ui-photo-filter-3fd968954f793735")),
+        ("channelMixer", "sliders-horizontal", tl_id!("ui-channel-mixer-ec1e80a50b4c99b3")),
+        ("invert", "squares-subtract", tl_id!("ui-invert-34256b9eee178d2f")),
+        ("posterize", "layers", tl_id!("ui-posterize-6fdb8544cd0f5f14")),
+        ("threshold", "square", tl_id!("ui-threshold-cbe176ee3b22601a")),
+        ("gradientMap", "palette", tl_id!("ui-gradient-map-0151ddf238d67c55")),
+        ("selectiveColor", "swatch-book", tl_id!("ui-selective-color-68c4fe8ed142ab94")),
+        ("colorLookup", "grid-3x3", tl_id!("ui-color-lookup-2d35ea7e8955c46c")),
     ];
     let mut run = None;
     ui.horizontal_wrapped(|ui| {
@@ -2957,7 +2963,7 @@ fn effect_rows(app: &mut PhotocraftApp, ui: &mut egui::Ui, l: &Layer, depth: usi
 fn selection_mode_buttons(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.spacing_mut().item_spacing.x = 2.0;
     for (i, (icon, tip)) in [
-        ("square", tl!("New selection").to_string()),
+        ("square", tl_id!("ui-new-selection-c4b0a8bde20282ed").to_string()),
         ("plus", crate::i18n::fmt(tl!("Add to selection  ({key})"), &[("key", &crate::shortcuts::pretty("Shift"))])),
         ("minus", crate::i18n::fmt(tl!("Subtract from selection  ({key})"), &[("key", &crate::shortcuts::pretty("Alt"))])),
         ("squares-subtract", crate::i18n::fmt(tl!("Intersect with selection  ({key})"), &[("key", &crate::shortcuts::pretty("Shift+Alt"))])),

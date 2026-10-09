@@ -315,8 +315,8 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let cmd = crate::shortcuts::pretty("Cmd");
         let shift = crate::shortcuts::pretty("Shift");
         let alt = crate::shortcuts::pretty("Alt");
-        crate::analysis_ui::panel_window(app, ctx, "modifier-keys", tl!("Modifier Keys"), vec2(-420.0, 80.0), 150.0, |ui| {
-            close = crate::analysis_ui::title_row(ui, tl!("Modifier Keys"));
+        crate::analysis_ui::panel_window(app, ctx, "modifier-keys", tl_id!("ui-modifier-keys-c54f0038266c25de"), vec2(-420.0, 80.0), 150.0, |ui| {
+            close = crate::analysis_ui::title_row(ui, tl_id!("ui-modifier-keys-c54f0038266c25de"));
             ui.horizontal(|ui| {
                 for (label, on) in [(&*shift, &mut s.sticky_shift), (&*cmd, &mut s.sticky_command), (&*alt, &mut s.sticky_alt)] {
                     if ui.add(egui::Button::new(RichText::new(label).size(14.0)).selected(*on).min_size(vec2(40.0, 30.0))).clicked() {
@@ -377,16 +377,12 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
             };
             match kind.as_str() {
                 "newWorkspace" => {
-                    text(ui, &mut f, "name", tl!("Name:"));
-                    ui.label(RichText::new(tl!("Capture")).color(t.text_dim).size(11.0));
-                    ui.label(
-                        RichText::new(tl!("Panel locations are saved in the workspace. Keyboard shortcuts, menus and toolbar are optional."))
-                            .color(t.text_faint)
-                            .size(10.5),
-                    );
-                    check(ui, &mut f, "keyboardShortcuts", tl!("Keyboard Shortcuts"));
-                    check(ui, &mut f, "menus", tl!("Menus"));
-                    check(ui, &mut f, "toolbar", tl!("Toolbar"));
+                    text(ui, &mut f, "name", tl_id!("ui-name-48d899dd92fbc032"));
+                    ui.label(RichText::new(tl_id!("ui-capture-19dc15290645ad77")).color(t.text_dim).size(11.0));
+                    ui.label(RichText::new(tl_id!("ui-panel-locations-are-saved-in-the-workspa-3ccb69a1d6f80267")).color(t.text_faint).size(10.5));
+                    check(ui, &mut f, "keyboardShortcuts", tl_id!("ui-keyboard-shortcuts-146b196f5c9d2fd5"));
+                    check(ui, &mut f, "menus", tl_id!("ui-menus-d3594737e87b2859"));
+                    check(ui, &mut f, "toolbar", tl_id!("ui-toolbar-dafc8fbbdcafabd6"));
                 }
                 "deleteWorkspace" => {
                     let mut cur = f.get("name").and_then(Value::as_str).unwrap_or("").to_string();
@@ -396,8 +392,8 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
                     }
                 }
                 "customPar" => {
-                    text(ui, &mut f, "name", tl!("Name:"));
-                    number(ui, &mut f, "ratio", tl!("Factor:"), 0.1..=10.0);
+                    text(ui, &mut f, "name", tl_id!("ui-name-48d899dd92fbc032"));
+                    number(ui, &mut f, "ratio", tl_id!("ui-factor-cedf668562a18afe"), 0.1..=10.0);
                 }
                 "preview32" => {
                     let mut m = f.get("method").and_then(Value::as_str).unwrap_or("exposureGamma").to_string();
@@ -405,14 +401,17 @@ fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
                         ui,
                         "p32-method",
                         &mut m,
-                        &[("exposureGamma".to_string(), tl!("Exposure and Gamma")), ("highlightCompression".to_string(), tl!("Highlight Compression"))],
+                        &[
+                            ("exposureGamma".to_string(), tl_id!("ui-exposure-and-gamma-8513b6bf2c39f106")),
+                            ("highlightCompression".to_string(), tl_id!("ui-highlight-compression-7a99c194b61b9297")),
+                        ],
                         180.0,
                     ) {
                         f.insert("method".into(), json!(m));
                     }
                     ui.add_enabled_ui(m == "exposureGamma", |ui| {
-                        number(ui, &mut f, "exposure", tl!("Exposure:"), -20.0..=20.0);
-                        number(ui, &mut f, "gamma", tl!("Gamma:"), 0.1..=9.99);
+                        number(ui, &mut f, "exposure", tl_id!("ui-exposure-c802a835ac58dc1c"), -20.0..=20.0);
+                        number(ui, &mut f, "gamma", tl_id!("ui-gamma-d18e65af0ca8587a"), 0.1..=9.99);
                     });
                 }
                 _ => {

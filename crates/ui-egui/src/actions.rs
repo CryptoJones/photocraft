@@ -397,7 +397,7 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         if rec.on_hover_text(tl!("Begin recording")).clicked() && !recording_now {
             begin_recording(app, true);
         }
-        if crate::icons::button(ui, "play", 24.0, false, tl!("Play selection")).clicked() {
+        if crate::icons::button(ui, "play", 24.0, false, tl_id!("ui-play-selection-6a52db78e1d82e33")).clicked() {
             play_idx = app.ui.actions.selected;
         }
         if crate::icons::button(ui, "plus", 24.0, false, tl!("Create new action")).clicked() && !recording_now {

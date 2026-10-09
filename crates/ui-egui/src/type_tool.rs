@@ -901,7 +901,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         Some((f, s, z, _)) => (f.clone(), if s.is_empty() { "Regular".into() } else { s.clone() }, *z),
         None => (o.type_font.clone(), o.type_style.clone(), o.type_size),
     };
-    if crate::icons::button(ui, "text-cursor", 24.0, false, tl!("Toggle text orientation")).clicked()
+    if crate::icons::button(ui, "text-cursor", 24.0, false, tl_id!("ui-toggle-text-orientation-f1fd9bed8d5a9e60")).clicked()
         && let Some((layer, _)) = target(app)
     {
         let to = if is_vertical(app, LayerId(layer)) { "horizontal" } else { "vertical" };
@@ -932,11 +932,11 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     }
     let mut aa = o.type_aa.clone();
     let aa_opts = [
-        ("none".to_string(), tl!("None")),
-        ("sharp".to_string(), tl!("Sharp")),
-        ("crisp".to_string(), tl!("Crisp")),
-        ("strong".to_string(), tl!("Strong")),
-        ("smooth".to_string(), tl!("Smooth")),
+        ("none".to_string(), tl_id!("ui-none-3390d94d34f06461")),
+        ("sharp".to_string(), tl_id!("ui-sharp-849e72541304ff85")),
+        ("crisp".to_string(), tl_id!("ui-crisp-fcfd2c868a0710b2")),
+        ("strong".to_string(), tl_id!("ui-strong-396432372f98c4e8")),
+        ("smooth".to_string(), tl_id!("ui-smooth-d811d5325411dbad")),
     ];
     if crate::widgets::dropdown(ui, "type-aa", &mut aa, &aa_opts, 80.0) {
         app.ui.tool_options.type_aa = aa.clone();
@@ -950,9 +950,11 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     }
     crate::widgets::vline(ui, 22.0);
     ui.spacing_mut().item_spacing.x = 2.0;
-    for (align, icon, tip) in
-        [("left", "align-left", tl!("Left align text")), ("center", "align-center", tl!("Center text")), ("right", "align-right", tl!("Right align text"))]
-    {
+    for (align, icon, tip) in [
+        ("left", "align-left", tl_id!("ui-left-align-text-0df0e4d2554078aa")),
+        ("center", "align-center", tl_id!("ui-center-text-f0eccbfa620172e5")),
+        ("right", "align-right", tl_id!("ui-right-align-text-ca6de91da1e00ddd")),
+    ] {
         if crate::icons::button(ui, icon, 24.0, o.type_align == align, tip).clicked() {
             app.ui.tool_options.type_align = align.into();
             apply(app, ui.ctx(), json!({"align": align}));
@@ -992,7 +994,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             {
                 commit(app);
             }
-            if crate::icons::button(ui, "ban", 24.0, false, tl!("Cancel any current edits (Esc)")).clicked() {
+            if crate::icons::button(ui, "ban", 24.0, false, tl_id!("ui-cancel-any-current-edits-esc-42764b5a3f8f4c7f")).clicked() {
                 cancel(app);
             }
         });
@@ -1186,7 +1188,7 @@ pub fn character_panel(app: &mut PhotocraftApp, ui: &mut egui::Ui, paragraph: bo
     if styles_at(app).is_none() {
         let t = crate::theme::Tokens::get(ui.ctx());
         ui.add_space(8.0);
-        ui.label(egui::RichText::new(tl!("Select a type layer to edit its character and paragraph settings.")).color(t.text_dim));
+        ui.label(egui::RichText::new(tl_id!("ui-select-a-type-layer-to-edit-its-characte-1ed64ac8e6a5d2b5")).color(t.text_dim));
         return;
     }
     type_sections(app, ui, !paragraph, paragraph);
@@ -1207,7 +1209,7 @@ fn type_sections(app: &mut PhotocraftApp, ui: &mut egui::Ui, character: bool, pa
         });
         ui.add_space(ROW_GAP);
     };
-    if character && section(ui, "character", tl!("Character")) {
+    if character && section(ui, "character", tl_id!("ui-character-daf6ff1f129c38e6")) {
         let full = ui.available_width();
         let w = field_width(full, 2, LABEL_W);
         let mut fam = c.font_family.clone();
@@ -1215,7 +1217,11 @@ fn type_sections(app: &mut PhotocraftApp, ui: &mut egui::Ui, character: bool, pa
             if crate::font_menu::picker(app, ui, "type-font-panel", &mut fam, full) {
                 app.ui.tool_options.type_font = fam.clone();
                 let st = styles(&fam);
-                let style = if st.contains(&c.font_style) { c.font_style.clone() } else { st.first().cloned().unwrap_or_else(|| tl!("Regular").into()) };
+                let style = if st.contains(&c.font_style) {
+                    c.font_style.clone()
+                } else {
+                    st.first().cloned().unwrap_or_else(|| tl_id!("ui-regular-919edb23c43e78f9").into())
+                };
                 apply(app, ui.ctx(), json!({"font": fam, "fontStyle": style}));
             }
         });
@@ -1266,7 +1272,7 @@ fn type_sections(app: &mut PhotocraftApp, ui: &mut egui::Ui, character: bool, pa
             // Colour: label + a swatch filling the rest of the second column.
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = LABEL_GAP;
-                let g = ui.painter().layout_no_wrap(tl!("Color").into(), egui::FontId::proportional(12.0), t.text_dim);
+                let g = ui.painter().layout_no_wrap(tl_id!("ui-color-8beb3c381fb2f1ce").into(), egui::FontId::proportional(12.0), t.text_dim);
                 let lw = g.size().x.max(LABEL_W);
                 let (lr, _) = ui.allocate_exact_size(egui::vec2(lw, 22.0), egui::Sense::hover());
                 ui.painter().galley(egui::pos2(lr.left(), lr.center().y - g.size().y / 2.0), g, t.text_dim);
@@ -1290,13 +1296,13 @@ fn type_sections(app: &mut PhotocraftApp, ui: &mut egui::Ui, character: bool, pa
             ("T", "Faux Italic", c.faux_italic, json!({"fauxItalic": !c.faux_italic})),
             (
                 "TT",
-                tl!("All Caps"),
+                tl_id!("ui-all-caps-bd95058f066e700f"),
                 caps == photocraft_doc::text::Caps::AllCaps,
                 json!({"caps": if caps == photocraft_doc::text::Caps::AllCaps { "normal" } else { "allCaps" }}),
             ),
             (
                 "Tᴛ",
-                tl!("Small Caps"),
+                tl_id!("ui-small-caps-e2a4fac8716024bb"),
                 caps == photocraft_doc::text::Caps::SmallCaps,
                 json!({"caps": if caps == photocraft_doc::text::Caps::SmallCaps { "normal" } else { "smallCaps" }}),
             ),
@@ -1336,18 +1342,18 @@ fn type_sections(app: &mut PhotocraftApp, ui: &mut egui::Ui, character: bool, pa
         });
         ui.add_space(ROW_GAP);
     }
-    if paragraph && section(ui, "paragraph", tl!("Paragraph")) {
+    if paragraph && section(ui, "paragraph", tl_id!("ui-paragraph-75aa03fb46bd062b")) {
         use photocraft_doc::text::TextAlign as A;
         let full = ui.available_width();
         let w = field_width(full, 2, LABEL_W);
         let items = [
-            ("left", tl!("Left align text"), A::Left),
-            ("center", tl!("Center text"), A::Center),
-            ("right", tl!("Right align text"), A::Right),
-            ("justifyLeft", tl!("Justify last left"), A::JustifyLeft),
-            ("justifyCenter", tl!("Justify last centered"), A::JustifyCenter),
-            ("justifyRight", tl!("Justify last right"), A::JustifyRight),
-            ("justifyAll", tl!("Justify all"), A::JustifyAll),
+            ("left", tl_id!("ui-left-align-text-0df0e4d2554078aa"), A::Left),
+            ("center", tl_id!("ui-center-text-f0eccbfa620172e5"), A::Center),
+            ("right", tl_id!("ui-right-align-text-ca6de91da1e00ddd"), A::Right),
+            ("justifyLeft", tl_id!("ui-justify-last-left-0cffece5699d8554"), A::JustifyLeft),
+            ("justifyCenter", tl_id!("ui-justify-last-centered-38080554c3dde379"), A::JustifyCenter),
+            ("justifyRight", tl_id!("ui-justify-last-right-4fea918f158a6ee1"), A::JustifyRight),
+            ("justifyAll", tl_id!("ui-justify-all-45cf937a0f9b93b6"), A::JustifyAll),
         ];
         let cw = cell_width(full, items.len());
         ui.horizontal(|ui| {
@@ -1420,7 +1426,7 @@ fn type_options(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             let t = crate::theme::Tokens::get(ui.ctx());
             let (r, resp) = ui.allocate_exact_size(egui::vec2(crate::props_layout::LABEL_W, 22.0), egui::Sense::hover());
             ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, "aa", crate::theme::semibold(11.0), t.text_dim);
-            resp.on_hover_text(tl!("Anti-aliasing method"));
+            resp.on_hover_text(tl_id!("ui-anti-aliasing-method-ff59a9ad31503333"));
             let mut cur = aa.clone();
             let opts: Vec<(String, &str)> = ["none", "sharp", "crisp", "strong", "smooth", "windowsLcd", "windows"]
                 .into_iter()

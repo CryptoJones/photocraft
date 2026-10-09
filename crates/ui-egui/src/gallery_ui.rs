@@ -383,10 +383,10 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         painter.rect_filled(zoom_bar, 0.0, t.dock);
         let mut zb = ui.new_child(egui::UiBuilder::new().max_rect(zoom_bar.shrink2(vec2(10.0, 3.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
         let steps = [0.0f32, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0];
-        if crate::icons::button(&mut zb, "minus", 22.0, false, tl!("Zoom out")).clicked() {
+        if crate::icons::button(&mut zb, "minus", 22.0, false, tl_id!("ui-zoom-out-cc64f05e5e298084")).clicked() {
             d.zoom = steps.iter().rev().copied().find(|&s| s > 0.0 && s < d.zoom.max(0.0) - 1e-3).unwrap_or(0.0);
         }
-        if crate::icons::button(&mut zb, "plus", 22.0, false, tl!("Zoom in")).clicked() {
+        if crate::icons::button(&mut zb, "plus", 22.0, false, tl_id!("ui-zoom-in-eefb1cbd2084c65f")).clicked() {
             d.zoom = steps.iter().copied().find(|&s| s > d.zoom + 1e-3).unwrap_or(4.0);
         }
         let mut z = d.zoom;
@@ -521,7 +521,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 }
             }
             if e.filter.uses_colours() {
-                ui.label(egui::RichText::new(tl!("Uses the foreground and background colours.")).color(t.text_faint).size(11.0));
+                ui.label(egui::RichText::new(tl_id!("ui-uses-the-foreground-and-background-colou-0293c569938dd825")).color(t.text_faint).size(11.0));
             }
         });
         // Effect layers (top of the list = applied last).
@@ -559,19 +559,19 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             }
         });
         lu.horizontal(|ui| {
-            if crate::icons::button(ui, "chevron-up", 24.0, false, tl!("Move effect layer up")).clicked() {
+            if crate::icons::button(ui, "chevron-up", 24.0, false, tl_id!("ui-move-effect-layer-up-cfd1d9fbe7ccf3d7")).clicked() {
                 let s = d.selected;
                 d.move_to(s, (s + 1).min(d.effects.len() - 1));
             }
-            if crate::icons::button(ui, "chevron-down", 24.0, false, tl!("Move effect layer down")).clicked() {
+            if crate::icons::button(ui, "chevron-down", 24.0, false, tl_id!("ui-move-effect-layer-down-535b52fa05db4392")).clicked() {
                 let s = d.selected;
                 d.move_to(s, s.saturating_sub(1));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if crate::icons::button(ui, "trash", 24.0, false, tl!("Delete effect layer")).clicked() {
+                if crate::icons::button(ui, "trash", 24.0, false, tl_id!("ui-delete-effect-layer-de823016e551d4c8")).clicked() {
                     d.delete();
                 }
-                if crate::icons::button(ui, "file-plus", 24.0, false, tl!("New effect layer")).clicked() {
+                if crate::icons::button(ui, "file-plus", 24.0, false, tl_id!("ui-new-effect-layer-73b4e2246b94c621")).clicked() {
                     d.add();
                 }
             });

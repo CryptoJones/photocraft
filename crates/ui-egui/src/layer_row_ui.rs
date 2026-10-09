@@ -159,7 +159,7 @@ pub fn indicators(
                     let all = ui.input(|i| i.modifiers.alt);
                     actions.push(("layer.setEffectsExpanded".into(), json!({"layer": l.id.0, "expanded": !fx_open, "all": all})));
                 }
-                let (verb, name) = (if fx_open { tl!("Collapse") } else { tl!("Expand") }, l.name.clone());
+                let (verb, name) = (if fx_open { tl_id!("ui-collapse-dc79b0fb5845fbd4") } else { tl_id!("ui-expand-ef9dbb8db9bca87f") }, l.name.clone());
                 let tip = if fx_open {
                     tl!("Hide the layer's effects  ({key}-click: all layers)")
                 } else {
@@ -196,7 +196,7 @@ pub fn label(painter: &Painter, x: f32, cy: f32, right: f32, text: &str, font: F
 /// The Layers panel's own items at the top of its panel menu (Photoshop's flyout).
 pub fn panel_menu(app: &mut crate::PhotocraftApp, ui: &mut egui::Ui) {
     let can = app.session.is_enabled("layer.setExpanded");
-    if ui.add_enabled(can, egui::Button::new(tl!("Collapse All Groups"))).clicked() {
+    if ui.add_enabled(can, egui::Button::new(tl_id!("ui-collapse-all-groups-5ff301b203e9556d"))).clicked() {
         if let Err(e) = app.run("layer.setExpanded", json!({"all": true, "expanded": false})) {
             app.ui.status = e;
             app.ui.status_error = true;

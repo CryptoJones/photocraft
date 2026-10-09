@@ -981,9 +981,9 @@ fn draw(app: &mut PhotocraftApp, ctx: &egui::Context, own_window: bool) {
                     "cr-vig-style",
                     &mut style,
                     &[
-                        ("highlightPriority".to_string(), tl!("Highlight Priority")),
-                        ("colorPriority".to_string(), tl!("Color Priority")),
-                        ("paintOverlay".to_string(), tl!("Paint Overlay")),
+                        ("highlightPriority".to_string(), tl_id!("ui-highlight-priority-d73e0f22b7de97cf")),
+                        ("colorPriority".to_string(), tl_id!("ui-color-priority-138e732eacbefb9e")),
+                        ("paintOverlay".to_string(), tl_id!("ui-paint-overlay-44fd9262c12cc01d")),
                     ],
                     200.0,
                 ) {
@@ -1072,7 +1072,7 @@ fn draw(app: &mut PhotocraftApp, ctx: &egui::Context, own_window: bool) {
             action = Some(if role == widgets::ButtonRole::Default { "ok" } else { "cancel" });
         }
         fu.add_space(12.0);
-        widgets::checkbox(&mut fu, &mut d.show_before, tl!("Before (Y)"));
+        widgets::checkbox(&mut fu, &mut d.show_before, tl_id!("ui-before-y-f33f79b67fe3dd26"));
         fu.label(egui::RichText::new(format!("{:.0} ms", d.render_ms)).color(t.text_faint));
     });
     super::camera_raw_scope_ui::persist(app, ctx);

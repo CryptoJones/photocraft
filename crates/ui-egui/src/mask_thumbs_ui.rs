@@ -118,7 +118,11 @@ pub fn paint(
             paint_chain(painter, chain.center(), t.text_faint);
         }
         let (verb, what, name) = (if linked { "Unlink" } else { "Link" }, kind.label(), l.name.clone());
-        let resp = resp.on_hover_text(if linked { tl!("Unlink the mask from the layer") } else { tl!("Link the mask to the layer") });
+        let resp = resp.on_hover_text(if linked {
+            tl_id!("ui-unlink-the-mask-from-the-layer-ffb14013e1646965")
+        } else {
+            tl_id!("ui-link-the-mask-to-the-layer-1516cf2a2b9b0dd7")
+        });
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{verb} {what} {name}")));
         if resp.clicked() {
             out.clicked = true;

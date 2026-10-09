@@ -179,7 +179,7 @@ fn preset_interactions(ui: &egui::Ui, resp: &egui::Response, r: egui::Rect, p: &
             acts.push(Action::BeginRename(Renaming { group: false, name: p.name.clone(), text: String::new() }));
             ui.close();
         }
-        if ui.button(tl!("Delete Brush")).clicked() {
+        if ui.button(tl_id!("ui-delete-brush-c1bc99e90e0b31e4")).clicked() {
             acts.push(Action::Delete(p.name.clone()));
             ui.close();
         }
@@ -303,7 +303,7 @@ fn group_header(ui: &mut egui::Ui, label: &str, key: &str, open: bool, count: us
             acts.push(Action::BeginRename(Renaming { group: true, name: key.to_string(), text: String::new() }));
             ui.close();
         }
-        if ui.button(tl!("Delete Group")).clicked() {
+        if ui.button(tl_id!("ui-delete-group-69cde2a4a0964f07")).clicked() {
             acts.push(Action::DeleteGroup(key.to_string()));
             ui.close();
         }
@@ -427,7 +427,7 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let before = app.session.tools.brush.clone();
     let mut b = before.clone();
     ui.horizontal(|ui| {
-        ui.label(RichText::new(tl!("Size")).color(t.text_dim));
+        ui.label(RichText::new(tl_id!("ui-size-16021b2387e0b7d6")).color(t.text_dim));
         let mut lv = b.size.max(1.0).ln();
         ui.add_sized(vec2(WIDTH - 140.0, 18.0), |ui: &mut egui::Ui| {
             let r = widgets::slider(ui, &mut lv, 0.0..=MAX_BRUSH_SIZE.ln(), None);
@@ -446,7 +446,9 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         icons::paint(ui, egui::Rect::from_min_size(ui.cursor().min + vec2(0.0, 3.0), vec2(16.0, 16.0)), "search", 14.0, t.text_faint);
         ui.add_space(20.0);
-        ui.add(egui::TextEdit::singleline(&mut app.ui.brushes_panel.filter).hint_text(tl!("Search Brushes")).desired_width(WIDTH - 120.0));
+        ui.add(
+            egui::TextEdit::singleline(&mut app.ui.brushes_panel.filter).hint_text(tl_id!("ui-search-brushes-8fd13968d7499fbb")).desired_width(WIDTH - 120.0),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let view = &mut app.ui.brushes_panel.view;
             if icons::button(ui, "grid-2x2", 24.0, *view == BrushesView::Grid, "Grid view").clicked() {

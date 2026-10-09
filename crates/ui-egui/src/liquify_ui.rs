@@ -418,7 +418,7 @@ pub fn control(app: &mut PhotocraftApp, ui: &Value) -> Result<Value, String> {
         cancel(app);
         return Ok(json!({"cancelled": true}));
     }
-    let d = app.distort.liquify.as_mut().ok_or(tl!("Liquify is not open"))?;
+    let d = app.distort.liquify.as_mut().ok_or(tl_id!("ui-liquify-is-not-open-b8565caf511d21fb"))?;
     d.opts.apply(ui)?;
     let num = |k: &str| ui.get(k).and_then(Value::as_f64).map(|v| v as f32);
     let flag = |k: &str| ui.get(k).and_then(Value::as_bool);
@@ -638,47 +638,53 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let mut props = ui.new_child(egui::UiBuilder::new().max_rect(right.shrink2(vec2(14.0, 12.0))));
         egui::ScrollArea::vertical().id_salt("liquify-props").show(&mut props, |ui| {
             ui.spacing_mut().item_spacing.y = 6.0;
-            widgets::section_label(ui, tl!("Brush Tool Options"));
-            widgets::slider_row(ui, tl!("Size"), &mut d.opts.size, 1.0..=3000.0, "", None);
-            widgets::slider_row(ui, tl!("Density"), &mut d.opts.density, 0.0..=100.0, "", None);
-            widgets::slider_row(ui, tl!("Pressure"), &mut d.opts.pressure, 0.0..=100.0, "", None);
-            widgets::slider_row(ui, tl!("Rate"), &mut d.opts.rate, 0.0..=100.0, "", None);
+            widgets::section_label(ui, tl_id!("ui-brush-tool-options-316bdd41efd13f97"));
+            widgets::slider_row(ui, tl_id!("ui-size-16021b2387e0b7d6"), &mut d.opts.size, 1.0..=3000.0, "", None);
+            widgets::slider_row(ui, tl_id!("ui-density-58e9ad6f5cc15351"), &mut d.opts.density, 0.0..=100.0, "", None);
+            widgets::slider_row(ui, tl_id!("ui-pressure-7f42623812e7e85c"), &mut d.opts.pressure, 0.0..=100.0, "", None);
+            widgets::slider_row(ui, tl_id!("ui-rate-dee0772f5b5c9e85"), &mut d.opts.rate, 0.0..=100.0, "", None);
             widgets::hairline(ui);
-            widgets::section_label(ui, tl!("Brush Reconstruct Options"));
-            widgets::slider_row(ui, tl!("Amount"), &mut d.opts.reconstruct_amount, 0.0..=100.0, "%", None);
+            widgets::section_label(ui, tl_id!("ui-brush-reconstruct-options-2e49e2eb51fa8a45"));
+            widgets::slider_row(ui, tl_id!("ui-amount-06ce2e017c351f2b"), &mut d.opts.reconstruct_amount, 0.0..=100.0, "%", None);
             ui.horizontal(|ui| {
-                if widgets::secondary_button(ui, tl!("Reconstruct"), 110.0).clicked() {
+                if widgets::secondary_button(ui, tl_id!("ui-reconstruct-d91663d6260a48cf"), 110.0).clicked() {
                     let a = f64::from(d.opts.reconstruct_amount);
                     d.global(LiquifyTool::ReconstructAll, Some(a));
                 }
-                if widgets::secondary_button(ui, tl!("Restore All"), 110.0).clicked() {
+                if widgets::secondary_button(ui, tl_id!("ui-restore-all-7fef7bbac375a484"), 110.0).clicked() {
                     d.restore_all();
                 }
             });
             widgets::hairline(ui);
-            widgets::section_label(ui, tl!("Mask Options"));
+            widgets::section_label(ui, tl_id!("ui-mask-options-d67b749bafdb3ad9"));
             ui.horizontal(|ui| {
-                if widgets::secondary_button(ui, tl!("None"), 70.0).clicked() {
+                if widgets::secondary_button(ui, tl_id!("ui-none-3390d94d34f06461"), 70.0).clicked() {
                     d.global(LiquifyTool::ThawAll, None);
                 }
-                if widgets::secondary_button(ui, tl!("Mask All"), 80.0).clicked() {
+                if widgets::secondary_button(ui, tl_id!("ui-mask-all-b8fc917d872b5258"), 80.0).clicked() {
                     d.global(LiquifyTool::FreezeAll, None);
                 }
-                if widgets::secondary_button(ui, tl!("Invert All"), 80.0).clicked() {
+                if widgets::secondary_button(ui, tl_id!("ui-invert-all-d10555982517602c"), 80.0).clicked() {
                     d.global(LiquifyTool::InvertFreeze, None);
                 }
             });
             widgets::hairline(ui);
-            widgets::section_label(ui, tl!("View Options"));
-            widgets::checkbox(ui, &mut d.opts.show_mesh, tl!("Show Mesh"));
+            widgets::section_label(ui, tl_id!("ui-view-options-b92a3701e2c81690"));
+            widgets::checkbox(ui, &mut d.opts.show_mesh, tl_id!("ui-show-mesh-dc6ea432f1ec671f"));
             ui.horizontal(|ui| {
-                ui.label(tl!("Mesh Size"));
-                widgets::dropdown(ui, "liquify-mesh-size", &mut d.opts.mesh_size, &[(0, tl!("Small")), (1, tl!("Medium")), (2, tl!("Large"))], 110.0);
+                ui.label(tl_id!("ui-mesh-size-5aeb101180aa1b77"));
+                widgets::dropdown(
+                    ui,
+                    "liquify-mesh-size",
+                    &mut d.opts.mesh_size,
+                    &[(0, tl_id!("ui-small-bea7703c415c702e")), (1, tl_id!("ui-medium-b9135835a9a61dd0")), (2, tl_id!("ui-large-ba7eea47bc48e27a"))],
+                    110.0,
+                );
             });
-            widgets::checkbox(ui, &mut d.opts.show_mask, tl!("Show Mask"));
-            widgets::checkbox(ui, &mut d.opts.show_backdrop, tl!("Show Backdrop"));
+            widgets::checkbox(ui, &mut d.opts.show_mask, tl_id!("ui-show-mask-bb7af932dfbcbc66"));
+            widgets::checkbox(ui, &mut d.opts.show_backdrop, tl_id!("ui-show-backdrop-d7680325662d652c"));
             if d.opts.show_backdrop {
-                widgets::slider_row(ui, tl!("Opacity"), &mut d.opts.backdrop_opacity, 0.0..=100.0, "", None);
+                widgets::slider_row(ui, tl_id!("ui-opacity-5acd4a937a68dd2c"), &mut d.opts.backdrop_opacity, 0.0..=100.0, "", None);
             }
             widgets::hairline(ui);
             ui.label(

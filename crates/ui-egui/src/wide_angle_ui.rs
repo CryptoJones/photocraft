@@ -202,7 +202,7 @@ pub fn menu(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: &Val
 }
 
 fn commit(app: &mut PhotocraftApp) -> Result<Value, String> {
-    let d = app.wide_angle.take().ok_or(tl!("Adaptive Wide Angle isn't open"))?;
+    let d = app.wide_angle.take().ok_or(tl_id!("ui-adaptive-wide-angle-isn-t-open-60102c691e7eab26"))?;
     app.run("filter.adaptiveWideAngle", d.command_params())
 }
 
@@ -320,17 +320,17 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let mut props = ui.new_child(egui::UiBuilder::new().max_rect(right.shrink2(vec2(14.0, 10.0))));
         egui::ScrollArea::vertical().id_salt("awa-props").show(&mut props, |ui| {
             ui.spacing_mut().item_spacing.y = 5.0;
-            widgets::section_label(ui, tl!("Correction"));
+            widgets::section_label(ui, tl_id!("ui-correction-07f5c477ab7d049f"));
             let mut model = d.params.model;
             if widgets::dropdown(
                 ui,
                 "awa-model",
                 &mut model,
                 &[
-                    (WideModel::Auto, tl!("Auto")),
-                    (WideModel::Fisheye, tl!("Fisheye")),
-                    (WideModel::Perspective, tl!("Perspective")),
-                    (WideModel::FullSpherical, tl!("Full Spherical")),
+                    (WideModel::Auto, tl_id!("ui-auto-a5b5d9b93340662c")),
+                    (WideModel::Fisheye, tl_id!("ui-fisheye-0b302677014d302a")),
+                    (WideModel::Perspective, tl_id!("ui-perspective-0a30ad7edaa79a03")),
+                    (WideModel::FullSpherical, tl_id!("ui-full-spherical-d0d53c42c57786a9")),
                 ],
                 200.0,
             ) {
@@ -338,17 +338,17 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 d.dirty = true;
             }
             let mut v = d.params.scale as f32;
-            if widgets::slider_row(ui, tl!("Scale"), &mut v, 50.0..=150.0, "%", None).changed() {
+            if widgets::slider_row(ui, tl_id!("ui-scale-5453592a5af14dff"), &mut v, 50.0..=150.0, "%", None).changed() {
                 d.params.scale = v as f64;
                 d.dirty = true;
             }
             let mut v = d.params.focal_length as f32;
-            if widgets::slider_row(ui, tl!("Focal Length"), &mut v, 0.0..=200.0, "mm", None).changed() {
+            if widgets::slider_row(ui, tl_id!("ui-focal-length-d4e7f1c845b67134"), &mut v, 0.0..=200.0, "mm", None).changed() {
                 d.params.focal_length = v as f64;
                 d.dirty = true;
             }
             let mut v = d.params.crop_factor as f32;
-            if widgets::slider_row(ui, tl!("Crop Factor"), &mut v, 0.1..=10.0, "", None).changed() {
+            if widgets::slider_row(ui, tl_id!("ui-crop-factor-c5c586df19f3e660"), &mut v, 0.1..=10.0, "", None).changed() {
                 d.params.crop_factor = v as f64;
                 d.dirty = true;
             }
@@ -363,13 +363,17 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                         ui,
                         &format!("awa-o-{i}"),
                         &mut o,
-                        &[(Orientation::Free, tl!("Free")), (Orientation::Horizontal, tl!("Horizontal")), (Orientation::Vertical, tl!("Vertical"))],
+                        &[
+                            (Orientation::Free, tl_id!("ui-free-4a56168f62d774bd")),
+                            (Orientation::Horizontal, tl_id!("ui-horizontal-23633a874fd0702f")),
+                            (Orientation::Vertical, tl_id!("ui-vertical-49275d44526d4801")),
+                        ],
                         120.0,
                     ) {
                         c.orientation = o;
                         d.dirty = true;
                     }
-                    if widgets::secondary_button(ui, tl!("Delete"), 60.0).clicked() {
+                    if widgets::secondary_button(ui, tl_id!("ui-delete-af3196ad6b727abc"), 60.0).clicked() {
                         remove = Some(i);
                     }
                 });
@@ -379,12 +383,8 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 d.dirty = true;
             }
             widgets::hairline(ui);
-            widgets::checkbox(ui, &mut d.preview, tl!("Preview"));
-            ui.label(
-                egui::RichText::new(tl!("Drag on the image to add a constraint; Shift for horizontal/vertical; right-click to delete."))
-                    .color(t.text_faint)
-                    .size(11.0),
-            );
+            widgets::checkbox(ui, &mut d.preview, tl_id!("ui-preview-a43d5afecaa46489"));
+            ui.label(egui::RichText::new(tl_id!("ui-drag-on-the-image-to-add-a-constraint-sh-dbf9e334d0848ca1")).color(t.text_faint).size(11.0));
         });
         let foot = ERect::from_min_max(pos2(full.left(), full.bottom() - footer_h), full.max);
         painter.rect_filled(foot, 0.0, t.dock);

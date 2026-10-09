@@ -45,6 +45,8 @@ commands:
                   print the workspace version, or set it (Cargo.toml + Cargo.lock)
   ico <out.ico> <in.png>...
                   pack square PNGs (<= 256 px) into a Windows .ico (see packaging/icons.sh)
+  i18n [audit | check | migrate --dry-run|--apply | generate [--force]]
+                  inspect Rust UI calls, check Fluent catalogs, or run one-time TSV conversion
 ";
 
 fn main() -> ExitCode {
@@ -63,6 +65,7 @@ fn main() -> ExitCode {
         Some("scorecard") => scorecard::run(&root(), &rest),
         Some("version") => version::run(&root(), &rest),
         Some("ico") => ico::run(&rest),
+        Some("i18n") => i18n::run(&root(), &rest),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())

@@ -73,7 +73,7 @@ pub fn intercept(app: &mut PhotocraftApp, id: &str, params: &Value) -> bool {
         // Repeated quit requests (the X pressed again) keep the prompt, and the answers so far.
         Some(open) if open.id == id => {}
         Some(_) => {
-            app.ui.status = tl!("Answer the unsaved-changes prompt first").into();
+            app.ui.status = tl_id!("ui-answer-the-unsaved-changes-prompt-first-d6486f462d80e830").into();
             app.ui.status_error = true;
         }
     }
@@ -190,7 +190,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         } else {
             tl!("Do you want to save the changes you made to “{name}” before closing?")
         };
-        (tl!("Unsaved changes"), crate::i18n::fmt(template, &[("name", &name)]))
+        (tl_id!("ui-unsaved-changes-d532ec89f9f9f566"), crate::i18n::fmt(template, &[("name", &name)]))
     };
     let mac = ctx.os() == egui::os::OperatingSystem::Mac;
     // The answers in the platform's words; `dialog_buttons` puts them in its order. Windows (and

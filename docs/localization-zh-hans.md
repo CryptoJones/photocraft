@@ -33,7 +33,7 @@ language manually there.
 - Shortcut templates retain `{key}` so the shell supplies the correct key for
   the current platform. Layer-count messages use one Chinese plural form.
 
-Keep English source keys, contexts, command IDs, placeholders and escapes intact.
+Keep message IDs, command IDs, variables, and context distinctions intact.
 Retain the trailing `…` on commands that open a dialog. Missing translations use
 the framework's English fallback. User-supplied names and document data are not
 translated. Product names and technology names such as PhotoCraft, ArtCraft,
@@ -41,22 +41,22 @@ OpenType, RGB, CMYK and Lab retain their spelling. Status messages, errors and
 automation output remain English as described in [UI design](ui-design.md#localisation);
 complete catalog coverage does not claim those strings are translated.
 
-## Terminology
+## Regional terminology
 
-| English | Simplified Chinese |
-| --- | --- |
-| Layer / Layer Comp | 图层 / 图层复合 |
-| Mask / Clipping Mask | 蒙版 / 剪贴蒙版 |
-| Selection / Feather | 选区 / 羽化 |
-| Blend Mode / Opacity | 混合模式 / 不透明度 |
-| Adjustment Layer | 调整图层 |
-| Smart Object / Smart Filter | 智能对象 / 智能滤镜 |
-| Canvas / Artboard | 画布 / 画板 |
-| Brush / Stroke | 画笔 / 描边 |
-| Fill / Gradient | 填充 / 渐变 |
-| Path / Rasterize | 路径 / 栅格化 |
-| Preset / Swatch | 预设 / 色板 |
-| Export / Preferences | 导出 / 首选项 |
+| English | Mainland Simplified | Taiwan Traditional |
+| --- | --- | --- |
+| Layer / Layer Comp | 图层 / 图层复合 | 圖層 / 圖層構圖 |
+| Mask / Clipping Mask | 蒙版 / 剪贴蒙版 | 遮色片 / 剪裁遮色片 |
+| Selection / Feather | 选区 / 羽化 | 選取範圍 / 羽化 |
+| Blend Mode / Opacity | 混合模式 / 不透明度 | 混合模式 / 不透明度 |
+| Adjustment Layer | 调整图层 | 調整圖層 |
+| Smart Object / Smart Filter | 智能对象 / 智能滤镜 | 智慧型物件 / 智慧型濾鏡 |
+| Canvas / Artboard | 画布 / 画板 | 畫布 / 工作區域 |
+| Export / Preferences | 导出 / 首选项 | 匯出 / 偏好設定 |
+
+Terminology was cross-checked against public [Mainland selection guidance](https://helpx.adobe.com/cn/photoshop/desktop/make-selections/refine-modify-selections/refine-and-soften-selection-edges.html)
+and [Taiwan layer-mask guidance](https://helpx.adobe.com/tw/photoshop/using/editing-layer-masks.html).
+The PhotoCraft messages themselves are original translations.
 
 ## Validation and maintenance
 

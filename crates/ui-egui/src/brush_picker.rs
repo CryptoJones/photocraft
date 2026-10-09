@@ -128,7 +128,7 @@ pub fn body(ui: &mut egui::Ui, b: &mut BrushSettings, presets: &[BrushPreset], s
     ui.set_width(WIDTH);
     // Size: value field plus a logarithmic slider (small sizes get most of the travel).
     ui.horizontal(|ui| {
-        ui.label(RichText::new(tl!("Size")).color(t.text_dim));
+        ui.label(RichText::new(tl_id!("ui-size-16021b2387e0b7d6")).color(t.text_dim));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let mut size = b.size;
             if widgets::value_field(ui, &mut size, 1.0..=MAX_BRUSH_SIZE, "px", 72.0).changed() {

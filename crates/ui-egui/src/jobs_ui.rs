@@ -285,7 +285,7 @@ pub fn status_progress(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         ui.painter().rect_filled(xr, t.radius_sm, t.hover);
     }
     crate::icons::paint(ui, xr, "x", 11.0, if xresp.hovered() { t.text } else { t.text_dim });
-    let xresp = xresp.on_hover_text(tl!("Cancel (Esc)"));
+    let xresp = xresp.on_hover_text(tl_id!("ui-cancel-esc-6690b4a67d5c2651"));
     ui.label(RichText::new(percent(&j)).color(t.text_dim).size(11.5).monospace());
     let (br, _) = ui.allocate_exact_size(vec2(bar_w, bar_h), Sense::hover());
     bar(ui, br, shown_fraction(&j), &t);
@@ -313,7 +313,7 @@ pub fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
         ui.add_space(4.0);
         crate::widgets::hairline(ui);
         ui.add_space(10.0);
-        let msg = if j.message.is_empty() || j.message == j.label { tl!("Working…").to_string() } else { j.message.clone() };
+        let msg = if j.message.is_empty() || j.message == j.label { tl_id!("ui-working-37c6c1ba9c445816").to_string() } else { j.message.clone() };
         ui.label(RichText::new(msg).color(t.text_dim));
         ui.add_space(8.0);
         let (br, _) = ui.allocate_exact_size(vec2(ui.available_width(), 8.0), Sense::hover());
@@ -327,8 +327,8 @@ pub fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
         });
         ui.add_space(12.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            cancel_it = crate::widgets::secondary_button(ui, tl!("Cancel"), 84.0).clicked();
-            ui.label(RichText::new(tl!("Esc to cancel")).color(t.text_faint).size(11.0));
+            cancel_it = crate::widgets::secondary_button(ui, tl_id!("ui-cancel-f09e4b5c35aa14b9"), 84.0).clicked();
+            ui.label(RichText::new(tl_id!("ui-esc-to-cancel-4917f17b21674f91")).color(t.text_faint).size(11.0));
         });
     });
     // A click on the backdrop doesn't cancel the work; Esc is handled in `tick`.
@@ -357,7 +357,7 @@ pub fn open_card(app: &mut PhotocraftApp, ui: &mut egui::Ui, job: JobId) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(card.shrink(18.0)));
     child.label(RichText::new(crate::i18n::fmt(tl!("Opening {name}"), &[("name", &tab.name)])).font(crate::theme::semibold(14.0)));
     child.add_space(4.0);
-    let msg = if j.message.is_empty() { tl!("Reading…").to_string() } else { format!("{}…", j.message) };
+    let msg = if j.message.is_empty() { tl_id!("ui-reading-91d8a778b90f790b").to_string() } else { format!("{}…", j.message) };
     child.label(RichText::new(msg).color(t.text_dim).size(12.0));
     child.add_space(10.0);
     let (br, _) = child.allocate_exact_size(vec2(child.available_width(), 8.0), Sense::hover());
@@ -367,7 +367,7 @@ pub fn open_card(app: &mut PhotocraftApp, ui: &mut egui::Ui, job: JobId) {
     child.horizontal(|ui| {
         ui.label(RichText::new(percent(&j)).color(t.text_faint).size(11.5));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            cancel_it = crate::widgets::secondary_button(ui, tl!("Cancel"), 76.0).clicked();
+            cancel_it = crate::widgets::secondary_button(ui, tl_id!("ui-cancel-f09e4b5c35aa14b9"), 76.0).clicked();
         });
     });
     if cancel_it {

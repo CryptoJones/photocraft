@@ -67,6 +67,18 @@ impl Sources {
     }
 }
 
+/// Manual UI language selection determines Han glyph forms. English (including an English
+/// fallback) keeps the platform's script preference, which also covers the `auto` setting.
+#[cfg(not(target_arch = "wasm32"))]
+fn selected_ui_locale() -> Option<String> {
+    match crate::i18n::current().code() {
+        "ja" => Some("ja".into()),
+        "zh-hans" => Some("zh-Hans".into()),
+        "zh-hant" => Some("zh-Hant".into()),
+        _ => cjk::ui_locale().map(str::to_string),
+    }
+}
+
 /// The lazy loader's state: which scripts were tried and which files were read.
 pub struct CjkFallback {
     sources: Sources,
@@ -85,9 +97,10 @@ impl CjkFallback {
         Self { sources, defer_after_reset: false, order: None, tried: Vec::new(), last_resort_tried: false, loaded: Vec::new(), registered: Vec::new() }
     }
 
-    /// Script order for the UI locale (resolved on first use, not at startup).
-    pub fn order(&mut self) -> [CjkScript; 4] {
-        *self.order.get_or_insert_with(|| cjk::script_order((self.sources.locale)().as_deref()))
+    /// Script order for the selected UI locale. Re-evaluate after a preference change; fonts
+    /// already registered in egui retain their original family priority.
+    pub fn order(&self) -> [CjkScript; 4] {
+        cjk::script_order((self.sources.locale)().as_deref())
     }
 
     /// Every script and the last-resort fonts have been tried: nothing more to load.
@@ -409,17 +422,43 @@ mod tests {
 
     #[test]
     fn han_follows_locale() {
-        for (loc, first) in [
-            ("ja_JP.UTF-8", CjkScript::Japanese),
-            ("zh-Hans-CN", CjkScript::SimplifiedChinese),
-            ("zh-Hant-TW", CjkScript::TraditionalChinese),
-            ("ko_KR", CjkScript::Korean),
-        ] {
-            let mut fb = CjkFallback::new(Sources { locale: || None, files: |_| vec![], last_resort: Vec::new, embedded: no_embedded });
-            fb.order = Some(cjk::script_order(Some(loc)));
+        type LocaleCase = (fn() -> Option<String>, CjkScript);
+        let cases: [LocaleCase; 4] = [
+            (|| Some("ja_JP.UTF-8".into()), CjkScript::Japanese),
+            (|| Some("zh-Hans-CN".into()), CjkScript::SimplifiedChinese),
+            (|| Some("zh-Hant-TW".into()), CjkScript::TraditionalChinese),
+            (|| Some("ko_KR".into()), CjkScript::Korean),
+        ];
+        for (loc, first) in cases {
+            let mut fb = CjkFallback::new(Sources { locale: loc, files: |_| vec![], last_resort: Vec::new, embedded: no_embedded });
             assert!(fb.next_font(CjkChar::Han).is_none());
-            assert_eq!(fb.tried[0], first, "{loc}");
+            assert_eq!(fb.tried[0], first);
         }
+    }
+
+    #[test]
+    fn selected_ui_language_controls_initial_script_order() {
+        use crate::i18n::{Lang, set_current};
+        for (code, first) in [("ja", CjkScript::Japanese), ("zh-hans", CjkScript::SimplifiedChinese), ("zh-hant", CjkScript::TraditionalChinese)] {
+            let Some(lang) = Lang::from_code(code) else { panic!("{code} is registered") };
+            set_current(lang);
+            let fb = CjkFallback::new(Sources::system());
+            assert_eq!(fb.order()[0], first, "{code}");
+        }
+        set_current(Lang::EN);
+    }
+
+    #[test]
+    fn switching_ui_language_recomputes_script_order() {
+        use crate::i18n::{Lang, set_current};
+        let Some(ja) = Lang::from_code("ja") else { panic!("ja is registered") };
+        let Some(zh) = Lang::from_code("zh-hans") else { panic!("zh-hans is registered") };
+        let fb = CjkFallback::new(Sources::system());
+        set_current(ja);
+        assert_eq!(fb.order()[0], CjkScript::Japanese);
+        set_current(zh);
+        assert_eq!(fb.order()[0], CjkScript::SimplifiedChinese);
+        set_current(Lang::EN);
     }
 
     /// Runs frames showing `text` until fonts settle; returns whether every glyph is covered.

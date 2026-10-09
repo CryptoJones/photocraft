@@ -116,7 +116,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, fields: &mut Map<String,
     ui.set_min_width(420.0);
     // Page switcher.
     ui.horizontal(|ui| {
-        for (id, label) in [("define", tl!("Define")), ("dataSets", tl!("Data Sets"))] {
+        for (id, label) in [("define", tl_id!("ui-define-b1c12701c8f5cbcc")), ("dataSets", tl_id!("ui-data-sets-f7abe7d24d8d8850"))] {
             let sel = page == id;
             if ui.selectable_label(sel, tl!(&label)).clicked() {
                 page = id.to_string();
@@ -126,7 +126,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, fields: &mut Map<String,
     ui.separator();
 
     if layers.is_empty() {
-        ui.weak(tl!("Open a document to define variables."));
+        ui.weak(tl_id!("ui-open-a-document-to-define-variables-52664c82c5fa930a"));
     } else if page == "define" {
         define_page(ui, &t, &layers, &mut state);
     } else {
@@ -155,14 +155,14 @@ fn normalize(state: &Value) -> Value {
 
 fn define_page(ui: &mut egui::Ui, _t: &Tokens, layers: &[(u64, String, bool)], state: &mut Value) {
     let Some(defs) = state.get_mut("defs").and_then(Value::as_array_mut) else { return };
-    ui.label(tl!("Variables bind a layer's visibility, text or pixels to a named data slot."));
+    ui.label(tl_id!("ui-variables-bind-a-layer-s-visibility-text-83d2262d285a558b"));
     ui.add_space(4.0);
     let mut remove = None;
     for (i, d) in defs.iter_mut().enumerate() {
         ui.horizontal(|ui| {
             // name
             let mut name = d.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-            if ui.add(egui::TextEdit::singleline(&mut name).hint_text(tl!("name")).desired_width(110.0)).changed() {
+            if ui.add(egui::TextEdit::singleline(&mut name).hint_text(tl_id!("ui-name-077d2c59054ee61c")).desired_width(110.0)).changed() {
                 d["name"] = json!(name);
             }
             // layer
@@ -184,7 +184,7 @@ fn define_page(ui: &mut egui::Ui, _t: &Tokens, layers: &[(u64, String, bool)], s
                     d["method"] = json!(m);
                 }
             }
-            if ui.button("−").on_hover_text(tl!("Remove variable")).clicked() {
+            if ui.button("−").on_hover_text(tl_id!("ui-remove-variable-b3fcd98c98224981")).clicked() {
                 remove = Some(i);
             }
         });
@@ -193,7 +193,7 @@ fn define_page(ui: &mut egui::Ui, _t: &Tokens, layers: &[(u64, String, bool)], s
         defs.remove(i);
     }
     ui.add_space(4.0);
-    if ui.button(tl!("+ Add variable")).clicked() {
+    if ui.button(tl_id!("ui-add-variable-c4a401c42d0911dd")).clicked() {
         let n = defs.len() + 1;
         defs.push(json!({"name": format!("var{n}"), "layer": layers[0].0, "type": "visibility", "method": "fit", "align": "center", "clip": false}));
     }
@@ -219,7 +219,7 @@ fn data_sets_page(ui: &mut egui::Ui, _t: &Tokens, state: &mut Value, fields: &mu
         })
         .unwrap_or_default();
     if def_meta.is_empty() {
-        ui.weak(tl!("Define at least one variable first."));
+        ui.weak(tl_id!("ui-define-at-least-one-variable-first-9b31bff714cee1e0"));
         return;
     }
     let Some(sets) = state.get_mut("dataSets").and_then(Value::as_array_mut) else { return };
@@ -234,12 +234,12 @@ fn data_sets_page(ui: &mut egui::Ui, _t: &Tokens, state: &mut Value, fields: &mu
         if ui.button("▶").clicked() && cur + 1 < sets.len() {
             cur += 1;
         }
-        if ui.button(tl!("New")).clicked() {
+        if ui.button(tl_id!("ui-new-a846017e1e12163f")).clicked() {
             let n = sets.len() + 1;
             sets.push(json!({"name": format!("Data Set {n}"), "values": []}));
             cur = sets.len() - 1;
         }
-        if !sets.is_empty() && ui.button(tl!("Delete")).clicked() {
+        if !sets.is_empty() && ui.button(tl_id!("ui-delete-af3196ad6b727abc")).clicked() {
             sets.remove(cur);
             cur = cur.saturating_sub(1);
         }
@@ -250,7 +250,7 @@ fn data_sets_page(ui: &mut egui::Ui, _t: &Tokens, state: &mut Value, fields: &mu
         // name
         let mut sname = set.get("name").and_then(Value::as_str).unwrap_or("").to_string();
         ui.horizontal(|ui| {
-            ui.label(tl!("Name:"));
+            ui.label(tl_id!("ui-name-48d899dd92fbc032"));
             if ui.add(egui::TextEdit::singleline(&mut sname).desired_width(200.0)).changed() {
                 set["name"] = json!(sname);
             }
@@ -277,13 +277,13 @@ fn data_sets_page(ui: &mut egui::Ui, _t: &Tokens, state: &mut Value, fields: &mu
                 match vty.as_str() {
                     "visibility" => {
                         let mut on = values[i].get("value").and_then(Value::as_bool).unwrap_or(true);
-                        if ui.checkbox(&mut on, tl!("Visible")).changed() {
+                        if ui.checkbox(&mut on, tl_id!("ui-visible-6c7c9b94e39ddda3")).changed() {
                             values[i]["value"] = json!(on);
                         }
                     }
                     "pixelReplacement" => {
                         let mut p = values[i].get("value").and_then(Value::as_str).unwrap_or("").to_string();
-                        if ui.add(egui::TextEdit::singleline(&mut p).hint_text(tl!("image file path")).desired_width(240.0)).changed() {
+                        if ui.add(egui::TextEdit::singleline(&mut p).hint_text(tl_id!("ui-image-file-path-6bff5018fe884d45")).desired_width(240.0)).changed() {
                             values[i]["value"] = json!(p);
                         }
                     }
@@ -297,7 +297,7 @@ fn data_sets_page(ui: &mut egui::Ui, _t: &Tokens, state: &mut Value, fields: &mu
             });
         }
         ui.add_space(6.0);
-        if crate::widgets::secondary_button(ui, tl!("Apply"), 84.0).clicked() {
+        if crate::widgets::secondary_button(ui, tl_id!("ui-apply-d7323c887b0a2951"), 84.0).clicked() {
             fields.insert("__apply".into(), json!(sname));
         }
     }

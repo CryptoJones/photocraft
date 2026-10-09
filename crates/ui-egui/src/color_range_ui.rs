@@ -88,7 +88,7 @@ pub fn controls(f: &Map<String, Value>) -> Controls {
 /// Open the dialog with Photoshop's defaults (Sampled Colors, Fuzziness 40, the foreground colour
 /// as the sample until the eyedropper picks one).
 pub fn open(app: &mut PhotocraftApp) -> u64 {
-    let label = photocraft_engine::commands::find(COMMAND).map_or(tl!("Color Range…"), |c| c.label);
+    let label = photocraft_engine::commands::find(COMMAND).map_or(tl_id!("ui-color-range-de2ef764aea15ae1"), |c| c.label);
     let mut f = Map::new();
     f.insert("__colorRange".into(), json!(true));
     f.insert("__label".into(), json!(label));
@@ -401,7 +401,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
     let c = controls(f);
     let select = s(f, "select", "sampledColors").to_string();
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(tl!("Select:")).color(t.text_dim));
+        ui.label(egui::RichText::new(tl_id!("ui-select-cc1f45ad0966c3cf")).color(t.text_dim));
         let mut cur: &str = &select;
         if widgets::dropdown(ui, "color-range-select", &mut cur, SELECTS, 170.0) {
             f.insert("select".into(), json!(cur));
@@ -410,7 +410,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
     ui.add_space(4.0);
     ui.add_enabled_ui(c.sampling, |ui| {
         let mut on = flag(f, "localized");
-        if widgets::checkbox(ui, &mut on, tl!("Localized Color Clusters")).changed() {
+        if widgets::checkbox(ui, &mut on, tl_id!("ui-localized-color-clusters-f881bf339dfd0b0e")).changed() {
             f.insert("localized".into(), json!(on));
         }
     });
@@ -418,19 +418,19 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
     ui.add_enabled_ui(c.fuzziness, |ui| {
         if c.tonal {
             let mut v = num(f, "toneFuzziness", 20.0);
-            if widgets::slider_row(ui, tl!("Fuzziness:"), &mut v, 0.0..=100.0, "%", None).changed() {
+            if widgets::slider_row(ui, tl_id!("ui-fuzziness-d61304ecce1c1e20"), &mut v, 0.0..=100.0, "%", None).changed() {
                 f.insert("toneFuzziness".into(), json!(v.round()));
             }
         } else {
             let mut v = num(f, "fuzziness", 40.0);
-            if widgets::slider_row(ui, tl!("Fuzziness:"), &mut v, 0.0..=200.0, "", None).changed() {
+            if widgets::slider_row(ui, tl_id!("ui-fuzziness-d61304ecce1c1e20"), &mut v, 0.0..=200.0, "", None).changed() {
                 f.insert("fuzziness".into(), json!(v.round()));
             }
         }
     });
     if c.range {
         let mut v = num(f, "range", 100.0);
-        if widgets::slider_row(ui, tl!("Range:"), &mut v, 0.0..=100.0, "%", None).changed() {
+        if widgets::slider_row(ui, tl_id!("ui-range-f96c3afe844b376a"), &mut v, 0.0..=100.0, "%", None).changed() {
             f.insert("range".into(), json!(v.round()));
         }
     }
@@ -445,8 +445,8 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             "shadows" => level(ui, "shadowsLevel", "Shadows up to:", 65.0),
             "highlights" => level(ui, "highlightsLevel", "Highlights from:", 190.0),
             _ => {
-                level(ui, "midtonesLow", tl!("Midtones from:"), 105.0);
-                level(ui, "midtonesHigh", tl!("Midtones to:"), 150.0);
+                level(ui, "midtonesLow", tl_id!("ui-midtones-from-1eb33d8eab639272"), 105.0);
+                level(ui, "midtonesHigh", tl_id!("ui-midtones-to-ee62bc614074e1a5"), 150.0);
             }
         }
     }
@@ -489,7 +489,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
         ui.painter().rect_stroke(frame, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
         let label = match app.color_range.as_ref().and_then(|p| p.error.as_deref()) {
             Some(e) => format!("Color Range preview unavailable: {e}"),
-            None => tl!("Color Range preview").to_string(),
+            None => tl_id!("ui-color-range-preview-46de84ea827ee767").to_string(),
         };
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Image, ui.is_enabled(), &label));
         ui.add_space(10.0);
@@ -497,9 +497,11 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             ui.add_enabled_ui(c.sampling, |ui| {
                 let tool = s(f, "__tool", "sample").to_string();
                 ui.horizontal(|ui| {
-                    for (id, badge, label) in
-                        [("sample", "", tl!("Eyedropper")), ("add", "+", tl!("Add to Sample")), ("subtract", "−", tl!("Subtract from Sample"))]
-                    {
+                    for (id, badge, label) in [
+                        ("sample", "", tl_id!("ui-eyedropper-3a95c584b91b510c")),
+                        ("add", "+", tl_id!("ui-add-to-sample-0cd5c503d0859b13")),
+                        ("subtract", "−", tl_id!("ui-subtract-from-sample-d6c228d52d5c99f1")),
+                    ] {
                         if eyedropper(ui, badge, tool == id, label).clicked() {
                             f.insert("__tool".into(), json!(id));
                         }
@@ -507,7 +509,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                 });
                 let (add, sub) = (points(f, "points").len(), points(f, "subtractPoints").len());
                 let what = match (add, sub) {
-                    (0, 0) => tl!("Sample: foreground colour").to_string(),
+                    (0, 0) => tl_id!("ui-sample-foreground-colour-801c387e6c80ec96").to_string(),
                     (a, 0) => crate::i18n::trn(crate::i18n::current(), a as u64, "{n} sample", "{n} samples"),
                     (a, s) => crate::i18n::fmt(
                         tl!("{added}, {removed} subtracted"),
@@ -515,7 +517,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
                     ),
                 };
                 ui.label(egui::RichText::new(what).size(11.0).color(t.text_faint));
-                if add + sub > 0 && widgets::secondary_button(ui, tl!("Clear Samples"), 0.0).clicked() {
+                if add + sub > 0 && widgets::secondary_button(ui, tl_id!("ui-clear-samples-ae8a121d0bc81373"), 0.0).clicked() {
                     set_points(f, "points", &[]);
                     set_points(f, "subtractPoints", &[]);
                     f.insert("__order".into(), json!([]));
@@ -523,7 +525,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             });
             ui.add_space(8.0);
             let mut inv = flag(f, "invert");
-            if widgets::checkbox(ui, &mut inv, tl!("Invert")).changed() {
+            if widgets::checkbox(ui, &mut inv, tl_id!("ui-invert-34256b9eee178d2f")).changed() {
                 f.insert("invert".into(), json!(inv));
             }
         });
@@ -549,7 +551,7 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
         }
     });
     if app.session.active().is_none() {
-        ui.label(egui::RichText::new(tl!("Open a document to select a colour range.")).color(t.text_faint));
+        ui.label(egui::RichText::new(tl_id!("ui-open-a-document-to-select-a-colour-range-450d761e0f76c91c")).color(t.text_faint));
     }
 }
 

@@ -147,7 +147,7 @@ pub fn begin(app: &mut PhotocraftApp, ctx: &egui::Context, command: &str) -> Res
     };
     s.update_grid();
     app.distort.perspective = Some(s);
-    app.ui.status = tl!("Perspective Warp: draw planes along the image's perspective, then switch to Warp").into();
+    app.ui.status = tl_id!("ui-perspective-warp-draw-planes-along-the-i-adf260a4b2dd77a7").into();
     Ok(())
 }
 
@@ -178,7 +178,7 @@ pub fn control(app: &mut PhotocraftApp, ui: &Value) -> Result<Value, String> {
         app.distort.perspective = None;
         return Ok(json!({"cancelled": true}));
     }
-    let s = app.distort.perspective.as_mut().ok_or(tl!("Perspective Warp is not active"))?;
+    let s = app.distort.perspective.as_mut().ok_or(tl_id!("ui-perspective-warp-is-not-active-df1801923cfff97e"))?;
     if let Some(m) = ui.get("mode").and_then(Value::as_str) {
         set_mode(s, if m == "warp" { PerspMode::Warp } else { PerspMode::Layout });
     }
@@ -308,9 +308,9 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     crate::widgets::vline(ui, 22.0);
     if s.mode == PerspMode::Warp {
         for (label, tip, m) in [
-            (tl!("Straighten"), tl!("Automatically straighten near-vertical line segments"), Straighten::Vertical),
-            (tl!("Level"), tl!("Automatically level near-horizontal line segments"), Straighten::Horizontal),
-            (tl!("Both"), tl!("Automatically straighten and level"), Straighten::Auto),
+            (tl_id!("ui-straighten-c4ff1214b6f0f23a"), tl_id!("ui-automatically-straighten-near-vertical-l-1fc8332beb4fd266"), Straighten::Vertical),
+            (tl_id!("ui-level-5758d36ad885815f"), tl_id!("ui-automatically-level-near-horizontal-line-d6b35ffc717572a3"), Straighten::Horizontal),
+            (tl_id!("ui-both-9826b0b252010a64"), tl_id!("ui-automatically-straighten-and-level-fadc85abe4f3cf56"), Straighten::Auto),
         ] {
             if ui.button(tl!(&label)).on_hover_text(tip).clicked() {
                 straighten(&mut s.planes, m);
@@ -319,7 +319,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         }
     } else {
         ui.label(format!("{} plane(s)", s.planes.len()));
-        if ui.button(tl!("Remove Planes")).clicked() {
+        if ui.button(tl_id!("ui-remove-planes-307e6b7371b10a9e")).clicked() {
             s.planes.clear();
             s.update_grid();
         }
@@ -330,7 +330,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             .clicked()
         {
             commit(app);
-        } else if crate::widgets::secondary_button(ui, "⊘", 32.0).on_hover_text(tl!("Cancel (Esc)")).clicked() {
+        } else if crate::widgets::secondary_button(ui, "⊘", 32.0).on_hover_text(tl_id!("ui-cancel-esc-6690b4a67d5c2651")).clicked() {
             app.distort.perspective = None;
         }
     });

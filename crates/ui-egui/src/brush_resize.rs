@@ -137,7 +137,7 @@ pub fn draw(app: &PhotocraftApp, painter: &egui::Painter, xf: &ViewXform) -> boo
         painter.ctx(),
         "brush-resize-readout",
         at,
-        [tl!("Diameter:"), tl!("Hardness:")],
+        [tl_id!("ui-diameter-81bc689924f8c26e"), tl_id!("ui-hardness-4dede17b575a2d21")],
         [format!("{} px", b.size.round() as i64), format!("{}%", (b.hardness * 100.0).round() as i64)],
     );
     true

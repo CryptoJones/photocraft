@@ -52,11 +52,11 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
     let playing = app.ui.timeline.playing;
     let t = Tokens::get(ctx);
 
-    crate::analysis_ui::panel_window(app, ctx, "timeline", tl!("Timeline"), vec2(0.0, 520.0), 660.0, |ui| {
+    crate::analysis_ui::panel_window(app, ctx, "timeline", tl_id!("ui-timeline-293af480bed376a4"), vec2(0.0, 520.0), 660.0, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(tl!("Timeline")).strong().color(t.text));
+            ui.label(RichText::new(tl_id!("ui-timeline-293af480bed376a4")).strong().color(t.text));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if crate::icons::button(ui, "x", 20.0, false, tl!("Close")).clicked() {
+                if crate::icons::button(ui, "x", 20.0, false, tl_id!("ui-close-bac64c1b2e060ee5")).clicked() {
                     close = true;
                 }
             });
@@ -64,27 +64,35 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
         ui.separator();
 
         if !have_doc {
-            ui.weak(tl!("Open a document to use the timeline."));
+            ui.weak(tl_id!("ui-open-a-document-to-use-the-timeline-29a0898eaf711b59"));
             return;
         }
         match &tl {
             None => {
                 ui.add_space(8.0);
                 ui.vertical_centered(|ui| {
-                    if crate::widgets::primary_button(ui, tl!("Create Video Timeline"), 200.0).clicked() {
+                    if crate::widgets::primary_button(ui, tl_id!("ui-create-video-timeline-c636e57fa50b0867"), 200.0).clicked() {
                         act = Some(("timeline.create", json!({ "duration": 30, "fps": 30.0 })));
                     }
                     ui.add_space(4.0);
-                    ui.weak(tl!("30 frames @ 30 fps"));
+                    ui.weak(tl_id!("ui-30-frames-30-fps-86855c252e2336e2"));
                 });
             }
             Some(tl) => {
                 ui.horizontal(|ui| {
                     let play_icon = if playing { "pause" } else { "play" };
-                    if crate::icons::button(ui, play_icon, 22.0, playing, if playing { tl!("Pause") } else { tl!("Play") }).clicked() {
+                    if crate::icons::button(
+                        ui,
+                        play_icon,
+                        22.0,
+                        playing,
+                        if playing { tl_id!("ui-pause-dd8f228bcfa37cff") } else { tl_id!("ui-play-3d9cbc3c216900ad") },
+                    )
+                    .clicked()
+                    {
                         toggle_play = true;
                     }
-                    if crate::icons::button(ui, "chevron-left", 22.0, false, tl!("Previous frame")).clicked() {
+                    if crate::icons::button(ui, "chevron-left", 22.0, false, tl_id!("ui-previous-frame-12eda2858f006917")).clicked() {
                         act = Some(("timeline.previousFrame", json!({})));
                     }
                     ui.label(
@@ -95,13 +103,13 @@ pub fn windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
                         .color(t.text)
                         .monospace(),
                     );
-                    if crate::icons::button(ui, "chevron-right", 22.0, false, tl!("Next frame")).clicked() {
+                    if crate::icons::button(ui, "chevron-right", 22.0, false, tl_id!("ui-next-frame-d71292d3254b566b")).clicked() {
                         act = Some(("timeline.nextFrame", json!({})));
                     }
                     ui.separator();
                     ui.label(RichText::new(format!("{:.2}s", tl.time())).color(t.text_dim).monospace());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if crate::icons::button(ui, "trash", 20.0, false, tl!("Delete Timeline")).clicked() {
+                        if crate::icons::button(ui, "trash", 20.0, false, tl_id!("ui-delete-timeline-bc28db3359bef037")).clicked() {
                             act = Some(("timeline.delete", json!({})));
                         }
                         ui.label(RichText::new(format!("{:.0} fps", tl.fps)).color(t.text_dim));

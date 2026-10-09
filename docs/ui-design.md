@@ -108,10 +108,11 @@ fonts use the same size, including fonts loaded after the preference changes.
 
 ## Localisation
 
-Strings in code stay English and are the default lookup keys. `crates/ui-egui/src/i18n` maps them
-to display text at render time from one catalog per language (`i18n/<code>.tsv`; the format is
-documented in the header of `ja.tsv`). Command ids, menu paths used for logic, the control channel,
-the CLI and MCP always use the English ids and labels.
+UI messages use stable IDs in the Fluent catalogs at
+`crates/ui-egui/src/i18n/locales/<locale>/messages.ftl`.
+English is the fallback catalog. `keys.tsv` maps remaining English-string calls to those IDs;
+new static UI text should use `tl_id!`. Command ids, menu paths used for logic, the control
+channel, the CLI and MCP continue to use their English ids and labels.
 
 Languages shipped (`complete_menus` marks a catalog that covers every menu string and `tl!` literal;
 the tests enforce it):
@@ -146,7 +147,7 @@ the tests enforce it):
 - Translations are clean-room: written from the meaning of the English text in ordinary vocabulary,
   never from another product's localisation resources.
 
-Localised so far: menus, the command palette, dialogs and panels (literals wrapped in `tl!("…")`;
+Localised so far: menus, the command palette, dialogs and panels (static literals use `tl_id!`;
 widgets such as `checkbox`, `slider_row`, `dropdown` and the buttons translate their labels
 themselves). A test fails when a `tl!` literal, a menu string, a blend mode name, brush section name or a generated
 preference label has no entry in a language marked `complete_menus`. Not translated: status-bar

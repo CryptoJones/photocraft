@@ -19,6 +19,7 @@
 //! and document-tab menus that are outside the document-coordinate control pointer.
 //! `--click-at X,Y` opens a screen-space menu (for example the top Select menu) after the script.
 
+use egui_kittest::kittest::Queryable;
 use photocraft_ui_egui::control::{ControlRequest, Outcome, handle};
 use photocraft_ui_egui::{PhotocraftApp, Services};
 use serde_json::Value;
@@ -147,6 +148,11 @@ fn main() {
     // Let fade animations settle.
     for _ in 0..12 {
         harness.step();
+    }
+    // Keep a top-level menu open in an offscreen capture, useful for localization review.
+    if let Some(menu) = arg(&args, "--menu-label") {
+        harness.get_by_label(&menu).click();
+        harness.run_steps(3);
     }
     let (req, _rx) = ControlRequest::new("ui.inspect", Value::Null);
     if let Outcome::Done(v) = handle(harness.state_mut(), &ctx, &req) {

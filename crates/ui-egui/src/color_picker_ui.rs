@@ -251,7 +251,7 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) -> Option<bool> {
             });
             ui.add_space(10.0);
             let mut web = f.get("__webOnly").and_then(Value::as_bool).unwrap_or(false);
-            if widgets::checkbox(ui, &mut web, tl!("Only Web Colors")).changed() {
+            if widgets::checkbox(ui, &mut web, tl_id!("ui-only-web-colors-db01f2d578449625")).changed() {
                 f.insert("__webOnly".into(), json!(web));
                 set_rgb(f, current(f).rgb, Keep::Nothing);
             }
