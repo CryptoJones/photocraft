@@ -171,20 +171,22 @@ pub fn import_bytes(app: &mut PhotocraftApp, name: &str, bytes: &[u8], replace: 
 }
 
 fn import_dialog(app: &mut PhotocraftApp, replace: bool) -> Result<Value, String> {
-    let (name, bytes) = app.pick_file_bytes().ok_or("cancelled")??;
-    import_bytes(app, &name, &bytes, replace)
+    app.pick_file_bytes(move |app, name, bytes| import_bytes(app, &name, &bytes, replace))
 }
 
 fn export_dialog(app: &mut PhotocraftApp, format: &str) -> Result<Value, String> {
-    let r = app.run("swatches.export", json!({"format": format}))?;
-    let bytes = r["data"].as_str().and_then(photocraft_engine::paint::tile::b64_decode).ok_or("the export returned no data")?;
-    let path = app.services.pick_save.as_mut().and_then(|f| f(&format!("Swatches.{format}"))).ok_or("cancelled")?;
-    let write = app.services.write.as_mut().ok_or("no writer configured")?;
-    write(&path, &bytes)?;
-    let n = r["count"].as_u64().unwrap_or(0);
-    app.ui.status_error = false;
-    app.ui.status = format!("Exported {n} swatches to {}", crate::file_open::display_name(&path));
-    Ok(json!({"path": path, "count": n}))
+    let suggested = format!("Swatches.{format}");
+    let format = format.to_string();
+    app.pick_save(&suggested, move |app, path| {
+        let r = app.run("swatches.export", json!({"format": format}))?;
+        let bytes = r["data"].as_str().and_then(photocraft_engine::paint::tile::b64_decode).ok_or("the export returned no data")?;
+        let write = app.services.write.as_mut().ok_or("no writer configured")?;
+        write(&path, &bytes)?;
+        let n = r["count"].as_u64().unwrap_or(0);
+        app.ui.status_error = false;
+        app.ui.status = format!("Exported {n} swatches to {}", crate::file_open::display_name(&path));
+        Ok(json!({"path": path, "count": n}))
+    })
 }
 
 /// The Swatches entries of the panel group's menu ("…").
@@ -348,9 +350,13 @@ mod tests {
         let aco =
             photocraft_psd::aco::write(&[photocraft_psd::aco::AcoSwatch { name: "Teal".into(), color: photocraft_psd::aco::AcoColor::Rgb([0, 32768, 32768]) }])
                 .unwrap();
+        let (dialog, requested) = crate::file_dialog::fake(vec![
+            Some(crate::file_dialog::FileDialogAnswer::Contents("Ocean.aco".into(), aco.clone())),
+            Some(crate::file_dialog::FileDialogAnswer::Contents("Ocean.aco".into(), aco)),
+            Some(crate::file_dialog::FileDialogAnswer::SaveTo("out/Swatches.ase".into())),
+        ]);
         let services = crate::Services {
-            pick_open: Some(Box::new(move || Some(("Ocean.aco".to_string(), Ok(aco.clone()))))),
-            pick_save: Some(Box::new(|s: &str| Some(format!("out/{s}")))),
+            file_dialog: Some(dialog),
             write: Some(Box::new(move |p: &str, b: &[u8]| {
                 w.lock().unwrap().push((p.to_string(), b.to_vec()));
                 Ok(())
@@ -358,13 +364,47 @@ mod tests {
             ..Default::default()
         };
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
-        import_dialog(&mut app, false).unwrap();
+        let ctx = egui::Context::default();
+
+        assert_eq!(import_dialog(&mut app, false).unwrap(), json!({"fileDialog": "open"}));
+        assert!(requested.borrow().is_empty(), "the picker must not block the menu action");
+        app.poll_file_dialog(&ctx, None);
+        assert!(matches!(&requested.borrow()[0], crate::file_dialog::FileDialogRequest::Open { multiple: false }));
         assert_eq!(app.session.presets.swatches.last().unwrap().name, "Ocean");
-        import_dialog(&mut app, true).unwrap();
+
+        assert_eq!(import_dialog(&mut app, true).unwrap(), json!({"fileDialog": "open"}));
+        app.poll_file_dialog(&ctx, None);
         assert_eq!(app.session.presets.swatches.len(), 1, "replace");
-        export_dialog(&mut app, "ase").unwrap();
+
+        assert_eq!(export_dialog(&mut app, "ase").unwrap(), json!({"fileDialog": "save"}));
+        assert!(written.lock().unwrap().is_empty(), "don't write before the save picker resolves");
+        app.poll_file_dialog(&ctx, None);
+        assert!(matches!(
+            &requested.borrow()[2],
+            crate::file_dialog::FileDialogRequest::Save { suggested } if suggested == "Swatches.ase"
+        ));
         let out = written.lock().unwrap();
         assert_eq!(out[0].0, "out/Swatches.ase");
         assert!(out[0].1.starts_with(b"ASEF"));
     }
+
+    #[test]
+    fn cancelling_swatch_file_dialogs_keeps_the_document_unchanged() {
+        let (dialog, requested) = crate::file_dialog::fake(vec![None, None]);
+        let services = crate::Services { file_dialog: Some(dialog), ..Default::default() };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+        let ctx = egui::Context::default();
+        let before = app.session.presets.swatches.len();
+
+        assert_eq!(import_dialog(&mut app, true).unwrap(), json!({"fileDialog": "open"}));
+        app.poll_file_dialog(&ctx, None);
+        assert_eq!(app.session.presets.swatches.len(), before);
+        assert!(!app.ui.status_error && !app.file_dialog_open());
+
+        assert_eq!(export_dialog(&mut app, "aco").unwrap(), json!({"fileDialog": "save"}));
+        app.poll_file_dialog(&ctx, None);
+        assert_eq!(requested.borrow().len(), 2);
+        assert!(!app.ui.status_error && !app.file_dialog_open());
+    }
+}
 }
