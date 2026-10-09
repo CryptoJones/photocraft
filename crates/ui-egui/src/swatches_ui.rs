@@ -379,10 +379,7 @@ mod tests {
         assert_eq!(export_dialog(&mut app, "ase").unwrap(), json!({"fileDialog": "save"}));
         assert!(written.lock().unwrap().is_empty(), "don't write before the save picker resolves");
         app.poll_file_dialog(&ctx, None);
-        assert!(matches!(
-            &requested.borrow()[2],
-            crate::file_dialog::FileDialogRequest::Save { suggested } if suggested == "Swatches.ase"
-        ));
+        assert!(matches!(&requested.borrow()[2], crate::file_dialog::FileDialogRequest::Save { suggested } if suggested == "Swatches.ase"));
         let out = written.lock().unwrap();
         assert_eq!(out[0].0, "out/Swatches.ase");
         assert!(out[0].1.starts_with(b"ASEF"));
@@ -406,5 +403,4 @@ mod tests {
         assert_eq!(requested.borrow().len(), 2);
         assert!(!app.ui.status_error && !app.file_dialog_open());
     }
-}
 }
