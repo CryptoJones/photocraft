@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use photocraft_color::{ColorMode, PixelFormat, SampleType};
 use photocraft_doc::Layer;
@@ -15,18 +15,70 @@ use photocraft_raster::Surface;
 
 const FORMAT: PixelFormat = PixelFormat { mode: ColorMode::Grayscale, sample: SampleType::F32, alpha: false };
 
+#[derive(Default)]
 struct Cache {
     map: HashMap<u64, (Surface, u64)>,
+    in_flight: HashMap<u64, Weak<OnceLock<Surface>>>,
     tick: u64,
 }
 
 fn cache() -> &'static Mutex<Cache> {
     static C: OnceLock<Mutex<Cache>> = OnceLock::new();
-    C.get_or_init(|| Mutex::new(Cache { map: HashMap::new(), tick: 0 }))
+    C.get_or_init(|| Mutex::new(Cache::default()))
 }
 
 /// Entries kept (least recently used dropped first).
 const CAPACITY: usize = 64;
+
+enum CachedMask {
+    Hit(Surface),
+    Pending(Arc<OnceLock<Surface>>),
+}
+
+fn lookup(c: &Mutex<Cache>, k: u64) -> CachedMask {
+    let mut c = c.lock().unwrap_or_else(|e| e.into_inner());
+    c.tick = c.tick.saturating_add(1);
+    let tick = c.tick;
+    if let Some(e) = c.map.get_mut(&k) {
+        e.1 = tick;
+        return CachedMask::Hit(e.0.clone());
+    }
+    // The callers own each slot, so completed builds do not retain an extra
+    // surface after their last caller returns. Sweep dead weak slots on misses.
+    c.in_flight.retain(|_, slot| slot.strong_count() > 0);
+    if let Some(slot) = c.in_flight.get(&k).and_then(Weak::upgrade) {
+        return CachedMask::Pending(slot);
+    }
+    let slot = Arc::new(OnceLock::new());
+    c.in_flight.insert(k, Arc::downgrade(&slot));
+    CachedMask::Pending(slot)
+}
+
+fn finish_mask(c: &Mutex<Cache>, k: u64, slot: &Arc<OnceLock<Surface>>, build: impl FnOnce() -> Surface) -> Surface {
+    slot.get_or_init(|| {
+        // Never hold the global cache mutex while rasterizing or feathering.
+        let surface = build();
+        let mut c = c.lock().unwrap_or_else(|e| e.into_inner());
+        if c.in_flight.get(&k).and_then(Weak::upgrade).is_some_and(|active| Arc::ptr_eq(&active, slot)) {
+            if c.map.len() >= CAPACITY
+                && let Some(old) = c.map.iter().min_by_key(|e| e.1.1).map(|e| *e.0)
+            {
+                c.map.remove(&old);
+            }
+            let tick = c.tick;
+            c.map.insert(k, (surface.clone(), tick));
+        }
+        surface
+    })
+    .clone()
+}
+
+fn cached_mask(c: &Mutex<Cache>, k: u64, build: impl FnOnce() -> Surface) -> Surface {
+    match lookup(c, k) {
+        CachedMask::Hit(surface) => surface,
+        CachedMask::Pending(slot) => finish_mask(c, k, &slot, build),
+    }
+}
 
 fn key(layer: &Layer, canvas: Rect) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -97,25 +149,20 @@ fn gaussian(v: &mut [f32], w: usize, h: usize, sigma: f32) {
 /// `None` when the layer has no enabled vector mask and no feathered pixel mask (use the pixel
 /// mask directly). Values outside the computed area are the surface's default.
 pub fn combined_mask(layer: &Layer, canvas: Rect) -> Option<Surface> {
+    if !layer.vector_mask.as_ref().is_some_and(|v| v.enabled) && !has_feather(layer) {
+        return None;
+    }
+    Some(cached_mask(cache(), key(layer, canvas), || build_mask(layer, canvas)))
+}
+
+fn build_mask(layer: &Layer, canvas: Rect) -> Surface {
     let vm = layer.vector_mask.as_ref().filter(|v| v.enabled);
     let pixel = layer.mask.as_ref().filter(|m| m.enabled);
     let (sv, sp) = (vm.map_or(0.0, |v| feather_sigma(v.feather)), pixel.map_or(0.0, |m| feather_sigma(m.feather)));
-    if vm.is_none() && sp <= 0.0 {
-        return None;
-    }
-    let k = key(layer, canvas);
-    {
-        let mut c = cache().lock().unwrap_or_else(|e| e.into_inner());
-        c.tick += 1;
-        let tick = c.tick;
-        if let Some(e) = c.map.get_mut(&k) {
-            e.1 = tick;
-            return Some(e.0.clone());
-        }
-    }
+    let compiled = vm.map(photocraft_vector::CompiledVectorMask::new);
     // Far outside the path the vector mask is constant.
     let far = Rect::from_xywh(canvas.x0 - 1_000_000, canvas.y0 - 1_000_000, 1, 1);
-    let v_out = vm.map_or(1.0, |vm| photocraft_vector::vector_mask_values(vm, far)[0]);
+    let v_out = compiled.as_ref().map_or(1.0, |vm| vm.render_sequential(far)[0]);
     let p_def = pixel.map_or(1.0, |m| {
         let d = m.surface.default_pixel().first().copied().unwrap_or(1.0);
         1.0 - m.density * (1.0 - d)
@@ -147,8 +194,10 @@ pub fn combined_mask(layer: &Layer, canvas: Rect) -> Option<Surface> {
     let mut s = Surface::with_default(FORMAT, &[p_def * v_out]);
     if !area.is_empty() {
         let (w, h) = (area.width() as usize, area.height() as usize);
-        let mut v = match vm {
-            Some(vm) => photocraft_vector::vector_mask_values(vm, area),
+        // A slot initializer must not enter Rayon: another tile requesting the
+        // same mask could be stolen onto its stack and wait for its own build.
+        let mut v = match &compiled {
+            Some(vm) => vm.render_sequential(area),
             None => vec![1.0; w * h],
         };
         gaussian(&mut v, w, h, sv);
@@ -162,21 +211,160 @@ pub fn combined_mask(layer: &Layer, canvas: Rect) -> Option<Surface> {
         }
         s.write_region(area, &v);
     }
-    let mut c = cache().lock().unwrap_or_else(|e| e.into_inner());
-    if c.map.len() >= CAPACITY
-        && let Some(old) = c.map.iter().min_by_key(|e| e.1.1).map(|e| *e.0)
-    {
-        c.map.remove(&old);
-    }
-    let tick = c.tick;
-    c.map.insert(k, (s.clone(), tick));
-    Some(s)
+    s
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use photocraft_doc::vector::{Knot, Path, Subpath, VectorMask};
+
+    fn pending(c: &Mutex<Cache>, k: u64) -> Arc<OnceLock<Surface>> {
+        match lookup(c, k) {
+            CachedMask::Pending(slot) => slot,
+            CachedMask::Hit(_) => panic!("expected a cold mask"),
+        }
+    }
+
+    fn test_surface() -> Surface {
+        let mut surface = Surface::new(FORMAT);
+        surface.fill_rect(Rect::new(0, 0, 2, 2), &[0.5]);
+        surface
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn cold_callers_share_one_build_without_retaining_a_second_cache() {
+        use std::sync::Barrier;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let c = Mutex::new(Cache::default());
+        // Acquire all callers' slots before allowing any builder to finish.
+        let slots: Vec<_> = (0..8).map(|_| pending(&c, 7)).collect();
+        assert!(slots.iter().all(|slot| Arc::ptr_eq(slot, &slots[0])));
+        let barrier = Barrier::new(slots.len());
+        let builds = AtomicUsize::new(0);
+        let outputs = std::thread::scope(|scope| {
+            let handles: Vec<_> = slots
+                .iter()
+                .map(|slot| {
+                    let (c, barrier, builds) = (&c, &barrier, &builds);
+                    scope.spawn(move || {
+                        barrier.wait();
+                        finish_mask(c, 7, slot, || {
+                            builds.fetch_add(1, Ordering::SeqCst);
+                            test_surface()
+                        })
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|handle| handle.join().unwrap()).collect::<Vec<_>>()
+        });
+        assert_eq!(builds.load(Ordering::SeqCst), 1);
+        assert!(outputs.iter().all(|surface| Arc::ptr_eq(surface.tiles().next().unwrap().1, outputs[0].tiles().next().unwrap().1)));
+
+        // Evicting the retained result cannot make existing callers build again.
+        c.lock().unwrap().map.clear();
+        let again = finish_mask(&c, 7, &slots[0], || panic!("rebuilt an active slot"));
+        assert!(Arc::ptr_eq(again.tiles().next().unwrap().1, outputs[0].tiles().next().unwrap().1));
+        drop(slots);
+        let next = pending(&c, 8);
+        assert_eq!(c.lock().unwrap().in_flight.len(), 1);
+        drop(next);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn distinct_keys_build_while_another_key_is_paused() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let c = Mutex::new(Cache::default());
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (second_tx, second_rx) = mpsc::channel();
+        std::thread::scope(|scope| {
+            let c = &c;
+            let first = scope.spawn(move || {
+                cached_mask(c, 1, || {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+                    test_surface()
+                })
+            });
+            started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let second = scope.spawn(move || {
+                let surface = cached_mask(c, 2, test_surface);
+                second_tx.send(surface.sample_channel(0, 0, 0)).unwrap();
+            });
+            assert_eq!(second_rx.recv_timeout(Duration::from_secs(5)).unwrap(), 0.5);
+            release_tx.send(()).unwrap();
+            first.join().unwrap();
+            second.join().unwrap();
+        });
+    }
+
+    #[test]
+    fn obsolete_in_flight_build_does_not_repopulate_the_cache() {
+        let c = Mutex::new(Cache::default());
+        let old = pending(&c, 1);
+        c.lock().unwrap().in_flight.clear();
+        let current = pending(&c, 1);
+        assert!(!Arc::ptr_eq(&old, &current));
+        let old_surface = finish_mask(&c, 1, &old, test_surface);
+        assert!(c.lock().unwrap().map.is_empty());
+        let current_surface = finish_mask(&c, 1, &current, test_surface);
+        assert!(!Arc::ptr_eq(old_surface.tiles().next().unwrap().1, current_surface.tiles().next().unwrap().1));
+        assert_eq!(c.lock().unwrap().map.len(), 1);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn parallel_feathered_pixel_mask_returns_the_same_tiles() {
+        let canvas = Rect::new(0, 0, 600, 400);
+        let mut layer = Layer::raster("cold shared mask", PixelFormat::RGBA8);
+        let mut mask = photocraft_doc::LayerMask::reveal_all();
+        mask.surface.fill_rect(canvas, &[0.5]);
+        mask.feather = 8.0;
+        layer.mask = Some(mask);
+        let barrier = std::sync::Barrier::new(8);
+        let outputs = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    let (layer, barrier) = (&layer, &barrier);
+                    scope.spawn(move || {
+                        barrier.wait();
+                        combined_mask(layer, canvas).unwrap()
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|handle| handle.join().unwrap()).collect::<Vec<_>>()
+        });
+        assert!(outputs.iter().all(|surface| Arc::ptr_eq(surface.tiles().next().unwrap().1, outputs[0].tiles().next().unwrap().1)));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn vector_mask_build_inside_a_small_rayon_pool_completes() {
+        use rayon::prelude::*;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let (tx, rx) = mpsc::channel();
+        let handle = std::thread::spawn(move || {
+            let canvas = Rect::new(0, 0, 512, 512);
+            let mut layer = Layer::raster("rayon vector mask", PixelFormat::RGBA8);
+            let mut mask = VectorMask::new(photocraft_vector::shapes::ellipse(8.0, 8.0, 496.0, 496.0));
+            mask.feather = 8.0;
+            layer.vector_mask = Some(mask);
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
+            let outputs: Vec<_> = pool.install(|| (0..8).into_par_iter().map(|_| combined_mask(&layer, canvas).unwrap()).collect());
+            assert!(outputs.iter().all(|surface| Arc::ptr_eq(surface.tiles().next().unwrap().1, outputs[0].tiles().next().unwrap().1)));
+            tx.send(()).unwrap();
+        });
+        rx.recv_timeout(Duration::from_secs(10)).expect("mask initializer deadlocked inside Rayon");
+        handle.join().unwrap();
+    }
 
     #[test]
     fn matches_the_cpu_mask_and_is_cached() {
