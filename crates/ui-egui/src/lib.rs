@@ -189,7 +189,17 @@ pub struct ExportSettings {
 
 impl Default for ExportSettings {
     fn default() -> Self {
-        ExportSettings { jpeg_quality: None, webp_lossless: true, webp_quality: None, tiff_layers: true, xmp_all: true }
+        ExportSettings {
+            avif_quality: 90,
+            avif_alpha_quality: 100,
+            avif_speed: 8,
+            avif_depth: 0,
+            jpeg_quality: None,
+            webp_lossless: true,
+            webp_quality: None,
+            tiff_layers: true,
+            xmp_all: true,
+        }
     }
 }
 

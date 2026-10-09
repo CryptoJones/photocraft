@@ -11,7 +11,7 @@ use photocraft_io::ExportOptions;
 use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
-photocraft-cli: headless Photocraft
+photocraft-cli: headless PhotoCraft
 
 USAGE:
   photocraft-cli convert <in> <out> [--format <ext>] [--quality <1-100>] [--tiff-layers]
@@ -61,10 +61,25 @@ struct Subcommand {
 }
 
 const SUBCOMMANDS: &[Subcommand] = &[
-    Subcommand { name: "convert", values: &["--format", "--quality"], bare: &["--tiff-layers"], run: convert },
+    Subcommand {
+        name: "convert",
+        values: &["--format", "--quality", "--avif-speed", "--avif-depth", "--avif-alpha-quality"],
+        bare: &["--tiff-layers"],
+        run: convert,
+    },
     Subcommand { name: "info", values: &[], bare: &["--compact"], run: |a, out, _| info(a, out) },
-    Subcommand { name: "run", values: &["--new", "--cmd", "--params", "--out", "--format", "--quality"], bare: &["--tiff-layers"], run: run_cmds },
-    Subcommand { name: "batch", values: &["--actions", "--in", "--out", "--format", "--quality"], bare: &["--in-place", "--tiff-layers"], run: batch },
+    Subcommand {
+        name: "run",
+        values: &["--new", "--cmd", "--params", "--out", "--format", "--quality", "--avif-speed", "--avif-depth", "--avif-alpha-quality"],
+        bare: &["--tiff-layers"],
+        run: run_cmds,
+    },
+    Subcommand {
+        name: "batch",
+        values: &["--actions", "--in", "--out", "--format", "--quality", "--avif-speed", "--avif-depth", "--avif-alpha-quality"],
+        bare: &["--in-place", "--tiff-layers"],
+        run: batch,
+    },
     Subcommand { name: "droplet", values: &["--out"], bare: &[], run: droplet },
     Subcommand { name: "commands", values: &["--filter"], bare: &["--json"], run: |a, out, _| commands(a, out) },
     Subcommand {
@@ -190,9 +205,23 @@ fn export_opts(a: &Args) -> Result<ExportOptions, String> {
     if let Some(q) = a.get("--quality") {
         let q = q.parse().ok().filter(|q| (1..=100).contains(q)).ok_or_else(|| format!("bad --quality `{q}`: expected a whole number from 1 to 100"))?;
         o.encode.jpeg_quality = q;
+        o.encode.avif_quality = q;
         // Asking for a quality asks for a lossy WebP; the default WebP stays lossless.
         o.encode.webp_quality = q;
         o.encode.webp_lossless = false;
+    }
+    for (flag, field, min, max) in [
+        ("--avif-speed", &mut o.encode.avif_speed, 1, 10),
+        ("--avif-depth", &mut o.encode.avif_depth, 0, 10),
+        ("--avif-alpha-quality", &mut o.encode.avif_alpha_quality, 1, 100),
+    ] {
+        if let Some(v) = a.get(flag) {
+            *field = v
+                .parse::<u8>()
+                .ok()
+                .filter(|v| (min..=max).contains(v) && (flag != "--avif-depth" || matches!(v, 0 | 8 | 10)))
+                .ok_or_else(|| format!("invalid {flag}: expected {min}–{max} (AVIF depth: 0, 8 or 10)"))?;
+        }
     }
     Ok(o)
 }
