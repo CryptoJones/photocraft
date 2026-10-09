@@ -63,7 +63,10 @@ pub(super) struct Properties {
 pub(super) fn properties(bytes: &[u8]) -> Result<Properties, CodecError> {
     let top = boxes(bytes)?;
     let ftyp = find(&top, b"ftyp")?;
-    if ftyp.get(..4) == Some(b"avis") || ftyp.get(8..).is_some_and(|b| b.chunks_exact(4).any(|c| c == b"avis")) || top.iter().any(|b| b.kind == b"moov") {
+    if ftyp.get(..4) == Some(b"avis")
+        || ftyp.get(8..).is_some_and(|b| b.as_chunks::<4>().0.iter().any(|c| c == b"avis"))
+        || top.iter().any(|b| b.kind == b"moov")
+    {
         return Err(CodecError::unsupported(F, "AVIF image sequences are not supported; export a still image first"));
     }
     let meta = boxes(find(&top, b"meta")?.get(4..).ok_or_else(bad)?)?;

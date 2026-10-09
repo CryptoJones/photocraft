@@ -101,9 +101,11 @@ fn independent_twelve_bit_fixture_and_hostile_dimensions() {
     assert_eq!(decoded.sample_type(), SampleType::U16);
     let error = decoded
         .data()
-        .chunks_exact(2)
-        .zip(oracle.chunks_exact(2))
-        .map(|(a, b)| (i32::from(u16::from_ne_bytes(a.try_into().unwrap())) - i32::from(u16::from_le_bytes(b.try_into().unwrap()))).abs())
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(oracle.as_chunks::<2>().0.iter())
+        .map(|(a, b)| (i32::from(u16::from_ne_bytes(*a)) - i32::from(u16::from_le_bytes(*b))).abs())
         .max()
         .unwrap();
     // FFmpeg's zscale YUV conversion and our float matrix rounding differ slightly.
@@ -192,10 +194,10 @@ fn independent_export_oracle() {
             assert_eq!(data.len(), pixels * planes * 2);
             let values = img.to_normalized();
             let mut max_error = 0i32;
-            for (i, value) in data.chunks_exact(2).enumerate() {
+            for (i, value) in data.as_chunks::<2>().0.iter().enumerate() {
                 let channel = if planes == 1 { 3 } else { [1, 2, 0][i / pixels] };
                 let expected = (values[(i % pixels) * 4 + channel] * 65535.0).round() as i32;
-                let actual = i32::from(u16::from_le_bytes(value.try_into().unwrap()));
+                let actual = i32::from(u16::from_le_bytes(*value));
                 max_error = max_error.max((actual - expected).abs());
             }
             assert!(max_error <= 512, "{depth}-bit/{stream}: independent maximum error {max_error}");
