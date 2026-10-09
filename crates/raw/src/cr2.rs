@@ -350,7 +350,6 @@ mod tests {
 }
 #[cfg(test)]
 mod wb_debug {
-    use super::*;
 
     /// The corpus PowerShot CR2: ColorData's WB_RGGBLevelsAsShot sits at word offset 0x47
     /// (ColorData v? of the PowerShots), the same words its DNG conversion neutralises
