@@ -419,6 +419,10 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         if ui.add(discord).on_hover_text(format!("Join the ArtCraft Discord ({})", crate::links::DISCORD)).clicked() {
                             crate::links::open(app, ui.ctx(), crate::links::DISCORD);
                         }
+                    }
+                    let report_width = ui.painter().layout_no_wrap(tl!("Report an Issue").into(), egui::FontId::proportional(12.0), t.text_dim).size().x
+                        + 2.0 * ui.spacing().button_padding.x;
+                    if ui.available_width() >= report_width {
                         let report = egui::Button::new(egui::RichText::new(tl!("Report an Issue")).color(t.text_dim).size(12.0)).frame(false);
                         let report = ui.add(report).on_hover_text(tl!("Report an issue on GitHub"));
                         egui::Popup::menu(&report).show(|ui| {
@@ -429,9 +433,9 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                                 }
                             }
                         });
-                        ui.min_rect().left()
-                    })
-                    .inner;
+                    }
+                    ui.min_rect().left()
+                };
             });
             ui.ctx().data_mut(|d| d.insert_temp(span_id, (menus_right, controls_left)));
             let font = theme::medium(13.0);
