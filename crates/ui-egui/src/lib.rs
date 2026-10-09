@@ -1104,6 +1104,9 @@ impl eframe::App for PhotocraftApp {
             return;
         }
         let t0 = gpu_canvas::now_ms();
+        // Each painting tool keeps its own brush (#218), so switch the active tool's brush in
+        // before anything this frame reads it (the cursor, the options bar, a stroke).
+        paint_mouse::sync_tool_brush(self);
         // View › Screen Mode › Full Screen Mode: only the image, on black (F or Esc returns).
         let chrome = !self.ui.view.hides_chrome();
         if !chrome && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
