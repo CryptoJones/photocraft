@@ -231,6 +231,9 @@ pub struct Interface {
     /// own one-row title bar (tiling window managers, desktops that draw their own decorations;
     /// #1271, #1316). Read when the app starts. macOS always uses the system's.
     pub system_title_bar: bool,
+    /// Linux: while a global-menu host (Canonical AppMenu/dbusmenu registrar) serves the
+    /// menus, the in-window menu bar hides.
+    pub global_menu_bar: bool,
 }
 
 impl Default for Interface {
@@ -249,6 +252,7 @@ impl Default for Interface {
             show_tooltips: true,
             show_bounding_box_when_dragging_layer: false,
             system_title_bar: false,
+            global_menu_bar: true,
         }
     }
 }
