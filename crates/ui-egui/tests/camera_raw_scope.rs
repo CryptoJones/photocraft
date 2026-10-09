@@ -275,7 +275,7 @@ fn real_shortcuts_triangles_menu_and_scope_preferences_roundtrip() {
     }
     h.run_steps(3);
     let label = photocraft_ui_egui::i18n::tr(photocraft_ui_egui::i18n::current(), "Show Lab Color Readouts");
-    h.get_by_label(label).click();
+    h.get_by_label(&label).click();
     h.run_steps(3);
     assert_eq!(inspect(&h)["scope"]["lab"], true);
     assert_eq!(inspect(&h)["previewRevision"], revision);
@@ -343,11 +343,11 @@ fn floating_window_is_above_the_dialog_and_can_be_dragged_back_to_the_dock() {
     h.run_steps(3);
     for source in ["Undock Scope", "Dock Scope", "Color Sampler (S)", "Clear Samplers"] {
         let label = photocraft_ui_egui::i18n::tr(photocraft_ui_egui::i18n::current(), source);
-        assert!(h.query_by_label(label).is_none(), "removed action must not appear: {source}");
+        assert!(h.query_by_label(&label).is_none(), "removed action must not appear: {source}");
     }
     assert!(!h.state().ui.camera_raw_scope.vectorscope);
     let label = photocraft_ui_egui::i18n::tr(photocraft_ui_egui::i18n::current(), "Show Vectorscope");
-    h.get_by_label(label).click();
+    h.get_by_label(&label).click();
     h.run_steps(3);
     assert!(h.state().ui.camera_raw_scope.vectorscope, "context menu still enables the optional vectorscope");
     press(&mut h, pos2(200.0, 400.0), true, Modifiers::NONE);
@@ -445,9 +445,9 @@ fn curve_drag_moves_the_existing_point_without_creating_another() {
 
 fn open_curve(h: &mut Harness<'_, PhotocraftApp>) -> Rect {
     let lang = photocraft_ui_egui::i18n::current();
-    h.get_by_label(photocraft_ui_egui::i18n::tr_ctx(lang, "cameraRaw", "Light")).click();
+    h.get_by_label(&photocraft_ui_egui::i18n::tr_ctx(lang, "cameraRaw", "Light")).click();
     h.run_steps(16);
-    h.get_by_label(photocraft_ui_egui::i18n::tr(lang, "Curve")).click();
+    h.get_by_label(&photocraft_ui_egui::i18n::tr(lang, "Curve")).click();
     h.run_steps(16);
     rect(h, "curveRect")
 }
@@ -736,17 +736,17 @@ fn alt_drag_slider(h: &mut Harness<'_, PhotocraftApp>, label: &str) -> Value {
 fn alt_drag_diagnostics_follow_light_tone_sliders_not_same_named_ones() {
     let tr = |s| photocraft_ui_egui::i18n::tr_ctx(photocraft_ui_egui::i18n::current(), "cameraRaw", s);
     let mut h = fixture(ThemeKind::Pro);
-    let during = alt_drag_slider(&mut h, tr("Highlights"));
+    let during = alt_drag_slider(&mut h, &tr("Highlights"));
     assert_ne!(during["params"]["highlights"], 0.0, "the drag hit the Light slider");
     assert_eq!(during["overlayRevision"], during["previewRevision"], "Light tone sliders drive Alt diagnostics");
 
     let mut h = fixture(ThemeKind::Pro);
-    h.get_by_label(tr("Light")).click();
+    h.get_by_label(&tr("Light")).click();
     h.run_steps(12);
-    h.get_by_label(tr("Curve")).click();
+    h.get_by_label(&tr("Curve")).click();
     h.run_steps(12);
     // The Curve section's Highlights shares its label with the Light tone slider.
-    let during = alt_drag_slider(&mut h, tr("Highlights"));
+    let during = alt_drag_slider(&mut h, &tr("Highlights"));
     assert_ne!(during["params"]["curveHighlights"], 0.0, "the drag hit the Curve slider");
     assert!(during["overlayRevision"].is_null(), "a same-named non-tone slider must not drive Alt diagnostics");
 }

@@ -10,6 +10,8 @@ pub const TOP_MENUS: [&str; 10] = ["File", "Edit", "Image", "Layer", "Type", "Se
 
 /// UI-level commands (handled by the shell rather than the engine): id, label, menu, shortcut.
 pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
+    ("ui.i18n.load", "Load Translations", &[], None),
+    ("ui.i18n.reload", "Reload Translations", &[], None),
     ("file.open", "Open…", &["File"], Some("Cmd+O")),
     ("file.openDeep", "Open as Deep…", &["File"], None),
     ("file.save", "Save", &["File"], Some("Cmd+S")),
@@ -174,6 +176,9 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
     // View/Window/Type shell items, and dialogs/pickers in front of File commands.
     // Edit › Preferences, Keyboard Shortcuts, Color Settings and other Edit dialogs.
     if let Some(r) = crate::prefs_ui::invoke(app, ctx, id, &params) {
+        return r;
+    }
+    if let Some(r) = crate::i18n::runtime::invoke(app, ctx, id, &params) {
         return r;
     }
     // Save for Web, Print and the other File-menu dialogs added with slices.

@@ -18,28 +18,23 @@
 
 mod catalog;
 mod system;
-
 pub use system::system_lang;
-
-use std::cell::Cell;
-use std::sync::OnceLock;
+pub mod config;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod maintenance;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native;
+pub mod runtime;
 
 use fluent_bundle::{FluentArgs, FluentResource, concurrent::FluentBundle};
 use unic_langid::{LanguageIdentifier, langid};
 
-/// One supported UI language.
+/// An embedded language. Runtime metadata is described by [`config::LanguageConfig`].
 pub struct LangInfo {
-    /// BCP 47 code, lowercase (`ja`, `zh-hans`, `pt-br`). Also the `interface.language` value.
     pub code: &'static str,
-    /// The language's name in itself, shown in the Preferences dropdown.
     pub name: &'static str,
-    /// Catalog file contents (empty for the built-in English).
     pub source: &'static str,
-    /// Plural form index for a count (English: 0 = one, 1 = other; Japanese and Chinese: always 0;
-    /// Czech: 0 = one, 1 = few (2–4), 2 = other; French: 0 = one (0 and 1), 1 = other). A catalog's `@plural` entries list one form per
-    /// index.
-    pub plural: fn(u64) -> usize,
-    /// Must the catalog cover every menu string? (checked by the tests)
+    pub plural: PluralRule,
     pub complete_menus: bool,
     fluent: OnceLock<FluentBundle<FluentResource>>,
     simple: OnceLock<HashMap<String, String>>,
@@ -220,116 +215,148 @@ pub fn id(lang: Lang, message_id: &str) -> &str {
     lang.0.simple().get(message_id).map(String::as_str).or_else(|| LANGUAGES[0].simple().get(message_id).map(String::as_str)).unwrap_or(message_id)
 }
 
-/// A language the UI can be shown in (a handle into [`LANGUAGES`]).
-#[derive(Clone, Copy)]
-pub struct Lang(&'static LangInfo);
+/// Stable, allocation-free locale identity, independent of replaceable catalog snapshots.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct Lang {
+    bytes: [u8; config::MAX_CODE_BYTES],
+    len: u8,
+}
 
 impl std::fmt::Debug for Lang {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Lang({})", self.0.code)
+        write!(f, "Lang({})", self.code())
     }
 }
-
-impl PartialEq for Lang {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.code == other.0.code
-    }
-}
-
-impl Eq for Lang {}
 
 impl Lang {
-    pub const EN: Lang = Lang(&LANGUAGES[0]);
+    pub const EN: Self = Self { bytes: [b'e', b'n', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], len: 2 };
 
-    pub fn code(self) -> &'static str {
-        self.0.code
+    fn identity(code: &str) -> Option<Self> {
+        if !config::valid_code(code) {
+            return None;
+        }
+        let mut bytes = [0; config::MAX_CODE_BYTES];
+        bytes.get_mut(..code.len())?.copy_from_slice(code.as_bytes());
+        Some(Self { bytes, len: u8::try_from(code.len()).ok()? })
     }
 
-    /// A language by its exact code.
-    pub fn from_code(code: &str) -> Option<Lang> {
-        LANGUAGES.iter().find(|l| l.code.eq_ignore_ascii_case(code)).map(Lang)
+    pub fn code(&self) -> &str {
+        std::str::from_utf8(self.bytes.get(..usize::from(self.len)).unwrap_or(&[])).unwrap_or("en")
     }
 
-    /// Resolve the `interface.language` preference: a language code, or `auto` (and anything
-    /// unknown, e.g. a code from a newer version) to follow the system locale.
-    pub fn from_pref(pref: &str) -> Lang {
+    /// Exact registered code, ignoring ASCII case. Locale aliases are resolved by `lang_from_tag`.
+    pub fn from_code(code: &str) -> Option<Self> {
+        if code.len() > config::MAX_CODE_BYTES {
+            return None;
+        }
+        PACK.with(|pack| {
+            if let Some(pack) = pack.borrow().as_ref() {
+                return pack.languages.iter().find(|l| l.code.eq_ignore_ascii_case(code)).and_then(|l| Self::identity(&l.code));
+            }
+            LANGUAGES.iter().find(|l| l.code.eq_ignore_ascii_case(code)).and_then(|l| Self::identity(l.code))
+        })
+    }
+
+    pub fn from_pref(pref: &str) -> Self {
         if pref.eq_ignore_ascii_case("auto") {
             return system_lang();
         }
-        Lang::from_code(pref).or_else(|| lang_from_tag(pref)).unwrap_or_else(system_lang)
+        Self::from_code(pref).or_else(|| lang_from_tag(pref)).unwrap_or_else(system_lang)
     }
 
-    /// Every registered language.
-    pub fn all() -> impl Iterator<Item = Lang> {
-        LANGUAGES.iter().map(Lang)
+    pub fn all() -> impl Iterator<Item = Self> {
+        PACK.with(|pack| match pack.borrow().as_ref() {
+            Some(pack) => pack.languages.iter().filter_map(|l| Self::identity(&l.code)).collect::<Vec<_>>(),
+            None => LANGUAGES.iter().filter_map(|l| Self::identity(l.code)).collect(),
+        })
+        .into_iter()
     }
 
-    pub fn name(self) -> &'static str {
-        self.0.name
+    pub fn name(self) -> Cow<'static, str> {
+        PACK.with(|pack| {
+            if let Some(language) = pack.borrow().as_ref().and_then(|pack| pack.language(self.code())) {
+                return Cow::Owned(language.name.clone());
+            }
+            Cow::Borrowed(self.bundled().map_or("English", |l| l.name))
+        })
     }
 
-    /// Does this language's catalog claim to cover every menu string and `tl!` literal?
     pub fn complete_menus(self) -> bool {
-        self.0.complete_menus
+        PACK.with(|pack| {
+            pack.borrow()
+                .as_ref()
+                .and_then(|pack| pack.language(self.code()))
+                .map_or_else(|| self.bundled().is_some_and(|l| l.complete_menus), |l| l.complete_menus)
+        })
     }
 }
 
-/// Candidate language codes for a locale tag, most specific first: `zh_TW.UTF-8` →
-/// `zh-tw`, `zh-hant`, `zh`.
+/// Most-specific to least-specific tags. Aliases (including Chinese region mappings) are data.
 fn candidates(tag: &str) -> Vec<String> {
-    let base = tag.split(['.', '@']).next().unwrap_or("").replace('_', "-").to_ascii_lowercase();
-    let parts: Vec<&str> = base.split('-').filter(|p| !p.is_empty()).collect();
-    let Some(&primary) = parts.first() else { return Vec::new() };
+    if tag.len() > 128 {
+        return Vec::new();
+    }
+    let mut base = tag.split(['.', '@']).next().unwrap_or("").replace('_', "-").to_ascii_lowercase();
+    if base.is_empty() || base.split('-').any(str::is_empty) {
+        return Vec::new();
+    }
     let mut out = Vec::new();
-    for n in (1..=parts.len()).rev() {
-        out.push(parts[..n].join("-"));
-    }
-    if primary == "zh" && !parts.iter().any(|p| matches!(*p, "hans" | "hant")) {
-        // Chinese by region when no script is given.
-        let script = if parts.iter().any(|p| matches!(*p, "tw" | "hk" | "mo")) { "zh-hant" } else { "zh-hans" };
-        out.insert(out.len() - 1, script.to_string());
-    }
-    if primary == "pt" && !out.iter().any(|c| c == "pt-br") {
-        // The only Portuguese catalog is Brazilian; other regions use it rather than English.
-        out.insert(out.len() - 1, "pt-br".to_string());
+    loop {
+        out.push(base.clone());
+        let Some(at) = base.rfind('-') else { break };
+        base.truncate(at);
     }
     out
 }
 
-/// The registered language for a locale tag such as `ja_JP.UTF-8`, `ja-JP`, `zh-TW`; `None` if
-/// the language isn't supported. `C`/`POSIX` mean English.
 pub fn lang_from_tag(tag: &str) -> Option<Lang> {
-    let cands = candidates(tag);
-    if matches!(cands.first().map(String::as_str), Some("c" | "posix")) {
+    let candidates = candidates(tag);
+    if matches!(candidates.first().map(String::as_str), Some("c" | "posix")) {
         return Some(Lang::EN);
     }
-    cands.iter().find_map(|c| Lang::from_code(c))
+    candidates.iter().find_map(|candidate| {
+        Lang::from_code(candidate).or_else(|| {
+            PACK.with(|pack| {
+                let pack = pack.borrow();
+                let languages = pack.as_ref().map_or(&runtime::bundled_manifest().languages, |p| &p.languages);
+                languages.iter().find(|l| l.aliases.contains(candidate)).and_then(|l| Lang::identity(&l.code))
+            })
+        })
+    })
 }
 
 thread_local! {
-    // Independent app/test threads must not change each other's drawing language.
     static CURRENT: Cell<Lang> = const { Cell::new(Lang::EN) };
+    static PACK: RefCell<Option<Arc<runtime::LanguagePack>>> = const { RefCell::new(None) };
 }
 
-/// Set the UI language for drawing (the shell calls this once per frame from the preference), so
-/// widgets can translate without every call site carrying a language around.
 pub fn set_current(lang: Lang) {
     CURRENT.set(lang);
 }
-
-/// The language the UI is drawn in.
 pub fn current() -> Lang {
     CURRENT.get()
 }
+fn set_pack(pack: Option<Arc<runtime::LanguagePack>>) {
+    PACK.set(pack);
+}
 
-/// Temporarily draw in another language, restoring the previous one even on unwinding.
-/// Preferences previews use this without changing the saved setting or other dialogs.
+/// Temporarily select a snapshot, restoring it even on unwind; independent threads stay isolated.
+pub fn with_pack<R>(pack: Option<Arc<runtime::LanguagePack>>, draw: impl FnOnce() -> R) -> R {
+    struct Restore(Option<Arc<runtime::LanguagePack>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            set_pack(self.0.take());
+        }
+    }
+    let _restore = Restore(PACK.replace(pack));
+    draw()
+}
+
 pub fn with_language<R>(lang: Lang, draw: impl FnOnce() -> R) -> R {
     let _restore = language_scope(lang);
     draw()
 }
 
-/// Keep the language active until this guard is dropped on the drawing thread.
 #[must_use]
 pub fn language_scope(lang: Lang) -> impl Drop {
     struct Restore {
@@ -346,14 +373,11 @@ pub fn language_scope(lang: Lang) -> impl Drop {
     restore
 }
 
-/// Apply a committed language to this context. Font caches are rebuilt only on a language
-/// change, so Han glyphs follow the selected script even when the previous font covered them.
 pub fn sync_context(ctx: &egui::Context, language: &str) {
     let lang = Lang::from_pref(language);
     set_current(lang);
     let id = egui::Id::new("photocraft-ui-language");
-    let changed = ctx.data(|data| data.get_temp::<Lang>(id) != Some(lang));
-    if changed {
+    if ctx.data(|data| data.get_temp::<Lang>(id) != Some(lang)) {
         ctx.data_mut(|data| data.insert_temp(id, lang));
         crate::theme::install_fonts(ctx);
         ctx.request_repaint();
@@ -365,8 +389,10 @@ pub fn has(lang: Lang, s: &str) -> bool {
     key_id("", s).is_some_and(|id| lang.0.fluent().get_message(id).is_some())
 }
 
-/// Translate an English UI string into the current language ([`tr`] with [`current`]).
-pub fn t(s: &str) -> &str {
+pub fn has(lang: Lang, s: &str) -> bool {
+    lookup(lang, |c, _| c.plain(s)).is_some()
+}
+pub fn t(s: &str) -> Cow<'_, str> {
     tr(current(), s)
 }
 
@@ -424,10 +450,9 @@ pub fn fmt(template: &str, args: &[(&str, &str)]) -> String {
     for (k, v) in args {
         out = out.replace(&format!("{{{k}}}"), v);
     }
+    out.push_str(rest);
     out
 }
-
-/// A plural-aware message: `one`/`other` are the English forms (with `{n}` where the count goes).
 pub fn trn(lang: Lang, n: u64, one: &str, other: &str) -> String {
     if let (Some(id), Ok(count)) = (key_id("@plural", &format!("{one}|{other}")), i64::try_from(n)) {
         let mut args = FluentArgs::new();
@@ -491,8 +516,8 @@ mod tests {
     #[test]
     fn candidates_walk_from_specific_to_general() {
         assert_eq!(candidates("pt_BR.UTF-8"), ["pt-br", "pt"]);
-        assert_eq!(candidates("zh_TW"), ["zh-tw", "zh-hant", "zh"]);
-        assert_eq!(candidates("zh-CN"), ["zh-cn", "zh-hans", "zh"]);
+        assert_eq!(candidates("zh_TW"), ["zh-tw", "zh"]);
+        assert_eq!(candidates("zh-CN"), ["zh-cn", "zh"]);
         assert_eq!(candidates("zh-Hant-HK"), ["zh-hant-hk", "zh-hant", "zh"]);
     }
 
@@ -571,7 +596,9 @@ mod tests {
         for tag in ["pt", "pt-BR", "pt_BR.UTF-8", "pt-PT", "pt_PT.UTF-8"] {
             assert_eq!(lang_from_tag(tag), Some(pt), "{tag}");
         }
-        assert_eq!(candidates("pt_PT"), ["pt-pt", "pt-br", "pt"]);
+        assert_eq!(candidates("pt_PT"), ["pt-pt", "pt"]);
+        assert_eq!(PluralRule::Portuguese.index(0), 0);
+        assert_eq!(PluralRule::Portuguese.index(u64::MAX), 1);
         assert_eq!(tr(pt, "Layer"), "Camada");
         assert_eq!(trn(pt, 0, "{n} item", "{n} items"), "0 item");
         assert_eq!(trn(pt, 1, "{n} item", "{n} items"), "1 item");
@@ -649,7 +676,7 @@ mod tests {
         assert_eq!(tr(fr, "Layer"), "Calque");
         assert_eq!(tr_id(fr, "select.all", "All"), "Tout sélectionner", "an id override wins over the plain label");
         assert_eq!(tr(fr, "All"), "Tout");
-        let forms: Vec<usize> = [0, 1, 2, 5, 100, u64::MAX].into_iter().map(plural_fr).collect();
+        let forms: Vec<usize> = [0, 1, 2, 5, 100, u64::MAX].into_iter().map(|n| PluralRule::French.index(n)).collect();
         assert_eq!(forms, [0, 0, 1, 1, 1, 1]);
         assert_eq!(trn(fr, 0, "{n} item", "{n} items"), "0 élément");
         assert_eq!(trn(fr, 1, "{n} item", "{n} items"), "1 élément");
@@ -664,7 +691,7 @@ mod tests {
 
     #[test]
     fn czech_plural_rule() {
-        let forms: Vec<usize> = [0, 1, 2, 3, 4, 5, 11, 12, 21, 22, 100, u64::MAX].into_iter().map(plural_cs).collect();
+        let forms: Vec<usize> = [0, 1, 2, 3, 4, 5, 11, 12, 21, 22, 100, u64::MAX].into_iter().map(|n| PluralRule::Czech.index(n)).collect();
         assert_eq!(forms, [2, 0, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2]);
         assert_eq!(tr(CS(), "Layer"), "Vrstva");
         assert_eq!(tr_id(CS(), "select.all", "All"), "Vybrat vše", "an id override wins over the plain label");
@@ -674,7 +701,7 @@ mod tests {
     /// Every bundled catalog is well-formed and consistent with its sources.
     #[test]
     fn bundled_catalogs_are_consistent() {
-        for l in &LANGUAGES {
+        for l in LANGUAGES {
             assert!(l.code == l.code.to_ascii_lowercase() && !l.name.is_empty(), "{}", l.code);
             let (entries, errors) = parse_entries(l.source);
             assert!(errors.is_empty(), "{}: {errors:?}", l.code);
@@ -684,7 +711,7 @@ mod tests {
                 if ctx == "@plural" {
                     let one_other: Vec<&str> = src.split('|').collect();
                     assert_eq!(one_other.len(), 2, "{}: plural source must be `one|other`: {src:?}", l.code);
-                    let forms = (0..=1000).map(l.plural).max().unwrap_or(0) + 1;
+                    let forms = (0..=1000).map(|n| l.plural.index(n)).max().unwrap_or(0) + 1;
                     assert_eq!(tr.split('|').count(), forms, "{}: {forms} plural forms expected in {src:?}", l.code);
                     for form in tr.split('|') {
                         let mut want = placeholders(one_other[1]);
@@ -778,7 +805,7 @@ mod tests {
     fn brush_section_names_are_translated() {
         for lang in Lang::all().filter(|l| l.complete_menus()) {
             for (name, _) in crate::brush_panel::SECTIONS {
-                assert!(lang.0.catalog().plain(name).is_some(), "{} missing brush section: {name}", lang.code());
+                assert!(has(lang, name), "{} missing brush section: {name}", lang.code());
             }
         }
     }
@@ -887,7 +914,7 @@ mod tests {
         }
         assert!(labels.len() >= 66, "missing Camera Raw source labels: {labels:?}");
         for lang in Lang::all().filter(|l| *l != Lang::EN) {
-            let catalog = lang.catalog();
+            let catalog = lang.bundled().expect("bundled language").catalog();
             let missing: Vec<_> = labels.iter().filter(|s| catalog.contextual("cameraRaw", s).or_else(|| catalog.plain(s)).is_none()).collect();
             assert!(missing.is_empty(), "{}: Camera Raw labels: {missing:?}", lang.code());
             assert_ne!(tr_ctx(lang, "cameraRaw", "Highlights"), tr_ctx(lang, "cameraRaw", "Lights"), "{}: distinct curve regions", lang.code());
@@ -903,3 +930,6 @@ mod tests {
 
 #[cfg(test)]
 mod live_tests;
+
+#[cfg(test)]
+mod pack_tests;

@@ -251,7 +251,8 @@ pub(crate) fn toolbar(ui: &mut Ui, state: &mut CameraRawPreviewState, viewport: 
         state.zoom_at(1.0, viewport.center(), viewport, size);
     }
     let mut zoom = state.zoom;
-    let mut options = vec![(None, tl!("Fit in View"))];
+    let fit_label = crate::i18n::t("Fit in View");
+    let mut options = vec![(None, fit_label.as_ref())];
     let labels = ["25%", "50%", "100%", "200%", "400%", "800%", "1600%"];
     for (z, label) in [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0].into_iter().zip(labels) {
         options.push((Some(z), label));

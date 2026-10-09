@@ -444,6 +444,7 @@ fn texture(ui: &mut egui::Ui, b: &mut BrushSettings) {
                 Pattern::Tile(_) => None,
             };
             let mut opts: Vec<(Option<PatternStyle>, &str)> = PATTERNS.iter().map(|(s, l)| (Some(*s), *l)).collect();
+            let translated_option = tl!("Custom");
             if style.is_none() {
                 opts.push((None, tl_id!("ui-custom-1a236fdd7e5ff32c")));
             }

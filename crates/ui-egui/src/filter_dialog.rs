@@ -342,7 +342,8 @@ pub fn body(ui: &mut egui::Ui, f: &mut Map<String, Value>) {
                     f.get("__docs").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
                 let cur = f.get(&p.key).and_then(Value::as_i64).unwrap_or(-1);
                 let mut sel = cur.to_string();
-                let mut opts: Vec<(String, &str)> = vec![("-1".to_string(), tl!("None"))];
+                let translated_option = tl!("None");
+                let mut opts: Vec<(String, &str)> = vec![("-1".to_string(), translated_option)];
                 opts.extend(names.iter().enumerate().map(|(i, n)| (i.to_string(), n.as_str())));
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(label(&p.key)).color(t.text_dim));

@@ -10,7 +10,7 @@
 /// Translate a string literal into the current UI language: `tl!("Image Size…")`.
 macro_rules! tl {
     ($s:expr) => {
-        $crate::i18n::t($s)
+        &*$crate::i18n::t($s)
     };
 }
 
@@ -338,6 +338,7 @@ pub struct PhotocraftApp {
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
+    pub(crate) localizations: i18n::runtime::Runtime,
     /// Canvas caches per (document, display): CPU textures hold monitor values; the GPU
     /// canvas state is shared (`canvas::GPU_OUTPUT`).
     canvases: HashMap<(DocId, u32), canvas::CanvasCache>,
@@ -551,6 +552,7 @@ impl PhotocraftApp {
             session,
             ui: UiState::default(),
             services,
+            localizations: i18n::runtime::Runtime::default(),
             canvases: HashMap::new(),
             navigator_textures: HashMap::new(),
             monitors: Default::default(),
@@ -650,6 +652,8 @@ impl PhotocraftApp {
             live_tokens: theme::live::LiveTokens::from_env(),
         };
         // Saved preferences (and recovered documents) are in place before the first frame.
+        app.localizations.activate();
+        app.ui.localizations = app.localizations.status();
         prefs_ui::load(&mut app);
         notices::wayland_file_drop_guidance(&mut app);
         // File › Scripts › Script Events Manager: "Start Application".

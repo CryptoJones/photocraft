@@ -785,6 +785,14 @@ pub struct ColorPanelState {
     pub background: bool,
 }
 
+/// Agent-readable localisation status; catalogs stay outside persisted view state.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LocalizationStatus {
+    pub generation: u64,
+    pub languages: Vec<String>,
+    pub error: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
     #[serde(default)]
@@ -962,6 +970,7 @@ impl Default for UiState {
             chatgpt_account_open: false,
             generative: Default::default(),
             tool: Tool::Brush,
+            localizations: LocalizationStatus::default(),
             recent_files: Vec::new(),
             text_edit: None,
             type_transform: None,

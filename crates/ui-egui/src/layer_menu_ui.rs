@@ -21,7 +21,7 @@ pub fn add_mask_command(has_selection: bool, alt: bool) -> &'static str {
 
 /// The context menu entries for a layer (Photoshop 2026 order, trimmed to the layer kind).
 pub fn entries(l: &Layer, multi: bool, has_selection: bool) -> Vec<Entry> {
-    let mut v: Vec<Entry> = vec![Some((tl!("Blending Options…"), "layer.layerStyle.blendingOptions"))];
+    let mut v: Vec<Entry> = vec![Some(("Blending Options…", "layer.layerStyle.blendingOptions"))];
     v.push(None);
     v.push(Some((if multi { tl_id!("ui-duplicate-layers-5a7a27c703148b52") } else { tl_id!("ui-duplicate-layer-14af5c3fa0d3f69b") }, "layer.duplicate")));
     v.push(Some((if multi { tl_id!("ui-delete-layers-c8252a79bc1e0b16") } else { tl_id!("ui-delete-layer-58b835e7900721e1") }, "layer.delete")));

@@ -862,6 +862,24 @@ fn color_of(s: &str) -> Color32 {
     prefs::parse_hex(s).map_or(Color32::GRAY, |c| Color32::from_rgb(c[0], c[1], c[2]))
 }
 
+/// Canonical generated labels, shared with the localisation coverage tool.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn required_translation_labels() -> Result<Vec<String>, String> {
+    let session = photocraft_engine::Session::new();
+    let values: Value = serde_json::from_str(&session.prefs_to_json()).map_err(|e| e.to_string())?;
+    let mut labels = Vec::new();
+    for (section, title) in SECTIONS {
+        labels.push(title.to_string());
+        if let Some(object) = values.get(section).and_then(Value::as_object) {
+            for key in object.keys() {
+                labels.push(humanize(key));
+                labels.extend(prefs::choices(&format!("{section}.{key}")).into_iter().flatten().map(|c| choice_label(c)));
+            }
+        }
+    }
+    Ok(labels)
+}
+
 /// Preferences: section list on the left, the section's settings on the right.
 fn prefs_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>) {
     let t = Tokens::get(ui.ctx());
@@ -907,6 +925,17 @@ fn prefs_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
             ui.set_width(540.0);
             let title = SECTIONS.iter().find(|(id, _)| *id == section).map_or("General", |(_, t)| *t);
             ui.label(RichText::new(tl!(&title)).font(crate::theme::semibold(14.0)).color(t.text));
+            if section == "interface" {
+                if ui.add_enabled(app.services.locales.is_some(), egui::Button::new(tl!("Reload Translations"))).clicked()
+                    && let Err(error) = crate::menus::invoke(app, ui.ctx(), "ui.i18n.reload", json!({}))
+                {
+                    app.localizations.last_error = Some(error.clone());
+                    app.ui.localizations.error = Some(error);
+                }
+                if let Some(error) = &app.ui.localizations.error {
+                    ui.label(RichText::new(error).color(t.text_dim));
+                }
+            }
             ui.add_space(6.0);
             egui::ScrollArea::vertical().max_height(390.0).id_salt("prefs-scroll").show(ui, |ui| {
                 let order: Vec<String> =
@@ -1021,8 +1050,10 @@ fn rendering_mode_row(ui: &mut egui::Ui, obj: &mut Map<String, Value>) {
     let mut current = rendering_mode_value(obj);
     ui.horizontal(|ui| {
         ui.label(tl!("Rendering Mode"));
-        let pairs =
-            vec![("auto".to_string(), tl!("Automatic (recommended)")), ("gpu".to_string(), tl!("GPU")), ("cpu".to_string(), tl!("CPU / Compatibility"))];
+        let automatic = tl!("Automatic (recommended)");
+        let gpu = tl!("GPU");
+        let cpu = tl!("CPU / Compatibility");
+        let pairs = vec![("auto".to_string(), automatic), ("gpu".to_string(), gpu), ("cpu".to_string(), cpu)];
         let previous = current.clone();
         crate::widgets::dropdown(ui, "rendering-mode", &mut current, &pairs, 240.0);
         if current != previous {
@@ -1106,8 +1137,9 @@ fn section_fields(ui: &mut egui::Ui, section: &str, obj: &mut Map<String, Value>
                 }
                 Value::String(s) if path == "interface.language" => {
                     ui.label(RichText::new(tl!(&label)).color(t.text_dim));
-                    let mut pairs: Vec<(String, &str)> = vec![("auto".into(), tl!("Auto"))];
-                    pairs.extend(crate::i18n::Lang::all().map(|l| (l.code().to_string(), l.name())));
+                    let mut names = vec![("auto".to_string(), tl!("Auto").to_string())];
+                    names.extend(crate::i18n::Lang::all().map(|l| (l.code().to_string(), l.name().into_owned())));
+                    let pairs: Vec<_> = names.iter().map(|(code, name)| (code.clone(), name.as_str())).collect();
                     let mut cur = s.clone();
                     crate::widgets::dropdown(ui, &format!("pref-{path}"), &mut cur, &pairs, 220.0);
                     obj.insert(k, json!(cur));

@@ -27,27 +27,27 @@ fn all_seven_languages_render_camera_raw_and_switch_without_resetting_view_or_fi
         let tr = |s| i18n::tr_ctx(lang, "cameraRaw", s);
         let before = control::inspect(h.state(), &ctx)["cameraRaw"].clone();
         for section in ["Light", "Color", "Effects", "Curve", "Color Mixer", "Color Grading", "Detail"] {
-            assert!(h.query_by_label(tr(section)).is_some(), "{}: {section}", lang.code());
+            assert!(h.query_by_label(&tr(section)).is_some(), "{}: {section}", lang.code());
         }
-        assert!(h.query_by_label(tr("Blacks")).is_some());
-        h.get_by_label(tr("Light")).click();
+        assert!(h.query_by_label(&tr("Blacks")).is_some());
+        h.get_by_label(&tr("Light")).click();
         h.run_steps(12);
-        h.get_by_label(tr("Color")).click();
+        h.get_by_label(&tr("Color")).click();
         h.run_steps(12);
         for label in ["White Balance: As Shot", "Temperature", "Tint", "Vibrance", "Saturation"] {
-            assert!(h.query_by_label(tr(label)).is_some(), "{}: {label}", lang.code());
+            assert!(h.query_by_label(&tr(label)).is_some(), "{}: {label}", lang.code());
         }
-        h.get_by_label(tr("Color")).click();
+        h.get_by_label(&tr("Color")).click();
         h.run_steps(12);
-        h.get_by_label(tr("Color Mixer")).click();
+        h.get_by_label(&tr("Color Mixer")).click();
         h.run_steps(12);
         for tab in ["Hue", "Saturation", "Luminance"] {
-            assert!(h.get_by_label(tr(tab)).rect().right() <= 1426.0, "{}: mixer tabs overflow the panel", lang.code());
+            assert!(h.get_by_label(&tr(tab)).rect().right() <= 1426.0, "{}: mixer tabs overflow the panel", lang.code());
         }
         for band in ["Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"] {
-            assert!(h.query_by_label(tr(band)).is_some(), "{}: {band}", lang.code());
+            assert!(h.query_by_label(&tr(band)).is_some(), "{}: {band}", lang.code());
         }
-        h.get_by_label(tr("Color Mixer")).click();
+        h.get_by_label(&tr("Color Mixer")).click();
         h.run_steps(12);
         for (section, labels) in [
             ("Effects", vec!["Texture", "Clarity", "Dehaze", "Vignetting", "Grain", "Roughness"]),
@@ -55,31 +55,31 @@ fn all_seven_languages_render_camera_raw_and_switch_without_resetting_view_or_fi
             ("Color Grading", vec!["Midtones", "Global", "Hue", "Saturation", "Luminance", "Blending", "Balance"]),
             ("Detail", vec!["Sharpening", "Masking", "Noise Reduction", "Luminance Detail", "Color Detail"]),
         ] {
-            h.query_all_by_label(tr(section)).next().unwrap().click();
+            h.query_all_by_label(&tr(section)).next().unwrap().click();
             h.run_steps(12);
             for label in labels {
-                assert!(h.query_all_by_label(tr(label)).next().is_some(), "{}: {section}/{label}", lang.code());
+                assert!(h.query_all_by_label(&tr(label)).next().is_some(), "{}: {section}/{label}", lang.code());
             }
             // Detail is also the sharpening slider label; the section header comes first.
-            h.query_all_by_label(tr(section)).next().unwrap().click();
+            h.query_all_by_label(&tr(section)).next().unwrap().click();
             h.run_steps(12);
         }
-        h.get_by_label(tr("Color Mixer")).click();
+        h.get_by_label(&tr("Color Mixer")).click();
         h.run_steps(12);
-        let graph = h.get_by_label(tr("Tone Histogram")).rect();
+        let graph = h.get_by_label(&tr("Tone Histogram")).rect();
         h.event(egui::Event::PointerMoved(graph.center()));
         for pressed in [true, false] {
             h.event(egui::Event::PointerButton { pos: graph.center(), button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE });
         }
         h.run_steps(3);
         for label in ["Show Lab Color Readouts", "Show Vectorscope"] {
-            assert!(h.query_by_label(tr(label)).is_some(), "{}: scope menu/{label}", lang.code());
+            assert!(h.query_by_label(&tr(label)).is_some(), "{}: scope menu/{label}", lang.code());
         }
-        h.get_by_label(tr("Show Vectorscope")).click();
+        h.get_by_label(&tr("Show Vectorscope")).click();
         h.run_steps(3);
         // The context menu stays open for its dependent scope options.
         for label in ["Show Red at 3 o'clock", "Show Skin Tone Indicator"] {
-            assert!(h.query_by_label(tr(label)).is_some(), "{}: scope menu/{label}", lang.code());
+            assert!(h.query_by_label(&tr(label)).is_some(), "{}: scope menu/{label}", lang.code());
         }
         let outside = pos2(100.0, 400.0);
         h.event(egui::Event::PointerMoved(outside));

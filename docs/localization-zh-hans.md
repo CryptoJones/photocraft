@@ -15,8 +15,9 @@ use the repository's MIT OR Apache-2.0 license.
 
 Select **Preferences > Interface > Language > 简体中文**, or set
 `interface.language` to `zh-hans` through the existing `prefs.set` command.
-The native build's **Auto** setting reads `LANG`/`LC_*`, the macOS preferred
-languages and the Windows user locale. `zh`, `zh-CN`, `zh-SG` and `zh-Hans`
+The native build's **Auto** setting reads the ordered Windows/macOS UI-language
+preferences and the standard Unix locale environment. See [system-language detection](localization.md#first-launch-and-system-language).
+`zh`, `zh-CN`, `zh-SG` and `zh-Hans`
 variants resolve to this catalog. Traditional Chinese locales (`zh-TW`, `zh-HK`,
 `zh-MO`, `zh-Hant`) resolve to the separate `zh-hant` catalog.
 
@@ -25,10 +26,10 @@ language manually there.
 
 ## Files and integration
 
-- `crates/ui-egui/src/i18n/zh-hans.tsv` contains the translations, independent of
+- `crates/ui-egui/locales/zh-hans.tsv` contains the translations, independent of
   the lookup implementation. Its UTF-8 columns are `context<TAB>source<TAB>translation`.
-- `crates/ui-egui/src/i18n/mod.rs` registers `zh-hans` with one plural form and
-  `complete_menus: true`. Shared tests enforce coverage of every menu string,
+- `crates/ui-egui/locales/manifest.json` registers `zh-hans` with one plural form and
+  `completeMenus: true`. Shared tests enforce coverage of every menu string,
   `tl!` literal, blend mode, brush section and generated preference label.
 - Shortcut templates retain `{key}` so the shell supplies the correct key for
   the current platform. Layer-count messages use one Chinese plural form.

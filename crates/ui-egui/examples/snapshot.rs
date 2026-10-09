@@ -60,6 +60,7 @@ fn main() {
         ..Default::default()
     };
     let open = arg(&args, "--open");
+    let locales_dir = arg(&args, "--locales-dir");
     let safe_gpu = args.iter().any(|a| a == "--safe-gpu");
     // `--background-jobs`: long commands run as background jobs, as in the desktop app (#210).
     let background_jobs = args.iter().any(|a| a == "--background-jobs");
@@ -157,6 +158,9 @@ fn main() {
     let (req, _rx) = ControlRequest::new("ui.inspect", Value::Null);
     if let Outcome::Done(v) = handle(harness.state_mut(), &ctx, &req) {
         println!("perf: {}", v["result"]["perf"]["timings"]);
+        if let Some(status) = v.get("result").and_then(|v| v.get("localizations")) {
+            println!("localizations: {status}");
+        }
     }
     println!(
         "language: {}",

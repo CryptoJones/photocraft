@@ -83,6 +83,25 @@ Change the UI language without restarting with `prefs.set`:
 are documented in [UI localisation](localization.md). `prefs.get` and the existing preference
 store expose and persist the same setting; scripts keep using canonical command IDs.
 
+The shell also exposes two view-state commands through `ui.menu.invoke`:
+
+- `ui.i18n.reload`, params `{}`: request an immediate external-directory check; returns
+  `{pending:true}` or an error when no native source is configured.
+- `ui.i18n.load`, params `{manifest, catalogs}`: validate and install a session-only pack.
+  `manifest` uses [the localisation schema](localization.md#configuration-contract);
+  `catalogs` maps flat TSV basenames to UTF-8 text. The response contains `generation` and
+  available language codes. Invalid data returns an error and retains the active snapshot.
+
+```json
+{"method":"ui.menu.invoke","params":{"command":"ui.i18n.load","params":{"manifest":{"schemaVersion":1,"languages":[{"code":"fr","name":"Français","catalog":"fr.tsv","pluralRule":"french"}]},"catalogs":{"fr.tsv":"\tLayer\tCalque personnalisé\n"}}}}
+```
+
+`ui.inspect.localizations` reports `generation`, `languages` and the last file-source `error`
+(or `null`). Watcher success clears an earlier error; a later watcher update can replace a
+programmatically supplied pack. Resource reload does not change the language preference or
+any document. The web shell accepts supplied packs using the same validation, without a
+filesystem watcher.
+
 `engine.execute` runs any command by id. `engine.commands` (or the engine command `command.list`) lists them all, with labels, menu paths, shortcuts, a parameter description, and whether each is currently enabled. Examples:
 
 | Command | Params |

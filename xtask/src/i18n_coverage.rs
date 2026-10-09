@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -15,9 +16,13 @@ struct Language {
 }
 
 pub fn run(root: &Path) -> Result<(), String> {
-    let i18n_dir = root.join("crates/ui-egui/src/i18n");
-    let registry_path = i18n_dir.join("mod.rs");
-    let registry = fs::read_to_string(&registry_path).map_err(|e| format!("{}: {e}", registry_path.display()))?;
+    let i18n_dir = root.join("crates/ui-egui/locales");
+    let registry_path = i18n_dir.join("manifest.json");
+    let mut registry = String::new();
+    fs::File::open(&registry_path).and_then(|file| file.take(65_537).read_to_string(&mut registry)).map_err(|e| format!("{}: {e}", registry_path.display()))?;
+    if registry.len() > 65_536 {
+        return Err("language manifest exceeds 65536 bytes".into());
+    }
     let languages = registered_languages(&registry)?;
 
     let english_keys = source_keys(root)?;
@@ -76,6 +81,9 @@ fn format_report(languages: &[Language], english_keys: &BTreeSet<Key>, translati
 }
 
 fn registered_languages(source: &str) -> Result<Vec<Language>, String> {
+    if source.trim_start().starts_with('{') {
+        return manifest_languages(source);
+    }
     let registry = source
         .split("pub static LANGUAGES")
         .nth(1)
@@ -109,6 +117,41 @@ fn registered_languages(source: &str) -> Result<Vec<Language>, String> {
     }
     if !languages.iter().any(|language| language.code == "en") {
         return Err("LANGUAGES registry does not contain English (`en`)".into());
+    }
+    languages.sort_by(|a, b| a.code.cmp(&b.code));
+    Ok(languages)
+}
+
+/// Keep the existing coverage report and source-key collector while reading the new registry.
+fn manifest_languages(source: &str) -> Result<Vec<Language>, String> {
+    let manifest: serde_json::Value = serde_json::from_str(source).map_err(|e| format!("language manifest: {e}"))?;
+    if manifest.get("schemaVersion").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Err("language manifest requires schemaVersion 1".into());
+    }
+    let entries = manifest.get("languages").and_then(serde_json::Value::as_array).ok_or("language manifest requires languages")?;
+    if entries.len() > 64 {
+        return Err("language manifest exceeds 64 languages".into());
+    }
+    let mut languages = Vec::new();
+    let mut codes = HashSet::new();
+    for entry in entries {
+        let code = entry.get("code").and_then(serde_json::Value::as_str).ok_or("language requires a code")?;
+        if code.len() > 16 || !codes.insert(code.to_string()) {
+            return Err("invalid or duplicate registered language code".into());
+        }
+        let catalog = if code == "en" {
+            None
+        } else {
+            let file = entry.get("catalog").and_then(serde_json::Value::as_str).ok_or_else(|| format!("language `{code}` requires a catalog"))?;
+            if file.len() > 80 || file.starts_with('.') || file.contains(['/', '\\', ':']) || !file.ends_with(".tsv") {
+                return Err(format!("language `{code}` has unsafe catalog path"));
+            }
+            Some(PathBuf::from(file))
+        };
+        languages.push(Language { code: code.to_string(), catalog });
+    }
+    if !codes.contains("en") {
+        return Err("language manifest does not contain English (`en`)".into());
     }
     languages.sort_by(|a, b| a.code.cmp(&b.code));
     Ok(languages)
@@ -149,11 +192,11 @@ fn source_files(root: &Path) -> Result<Vec<(PathBuf, String)>, String> {
 fn tl_keys(sources: &[(PathBuf, String)]) -> BTreeSet<Key> {
     let mut keys = BTreeSet::new();
     for (path, source) in sources {
-        if path.ends_with("i18n/mod.rs") {
+        if path.ends_with("i18n/mod.rs") || path.ends_with("i18n/maintenance.rs") {
             continue;
         }
-        let code = before_test_module(source);
-        let mut rest = code;
+        let code = before_test_module(source).replace("crate::i18n::t(", "tl!(");
+        let mut rest = code.as_str();
         while let Some(at) = rest.find("tl!(\"") {
             rest = rest.get(at + 5..).unwrap_or("");
             let bytes = rest.as_bytes();
@@ -418,7 +461,7 @@ fn unescape_rust_string(raw: &str) -> String {
 
 fn parse_catalog(path: &Path, text: &str) -> Result<BTreeSet<Key>, String> {
     let mut keys = BTreeSet::new();
-    for (index, line) in text.lines().enumerate() {
+    for (index, line) in text.trim_start_matches('\u{feff}').lines().enumerate() {
         if line.trim().is_empty() || line.starts_with('#') {
             continue;
         }
@@ -504,6 +547,19 @@ mod tests {
     }
 
     #[test]
+    fn reads_manifest_registry_and_rejects_unsafe_catalogs() {
+        let source = r#"{"schemaVersion":1,"languages":[{"code":"ko","catalog":"ko.tsv"},{"code":"en","catalog":null},{"code":"fr","catalog":"fr.tsv"}]}"#;
+        let languages = registered_languages(source).expect("manifest registry");
+        assert_eq!(languages.iter().map(|l| l.code.as_str()).collect::<Vec<_>>(), ["en", "fr", "ko"]);
+        assert_eq!(languages.get(2).and_then(|l| l.catalog.as_deref()), Some(Path::new("ko.tsv")));
+        for invalid in [source.replace("ko.tsv", "../ko.tsv"), source.replace("\"schemaVersion\":1", "\"schemaVersion\":2"), source.replace("\"fr\"", "\"ko\"")]
+        {
+            assert!(registered_languages(&invalid).is_err());
+        }
+        assert!(parse_catalog(Path::new("ko.tsv"), "\u{feff}\tOpen\t열기\n").is_ok());
+    }
+
+    #[test]
     fn gathers_keys_from_ui_and_engine_sources() {
         let catalog = menu_catalog_keys(
             r#"(&["File", "Export"], "Export As…", Some("Cmd+Shift+S"), "file.exportAs"),
@@ -556,21 +612,31 @@ mod tests {
     }
 
     #[test]
+    fn owned_lookup_helpers_are_counted() {
+        let sources = vec![(PathBuf::from("ui.rs"), "crate::i18n::t(\"Helper label\")".into())];
+        assert!(tl_keys(&sources).contains(&Key { context: String::new(), source: "Helper label".into() }));
+    }
+
+    #[test]
     fn source_key_set_is_covered_by_complete_catalogs() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap_or(Path::new("."));
         let keys = source_keys(root).unwrap_or_default();
         for (code, path) in [
             ("ja", "ja.tsv"),
+            ("zh-hans", "zh-hans.tsv"),
             ("zh-hant", "zh-hant.tsv"),
             ("es", "es.tsv"),
             ("ru", "ru.tsv"),
             ("cs", "cs.tsv"),
+            ("fr", "fr.tsv"),
+            ("id", "id.tsv"),
+            ("ko", "ko.tsv"),
             ("de", "de.tsv"),
             ("pt-br", "pt-br.tsv"),
             ("it", "it.tsv"),
             ("el", "el.tsv"),
         ] {
-            let catalog_path = root.join("crates/ui-egui/src/i18n").join(path);
+            let catalog_path = root.join("crates/ui-egui/locales").join(path);
             let text = fs::read_to_string(&catalog_path).unwrap_or_default();
             let translations = parse_catalog(&catalog_path, &text).unwrap_or_default();
             let missing: Vec<_> = keys.difference(&translations).collect();

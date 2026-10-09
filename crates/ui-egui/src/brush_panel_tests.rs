@@ -546,7 +546,7 @@ fn brush_sections_paint_simplified_chinese_labels_and_heading() {
     }
     for (name, _) in SECTIONS {
         let translated = crate::i18n::tr(zh, name);
-        assert!(painted.iter().any(|s| s == translated), "{name} must paint as {translated}");
+        assert!(painted.iter().any(|s| s == translated.as_ref()), "{name} must paint as {translated}");
         assert!(!painted.iter().any(|s| s == name), "{name} must not paint in English");
     }
     let heading = crate::i18n::tr(zh, "Brush Tip Shape");

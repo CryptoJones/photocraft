@@ -130,8 +130,9 @@ pub fn show_fallback(app: &mut PhotocraftApp, ctx: &egui::Context) {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 use crate::widgets::{ButtonRole, DialogButton};
-                let buttons =
-                    [DialogButton::new(ButtonRole::Default, tl!("Keep Using CPU"), 150.0), DialogButton::new(ButtonRole::Alternate, tl!("Retry GPU"), 120.0)];
+                let keep_label = crate::i18n::t("Keep Using CPU");
+                let retry_label = crate::i18n::t("Retry GPU");
+                let buttons = [DialogButton::new(ButtonRole::Default, &keep_label, 150.0), DialogButton::new(ButtonRole::Alternate, &retry_label, 120.0)];
                 if let Some(role) = crate::widgets::dialog_buttons(ui, &buttons) {
                     choice = Some(role == ButtonRole::Alternate);
                 }

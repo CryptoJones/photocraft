@@ -357,7 +357,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         painter.rect_filled(title, 0.0, t.dock);
         painter.line_segment([title.left_bottom(), title.right_bottom()], Stroke::new(1.0, t.separator));
         let pct = if d.zoom > 0.0 { format!("{:.0}%", d.zoom * 100.0) } else { tl!("Fit").into() };
-        let name = d.effects.get(d.selected).map_or("", |e| tl!(e.filter.name()));
+        let name = d.effects.get(d.selected).map_or(std::borrow::Cow::Borrowed(""), |e| crate::i18n::t(e.filter.name()));
         painter.text(title.center(), Align2::CENTER_CENTER, format!("{name} ({}, {pct})", d.layer_name), FontId::proportional(13.0), t.text);
         let body = ERect::from_min_max(pos2(full.left(), title.bottom()), full.max);
         let right = ERect::from_min_size(pos2(body.right() - RIGHT_W, body.top()), vec2(RIGHT_W, body.height()));
@@ -390,8 +390,8 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             d.zoom = steps.iter().copied().find(|&s| s > d.zoom + 1e-3).unwrap_or(4.0);
         }
         let mut z = d.zoom;
-        let opts: Vec<(f32, &str)> =
-            vec![(0.0, tl!("Fit in View")), (0.125, "12.5%"), (0.25, "25%"), (0.5, "50%"), (1.0, "100%"), (2.0, "200%"), (4.0, "400%")];
+        let translated_option = tl!("Fit in View");
+        let opts: Vec<(f32, &str)> = vec![(0.0, translated_option), (0.125, "12.5%"), (0.25, "25%"), (0.5, "50%"), (1.0, "100%"), (2.0, "200%"), (4.0, "400%")];
         if widgets::dropdown(&mut zb, "gallery-zoom", &mut z, &opts, 110.0) {
             d.zoom = z;
         }

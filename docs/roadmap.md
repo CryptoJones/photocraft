@@ -108,7 +108,7 @@ See [AVIF coverage](avif.md).
 | AI / generative | Optional OpenAI image commands: generate, fill, expand, variations | early | Opt-in via `OPENAI_API_KEY`; privacy and limits below (decision #41). |
 | Ecosystem | Sandboxed WebAssembly plug-ins instead of .8BF; no ExtendScript/UXP/.atn; no Adobe Fonts/Libraries/cloud docs | low | By design for 8BF; scripting compatibility open. |
 | Platforms | macOS (notarized), Windows, Linux (AppImage/deb/rpm/Flatpak bundle), web | medium-high | Flathub later (#173); Windows signing material pending. |
-| Localisation | 2026-10-07: 10 UI languages; menu, `tl!`, blend mode, preference and brush-section coverage enforced by tests; live switching and scoped Preferences previews | medium | Engine errors/status messages still partly English; CJK web fonts, browser-locale detection, and RTL remain open. |
+| Localisation | 2026-10-07: 10 UI languages; menu, `tl!`, blend mode, preference and brush-section coverage enforced by tests; live switching, scoped Preferences previews, JSON language manifests, external pack hot reload and xtask coverage/scaffolding | medium | Engine errors/status messages still partly English; CJK web fonts, browser-locale detection and RTL remain open. |
 
 2026-10-08: Motion Blur adds adaptive FFT convolution for wide streaks while retaining the
 row kernel merged in [#902](https://github.com/storytold/photocraft/pull/902) for shorter

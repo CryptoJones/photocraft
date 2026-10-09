@@ -36,6 +36,8 @@ commands:
   stats [--exact] count tests and lines per crate (--exact: ask the test harness via `-- --list`)
   parity          Photoshop menu parity; rewrites docs/parity.md
   i18n-coverage   report stable UI translation coverage for registered languages
+  i18n [--check | --report] [--json] [--dir PATH]
+                  validate catalogs and report missing keys; --init CODE --name NAME scaffolds a language
   perf [--quick] [--update-baseline] [--threshold PCT] [--bench NAME]... [--skip-build] [--reuse]
                   run the release benches, merge them by scenario id into target/perf/results.json,
                   check perf/budgets.toml and perf/baseline.json (non-zero on a broken budget or regression)
@@ -61,6 +63,11 @@ fn main() -> ExitCode {
         Some("stats") => stats::run(&root(), rest.contains(&"--exact")),
         Some("parity") => cmd_parity(),
         Some("i18n-coverage") => i18n_coverage::run(&root()),
+        Some("i18n") => {
+            let mut command = cargo();
+            command.args(["run", "-q", "-p", "photocraft-ui-egui", "--example", "i18n", "--"]).args(&rest);
+            run(command, "cargo xtask i18n")
+        }
         Some("perf") => perf::run(&root(), &rest),
         Some("scorecard") => scorecard::run(&root(), &rest),
         Some("version") => version::run(&root(), &rest),
