@@ -1037,11 +1037,7 @@ pub fn status_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 if let (Some(st), Some(i)) = (app.session.active(), app.session.active_index()) {
                     let (w, h, mode, bits, layers) =
                         (st.doc.size.width, st.doc.size.height, crate::canvas::mode_label(&st.doc), st.doc.depth.bits(), st.doc.layer_count());
-                    let mut pct = app.ui.views[i].zoom * 100.0;
-                    if widgets::value_field(ui, &mut pct, 1.0..=3200.0, "%", 78.0).changed() {
-                        app.ui.views[i].zoom = pct / 100.0;
-                        app.ui.views[i].fit_pending = false;
-                    }
+                    crate::zoom_tool::percent_field(ui, &mut app.ui.views[i], 78.0);
                     widgets::vline(ui, 16.0);
                     label(ui, &crate::i18n::fmt(tl!("{mode} Color · {bits} bit"), &[("mode", mode), ("bits", &bits.to_string())]));
                     widgets::vline(ui, 16.0);
@@ -1299,7 +1295,7 @@ fn navigator(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         });
     });
     let mut lz = v.zoom.max(0.01).log2();
-    if widgets::slider(ui, &mut lz, -6.64..=5.0, None).changed() {
+    if widgets::slider(ui, &mut lz, crate::zoom_tool::MIN_ZOOM.log2()..=crate::zoom_tool::MAX_ZOOM.log2(), None).changed() {
         app.ui.views[idx].zoom = 2f32.powf(lz);
         app.ui.views[idx].fit_pending = false;
     }

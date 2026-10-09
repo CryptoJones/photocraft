@@ -12,9 +12,22 @@ use crate::canvas::ViewXform;
 use crate::paint_mouse::Buttons;
 use crate::state::View;
 
-/// Zoom limits of the canvas (1 % … 6400 %).
+/// Zoom limits of the canvas (1 % … 12800 %).
 pub const MIN_ZOOM: f32 = 0.01;
-pub const MAX_ZOOM: f32 = 64.0;
+pub const MAX_ZOOM: f32 = 128.0;
+/// The zoom percentage field of the status bar and the Navigator panel. Its range is the full
+/// zoom range: a `DragValue` forces its value into its range on every frame, so a narrower range
+/// would pull any larger zoom back down to it (it once held the canvas at 3200%).
+pub fn percent_field(ui: &mut egui::Ui, view: &mut View, width: f32) -> egui::Response {
+    let mut pct = view.zoom * 100.0;
+    let resp = crate::widgets::value_field(ui, &mut pct, MIN_ZOOM * 100.0..=MAX_ZOOM * 100.0, "%", width);
+    if resp.changed() {
+        view.zoom = pct / 100.0;
+        view.fit_pending = false;
+    }
+    resp
+}
+
 /// Horizontal drag (screen points) that doubles, or halves, the zoom.
 pub const DOUBLING: f32 = 100.0;
 
@@ -107,6 +120,25 @@ mod tests {
     use egui::{Event, PointerButton};
     use egui_kittest::Harness;
     use serde_json::json;
+
+    #[test]
+    fn percent_field_holds_every_zoom_up_to_12800_percent() {
+        use egui_kittest::kittest::Queryable;
+        for zoom in [0.01, 1.0, 32.0, 64.0, 128.0] {
+            let view = View { zoom, ..View::default() };
+            let mut h = Harness::new_ui_state(
+                |ui, v: &mut View| {
+                    percent_field(ui, v, 64.0);
+                },
+                view,
+            );
+            h.run();
+            h.run();
+            assert_eq!(h.state().zoom, zoom, "the field must not move a zoom of {}%", zoom * 100.0);
+            let shown = h.query_all_by_role(egui::accesskit::Role::SpinButton).filter_map(|n| n.value()).next().unwrap_or_default();
+            assert!(shown.starts_with(&(zoom * 100.0).round().to_string()), "the field reads {shown:?}, want {}%", zoom * 100.0);
+        }
+    }
 
     #[test]
     fn scrub_zoom_is_continuous_and_clamped() {

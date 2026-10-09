@@ -637,7 +637,7 @@ pub fn fit_view(view: &mut View, doc: &Document, area: Vec2) {
 /// viewport, matching the Hand tool's Fill Screen action.
 pub fn fill_view(view: &mut View, doc: &Document, area: Vec2) {
     let (w, h) = (doc.size.width as f32, doc.size.height as f32);
-    let zoom = (area.x / w).max(area.y / h).clamp(0.01, 32.0);
+    let zoom = (area.x / w).max(area.y / h).clamp(crate::zoom_tool::MIN_ZOOM, crate::zoom_tool::MAX_ZOOM);
     view.zoom = zoom;
     view.center = [w / 2.0, h / 2.0];
     view.fit_pending = false;
@@ -646,9 +646,9 @@ pub fn fill_view(view: &mut View, doc: &Document, area: Vec2) {
 
 /// Zoom steps like Photoshop's (⌘+ / ⌘−).
 pub fn zoom_step(z: f32, dir: i32) -> f32 {
-    const STEPS: [f32; 22] =
-        [0.01, 0.02, 0.03, 0.05, 0.0667, 0.1, 0.125, 0.1667, 0.25, 0.333, 0.5, 0.6667, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 12.0, 16.0, 32.0];
-    if dir > 0 { STEPS.iter().copied().find(|s| *s > z * 1.001).unwrap_or(32.0) } else { STEPS.iter().rev().copied().find(|s| *s < z * 0.999).unwrap_or(0.01) }
+    const STEPS: [f32; 24] =
+        [0.01, 0.02, 0.03, 0.05, 0.0667, 0.1, 0.125, 0.1667, 0.25, 0.333, 0.5, 0.6667, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 12.0, 16.0, 32.0, 64.0, 128.0];
+    if dir > 0 { STEPS.iter().copied().find(|s| *s > z * 1.001).unwrap_or(128.0) } else { STEPS.iter().rev().copied().find(|s| *s < z * 0.999).unwrap_or(0.01) }
 }
 
 fn checker(app: &mut PhotocraftApp, ctx: &egui::Context) -> egui::TextureId {
@@ -2193,7 +2193,7 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
         let pointer = ui.input(|i| i.pointer.hover_pos());
         match (wheel, pointer) {
             (Some(crate::wheel_nav::Wheel::Zoom(f)), Some(p)) => {
-                let nz = (view.zoom * f).clamp(0.01, 64.0);
+                let nz = (view.zoom * f).clamp(crate::zoom_tool::MIN_ZOOM, crate::zoom_tool::MAX_ZOOM);
                 zoom_about(&mut view, &xf, p, nz, false);
             }
             (Some(crate::wheel_nav::Wheel::Pan(scroll)), _) => {
@@ -4465,7 +4465,10 @@ mod tests {
         assert_eq!(zoom_step(1.0, 1), 2.0);
         assert_eq!(zoom_step(1.0, -1), 0.6667);
         assert_eq!(zoom_step(0.4, 1), 0.5);
-        assert_eq!(zoom_step(32.0, 1), 32.0);
+        assert_eq!(zoom_step(32.0, 1), 64.0);
+        assert_eq!(zoom_step(64.0, 1), 128.0);
+        assert_eq!(zoom_step(128.0, 1), 128.0, "12800% is the limit");
+        assert_eq!(zoom_step(128.0, -1), 64.0);
     }
 
     #[test]

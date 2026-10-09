@@ -127,11 +127,7 @@ pub fn status_bar_pro(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         return;
     };
     let text = status_info_text(&st.doc, &app.ui.chrome.status_info, tl!(app.ui.tool.label()), &profile_name(&st.doc));
-    let mut pct = app.ui.views[i].zoom * 100.0;
-    if widgets::value_field(ui, &mut pct, 1.0..=3200.0, "%", 64.0).changed() {
-        app.ui.views[i].zoom = pct / 100.0;
-        app.ui.views[i].fit_pending = false;
-    }
+    crate::zoom_tool::percent_field(ui, &mut app.ui.views[i], 64.0);
     ui.add_space(12.0);
     ui.label(RichText::new(tl!(&text)).color(t.text_dim).size(12.0));
     let (r, resp) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
