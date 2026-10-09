@@ -961,6 +961,24 @@ pub fn apply_tiled_with(
     extent: Option<Rect>,
     ctl: &photocraft_raster::Interrupt,
 ) -> Option<Surface> {
+    apply_tiled_with_impl(surface, params, area, bounds, selection, tile, extent, ctl, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_tiled_with_impl(
+    surface: &Surface,
+    params: &FilterParams,
+    area: Rect,
+    bounds: Rect,
+    selection: Option<&Surface>,
+    tile: i32,
+    extent: Option<Rect>,
+    ctl: &photocraft_raster::Interrupt,
+    prepare_radial: bool,
+) -> Option<Surface> {
+    if ctl.cancelled() {
+        return None;
+    }
     let mut out = surface.clone();
     if area.is_empty() {
         return Some(out);
@@ -973,6 +991,18 @@ pub fn apply_tiled_with(
     }
     let fmt = surface.format();
     let ctx = Ctx { bounds, mode: fmt.mode, alpha: fmt.alpha };
+    // Prepare the immutable sample transforms once for all output tiles. If the
+    // optional table allocation fails, use the existing sampler; only a real
+    // cancellation returns None. Source reads keep their upstream semantics.
+    let radial = match params {
+        FilterParams::RadialBlur { amount, method, quality, center_x, center_y } if prepare_radial => {
+            blur::radial::Plan::for_area(bounds, *amount, *method, *quality, (*center_x, *center_y), area, ctl)
+        }
+        _ => None,
+    };
+    if ctl.cancelled() {
+        return None;
+    }
     let halo = params.halo_for(bounds);
     let shared = (halo == Halo::Bounds).then(|| Image::read(surface, bounds.union(&area)));
     let mut tiles = Vec::new();
@@ -1014,7 +1044,14 @@ pub fn apply_tiled_with(
                 &owned
             }
         };
-        let mut data = kernel(params, src, *t, &ctx);
+        let mut data = match &radial {
+            Some(plan) => match plan.filter(src, *t, &ctx, ctl) {
+                Some(data) => data,
+                None if ctl.cancelled() => return (*t, Vec::new()),
+                None => kernel(params, src, *t, &ctx),
+            },
+            None => kernel(params, src, *t, &ctx),
+        };
         if let Some(sel) = selection {
             mix_selection(&mut data, *t, sel, src);
         }
@@ -1144,3 +1181,18 @@ mod tests_ext;
 
 #[cfg(test)]
 mod tests_mosaic;
+
+/// The current upstream sampler through the identical source/selection/tile pipeline.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn apply_radial_reference(
+    surface: &Surface,
+    params: &FilterParams,
+    area: Rect,
+    bounds: Rect,
+    selection: Option<&Surface>,
+    extent: Rect,
+    ctl: &photocraft_raster::Interrupt,
+) -> Option<Surface> {
+    apply_tiled_with_impl(surface, params, area.intersect(&extent), bounds, selection, auto_tile(params, bounds), Some(extent), ctl, false)
+}
