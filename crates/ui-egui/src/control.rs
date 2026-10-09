@@ -634,7 +634,7 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             app.stylus.feed.set(None);
             ok(json!({"status": app.ui.status}))
         }
-        "ui.click" | "ui.move" => {
+        "ui.click" | "ui.move" | "ui.press" | "ui.release" => {
             // Screen coordinates in points (as reported by ui.inspect window size).
             let x = p.get("x").and_then(Value::as_f64).unwrap_or(0.0) as f32;
             let y = p.get("y").and_then(Value::as_f64).unwrap_or(0.0) as f32;
@@ -649,9 +649,13 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 return err(format!("`count` must be at most {MAX_CLICKS} (got {clicks})"));
             }
             app.synthetic.push(egui::Event::PointerMoved(pos));
+            if matches!(req.method.as_str(), "ui.press" | "ui.release") {
+                app.synthetic.push(egui::Event::PointerButton { pos, button, pressed: req.method == "ui.press", modifiers: Default::default() });
+            }
             for _ in 0..clicks {
                 app.synthetic.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: Default::default() });
                 app.synthetic.push(egui::Event::PointerButton { pos, button, pressed: false, modifiers: Default::default() });
+            }
             }
             ctx.request_repaint();
             Outcome::AfterInput
