@@ -2138,3 +2138,6 @@ cameraRaw	Color	Barvy
 	Lines +/−	Řádky +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login}: PR: {prs}, commity: {commits}, řádky +{added} / −{deleted} (Δ {delta}), binární soubory +{binAdded} / −{binDeleted}, {first} – {last}
 	Apply At Canvas Bounds	Použít efekt na hranicích plátna
+
+	AVIF uses 8-bit sRGB. ICC, EXIF and XMP metadata are not preserved.	AVIF používá 8bitový sRGB. Metadata ICC, EXIF a XMP se nezachovávají.
+	File size is shown after export.	Velikost souboru se zobrazí po exportu.

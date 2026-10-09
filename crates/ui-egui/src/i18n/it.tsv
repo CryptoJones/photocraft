@@ -2211,3 +2211,6 @@ cameraRaw	Amount	Quantità
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login}: {prs} PR, {commits} commit, +{added} / −{deleted} righe (Δ {delta}), +{binAdded} / −{binDeleted} risorse binarie, {first} – {last}
 	Convert to Layers	Converti in livelli
 	Apply At Canvas Bounds	Applica effetto ai limiti dell’area di lavoro
+
+	AVIF uses 8-bit sRGB. ICC, EXIF and XMP metadata are not preserved.	AVIF utilizza sRGB a 8 bit. I metadati ICC, EXIF e XMP non vengono conservati.
+	File size is shown after export.	Le dimensioni del file vengono mostrate dopo l’esportazione.

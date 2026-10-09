@@ -2121,3 +2121,6 @@ cameraRaw	Color	カラー
 	Lines +/−	行数 +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login}: PR {prs} 件、コミット {commits} 件、行 +{added} / −{deleted} (Δ {delta})、バイナリ +{binAdded} / −{binDeleted}、{first} – {last}
 	Apply At Canvas Bounds	カンバスの境界に効果を適用
+
+	AVIF uses 8-bit sRGB. ICC, EXIF and XMP metadata are not preserved.	AVIF は 8 ビット sRGB を使用します。ICC、EXIF、XMP メタデータは保持されません。
+	File size is shown after export.	ファイルサイズは書き出し後に表示されます。

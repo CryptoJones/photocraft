@@ -2569,3 +2569,6 @@ cameraRaw	Blending	Fusion
 	Lines +/−	Lignes +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login} : {prs} PR, {commits} commits, +{added} / −{deleted} lignes (Δ {delta}), +{binAdded} / −{binDeleted} fichiers binaires, {first} – {last}
 	Apply At Canvas Bounds	Appliquer l’effet aux limites de la zone de travail
+
+	AVIF uses 8-bit sRGB. ICC, EXIF and XMP metadata are not preserved.	AVIF utilise le sRGB sur 8 bits. Les métadonnées ICC, EXIF et XMP ne sont pas conservées.
+	File size is shown after export.	La taille du fichier est affichée après l’exportation.

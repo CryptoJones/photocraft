@@ -164,7 +164,7 @@ Every screenshot here is the real app at work on public-domain art, rendered off
       <br>
       <sub>Export As in the light theme, with a preview and a file-size estimate.<br><i>The Kiss</i>, Gustav Klimt, 1907–1908</sub>
       <h3>Ship it anywhere</h3>
-      Export As with format, quality, transparency and scale, plus a preview and an instant file-size estimate. Quick Export to PNG in one click.
+      Export As with format, quality, transparency and scale, plus a preview and a file-size estimate where available (AVIF reports its size after export). Quick Export to PNG in one click.
       <br><br>
       Choose a dark Pro theme, the airy Studio themes, or a Classic look.
     </td>
@@ -199,7 +199,7 @@ Every screenshot here is the real app at work on public-domain art, rendered off
     </td>
     <td width="33%" valign="top">
       <h4>🗂️ Formats</h4>
-      PSD and PSB, layered TIFF (Photoshop's layer data in the TIFF, read and written in either byte order), plus flat PNG, JPEG, TIFF, WebP (lossy and lossless), GIF, BMP, TGA, ICO, QOI, PNM, OpenEXR, Radiance HDR and AVIF, with symmetric read and write at 8, 16 and 32 bits, HEIC photos from iPhone and Mac (read; in official builds, an optional <code>--features heif</code> build feature), and the native <code>.pcraft</code> format.
+      PSD and PSB, layered TIFF (Photoshop's layer data in the TIFF, read and written in either byte order), plus flat PNG, JPEG, TIFF, WebP (lossy and lossless), GIF, BMP, TGA, ICO, QOI, PNM, OpenEXR and Radiance HDR. Supported colour models, bit depths and metadata vary by format. AVIF export writes a single 8-bit RGB/RGBA image with lossy colour and alpha compression; AVIF import is not available. AVIF is enabled by default in the desktop, CLI and web apps. HEIC photos from iPhone and Mac open in official builds through the optional <code>--features heif</code> build feature. The native <code>.pcraft</code> format keeps the document's layers and settings.
     </td>
     <td width="33%" valign="top">
       <h4>🪄 The everyday essentials</h4>

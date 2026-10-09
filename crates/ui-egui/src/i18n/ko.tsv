@@ -2722,3 +2722,6 @@ cameraRaw	Color	색상
 	Lines +/−	줄 +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login}: PR {prs}개, 커밋 {commits}개, 줄 +{added} / −{deleted} (Δ {delta}), 바이너리 +{binAdded} / −{binDeleted}, {first} – {last}
 	Apply At Canvas Bounds	캔버스 경계에 효과 적용
+
+	AVIF uses 8-bit sRGB. ICC, EXIF and XMP metadata are not preserved.	AVIF는 8비트 sRGB를 사용합니다. ICC, EXIF, XMP 메타데이터는 보존되지 않습니다.
+	File size is shown after export.	파일 크기는 내보낸 후 표시됩니다.

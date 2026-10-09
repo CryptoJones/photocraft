@@ -35,7 +35,7 @@ let out = encode(&img, Format::Tiff, &EncodeOptions::default())?;
 | PNG | yes | yes | U8, U16 | Gray, GrayA, RGB, RGBA | yes | yes (iCCP) | yes (eXIf) | yes (iTXt `XML:com.adobe.xmp`) | yes (pHYs) | yes (tEXt/zTXt/iTXt) | no | `png` |
 | JPEG | yes | yes | U8 | Gray, RGB, CMYK | no | yes (multi-segment APP2) | yes (APP1) | yes (APP1) | yes (JFIF) | no | yes | `zune-jpeg` / `jpeg-encoder` |
 | TIFF | yes | yes | U8, U16, F32 | all six (CMYK, CMYK+A included) | yes | yes (tag 34675) | no | yes (tag 700) | yes | yes (Description, Make, Model, Software, DateTime, Artist, Copyright) | no | `tiff` |
-| WebP | yes | yes (lossless only) | U8 | RGB, RGBA | yes | yes | yes | yes | no | no | no | `image-webp` |
+| WebP | yes | yes (lossless or lossy) | U8 | RGB, RGBA | yes | yes | yes | yes | no | no | optional | `image-webp` / built-in VP8 encoder |
 | GIF | yes | yes | U8 | RGBA | 1-bit | no | no | no | no | no | yes (256-colour palette) | `image` |
 | BMP | yes | yes | U8 | RGB, RGBA | yes | no | no | no | no | no | no | `image` |
 | TGA | yes | yes | U8 | Gray, GrayA, RGB, RGBA | yes | no | no | no | no | no | no | `image` |
@@ -44,11 +44,12 @@ let out = encode(&img, Format::Tiff, &EncodeOptions::default())?;
 | QOI | yes | yes | U8 | RGB, RGBA | yes | no | no | no | no | no | no | `image` |
 | OpenEXR | yes | yes | F16, F32 | Y, YA, RGB, RGBA | yes | no | no | no | no | no | no | `exr` |
 | Radiance HDR | yes | yes | F32 | RGB | no | no | no | no | no | no | yes (RGBE) | `image` |
-| AVIF | **no** | only with feature `avif` | U8 | RGB, RGBA | yes | no | no | no | no | no | yes | `image` + `ravif` |
+| AVIF | **no** | only with feature `avif` | U8 | RGB, RGBA | yes (lossy) | no | no | no | no | no | yes | `image` + `ravif` |
 | HEIF/HEIC | with feature `heif` | **no** | U8, U16 (10/12-bit decodes to U16) | RGB, RGBA | yes (auxiliary alpha) | yes (`colr` prof) | yes | yes | no | no | n/a | `heic-rs` |
 
-"Native" means the data is stored and read back without conversion. Anything else is converted by
-the encode plan, and `fidelity_warnings` reports the conversion when it loses information:
+"Native" means the layout and depth can be stored without conversion (and read back where a
+decoder exists). Anything else is converted by the encode plan, and `fidelity_warnings` reports
+the conversion when it loses information:
 
 * A float image written to an integer format goes to U16 where the format supports it. Values
   outside 0..1 raise `RangeClipped`.
@@ -76,13 +77,20 @@ the same.
   decodes to RGB. Image sequences, overlays and identity derivations, multilayer HEVC and some
   4:2:2/4:4:4 streams return `CodecError::Unsupported` or `Malformed`, never wrong pixels. Writing
   needs an HEVC encoder and every mature one is C, so HEIF is listed in `ASYMMETRIC_EXCEPTIONS`.
-* **AVIF.** Encoding uses `ravif`, which is pure Rust. Decoding
-  needs `dav1d`, which is C. AVIF is therefore read-unsupported, and write support is gated
-  behind the non-default `avif` feature. In a default build it is neither readable nor writable,
-  so the symmetric guarantee holds. It is listed in `ASYMMETRIC_EXCEPTIONS`.
-* **Lossy WebP.** There is no pure-Rust lossy WebP encoder. We always write lossless WebP, and
-  `webp_lossless: false` returns `CodecError::Unsupported`. We can read both lossy and lossless
-  files.
+* **AVIF (export-only, feature `avif`).** Encoding uses `ravif` in pure Rust. Libraries keep the
+  feature opt-in; the desktop, CLI and web apps enable it by default (distributors can use
+  `--no-default-features`). It writes a single 8-bit RGB/RGBA image, with lossy colour and alpha
+  compression and no ICC, EXIF, XMP, DPI or text metadata. Higher depths are reduced to 8 bits,
+  and float values outside 0..1 are clipped, with fidelity warnings. The backend limits the
+  canvas to 65535 × 65535 pixels. Quality uses
+  `EncodeOptions::jpeg_quality` (1–100); quality 100 is not a lossless guarantee. Direct codec
+  encoding does not colour-manage profiles: use `photocraft-io` for document export and its
+  RGB/CMYK/gray-to-sRGB conversion. AVIF decoding remains `CodecError::Unsupported` even with the
+  feature enabled: the available `image` decoder depends on the C `dav1d` library. Animated
+  AVIF is not written. The format is listed in `ASYMMETRIC_EXCEPTIONS`.
+* **WebP.** Both lossy and lossless files are readable and writable. The default is lossless
+  VP8L through `image-webp`; `webp_lossless: false` uses the built-in pure-Rust VP8 encoder with
+  `webp_quality`. Alpha is preserved, and both modes can embed ICC, EXIF and XMP.
 * **Animation and multi-page files** (APNG, animated GIF/WebP, multi-page TIFF): only the first
   frame or page is decoded, and a single frame is written. `FormatCaps::animation` marks
   containers that can hold more frames. The decoded image then carries a
@@ -165,6 +173,20 @@ defaults are 262144 px per side, 2^30 pixels and 8 GiB (2 GiB on 32-bit targets 
 * malformed input: truncation, bit flips and proptest random bytes;
 * Adam7 PNG against progressive PNG and against the `image` crate as an oracle;
 * limit enforcement.
+
+AVIF tests are also run with `cargo test -p photocraft-codecs --features avif --test avif`.
+Because there is no AVIF decoder in this crate, generate independent-decoder oracle inputs with:
+
+```sh
+cargo run --release -p photocraft-codecs --features avif --example avif_fixtures -- log/avif-oracle
+```
+
+The example writes synthetic RGB/RGBA, 16-bit and float inputs, plus tiny and narrow images,
+at qualities 20, 85 and 100, with their quantized 8-bit PNG references. Decode the `.avif` files
+with an independent implementation such as libavif, and compare dimensions, alpha and visible
+colours or composites against the `*-reference.png` files. RGB hidden under zero alpha is not a
+fidelity guarantee; alpha itself is lossy. These generated files are test artifacts, not corpus
+assets to commit.
 
 If `corpus/pngsuite/*.png` exists at the repo root, every file in it is compared against the
 `image` crate's decoder. Without it, that test is skipped.
