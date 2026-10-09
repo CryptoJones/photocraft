@@ -1680,3 +1680,23 @@ fn clipped_brightness_and_desaturation_whiten_a_lighter_color_logo() {
     assert!(p[..3].iter().all(|v| *v * 255.0 >= 252.0), "logo whitened: {p:?}");
     assert!(close4(px(&d, 1, 0), yellow), "the yellow beside it is untouched");
 }
+
+#[test]
+fn rendering_restores_the_lab_mix_flag_it_found() {
+    // #1112: a render set LAB_MIX for its document, then cleared it. A nested rayon job (a
+    // gradient fill, say) can let a thread render another tile in the middle of an outer Lab
+    // tile, and clearing the flag made the rest of that outer tile mix in sRGB.
+    for mode in [ColorMode::Lab, ColorMode::Rgb] {
+        let doc = Document::with_background("t", Size::new(8, 8), mode, SampleType::U8, Color::WHITE);
+        // Single-tile and multi-tile paths (the latter also prepares effect maps under the flag).
+        for tile in [RENDER_TILE, 4] {
+            for outer in [true, false] {
+                psblend::LAB_MIX.with(|l| l.set(outer));
+                let _ = render_tiled(&doc, doc.bounds(), tile);
+                let after = psblend::LAB_MIX.with(|l| l.get());
+                psblend::LAB_MIX.with(|l| l.set(false));
+                assert_eq!(after, outer, "{mode:?} with tile {tile} inside a tile that had LAB_MIX = {outer}");
+            }
+        }
+    }
+}
