@@ -20,31 +20,14 @@ const OPEN_EXTS: &[&str] = &[
     "pfm", "heic", "heif", "hif", "dng", "cr2", "cr3", "nef", "nrw", "arw", "pef", "orf", "rw2", "raf", "abr", "grd", "svg", "svgz", "aco", "ase",
 ];
 
-/// Unix file pickers (XDG portal and zenity) use case-sensitive globs. rfd prefixes each
-/// extension with `*.`, so character classes cover every casing without listing all variants.
-/// Windows and macOS expect literal extensions and already match them without case sensitivity.
+/// Open dialog extensions that also match uppercase and mixed-case names (`IMG_0001.JPG`).
+/// On Linux and the BSDs rfd turns each extension into a case-sensitive `*.ext` glob for the XDG
+/// portal or zenity, so every letter becomes a character class, as the portal spec suggests
+/// (`*.[iI][cC][oO]`). Windows and macOS take literal extensions and ignore case already.
 fn open_filter_extensions(extensions: &[&str]) -> Vec<String> {
-    extensions
-        .iter()
-        .map(|extension| {
-            if cfg!(all(unix, not(target_os = "macos"))) {
-                let mut pattern = String::new();
-                for c in extension.chars() {
-                    if c.is_ascii_alphabetic() {
-                        pattern.push('[');
-                        pattern.push(c.to_ascii_lowercase());
-                        pattern.push(c.to_ascii_uppercase());
-                        pattern.push(']');
-                    } else {
-                        pattern.push(c);
-                    }
-                }
-                pattern
-            } else {
-                (*extension).to_string()
-            }
-        })
-        .collect()
+    let case_sensitive_globs = cfg!(all(unix, not(target_os = "macos")));
+    let class = |c: char| if c.is_ascii_alphabetic() { format!("[{}{}]", c.to_ascii_lowercase(), c.to_ascii_uppercase()) } else { c.to_string() };
+    extensions.iter().map(|ext| if case_sensitive_globs { ext.chars().map(class).collect() } else { ext.to_string() }).collect()
 }
 
 /// File › Save As formats: (filter name, extensions). The filter matching the suggested name's
@@ -411,20 +394,32 @@ mod tests {
     #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn open_filters_cover_uppercase_and_mixed_case_extensions() {
-        let patterns = open_filter_extensions(OPEN_EXTS);
-        for (extension, expected) in [
-            ("jpg", "[jJ][pP][gG]"),
-            ("jpeg", "[jJ][pP][eE][gG]"),
-            ("png", "[pP][nN][gG]"),
-            ("orf", "[oO][rR][fF]"),
-            ("cr2", "[cC][rR]2"),
-            ("pcraft", "[pP][cC][rR][aA][fF][tT]"),
-        ] {
-            assert!(OPEN_EXTS.contains(&extension));
-            assert!(patterns.iter().any(|pattern| pattern == expected), "{extension} missing case-insensitive filter");
+        // Matches `text` against a glob of literals and `[..]` classes, as the portal would after `*.`.
+        fn matches(glob: &str, text: &str) -> bool {
+            let mut text = text.chars();
+            let mut glob = glob.chars();
+            while let Some(g) = glob.next() {
+                let class: String = if g == '[' { glob.by_ref().take_while(|&c| c != ']').collect() } else { g.to_string() };
+                if !text.next().is_some_and(|t| class.contains(t)) {
+                    return false;
+                }
+            }
+            text.next().is_none()
         }
-        assert_eq!(open_filter_extensions(&["pcraft"]), ["[pP][cC][rR][aA][fF][tT]"]);
-        assert_eq!(patterns.len(), OPEN_EXTS.len());
+        assert_eq!(open_filter_extensions(&["cr2", "pcraft"]), ["[cC][rR]2", "[pP][cC][rR][aA][fF][tT]"]);
+        let globs = open_filter_extensions(OPEN_EXTS);
+        assert_eq!(globs.len(), OPEN_EXTS.len());
+        for (ext, glob) in OPEN_EXTS.iter().zip(&globs) {
+            // Every casing: lower, UPPER, and alternating both ways (JpG, jPg).
+            let alternating = |upper_first: bool| -> String {
+                ext.chars().enumerate().map(|(i, c)| if (i % 2 == 0) == upper_first { c.to_ascii_uppercase() } else { c }).collect()
+            };
+            for name in [ext.to_string(), ext.to_ascii_uppercase(), alternating(true), alternating(false)] {
+                assert!(matches(glob, &name), "{glob} should match .{name}");
+            }
+            assert!(!matches(glob, &format!("{ext}x")) && !matches(glob, &ext[..ext.len() - 1]), "{glob} matches only .{ext}");
+        }
+        assert!(!globs.iter().any(|glob| matches(glob, "txt")));
     }
 
     #[cfg(not(all(unix, not(target_os = "macos"))))]
