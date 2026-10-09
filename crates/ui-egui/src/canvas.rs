@@ -432,6 +432,7 @@ pub(crate) fn freehand_tool(tool: Tool) -> bool {
             | Tool::SpotHealing
             | Tool::Healing
             | Tool::CloneStamp
+            | Tool::PatternStamp
             | Tool::Blur
             | Tool::Sharpen
             | Tool::Smudge
@@ -1257,7 +1258,7 @@ fn tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
             let cut = name_g.size().x + 0.5 < natural_w - STUDIO_TAB_PAD + STUDIO_TAB_GAP - meta_g.size().x;
             let resp = ui.interact(r, ui.id().with(("dtab", i)), Sense::click());
             resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, sel, &st.doc.name));
-            doc_tabs.push(r);
+            doc_tabs.push((i, r));
             if sel {
                 ui.painter().rect_filled(r, t.radius_sm, t.card);
                 ui.painter().rect_stroke(r, t.radius_sm, Stroke::new(1.0, t.card_border), egui::StrokeKind::Inside);
@@ -1480,7 +1481,7 @@ fn pro_tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
         resp.context_menu(|ui| {
             tab_action = tab_context_menu(ui, i, tab_count);
         });
-        doc_tabs.push(r);
+        doc_tabs.push((i, r));
     }
     for &(i, r) in placed.iter().filter(|(i, _)| *i >= tab_count) {
         let Some((job, _, frac)) = opening.get(i - tab_count) else { continue };
@@ -1539,14 +1540,19 @@ fn pro_tabs(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> TabStrip {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TabStrip {
     pub rect: Rect,
-    /// The document tabs, left to right.
-    pub tabs: Vec<Rect>,
+    /// The document tabs shown, left to right, with their document index. When the tabs overflow
+    /// into the » menu, some documents have no tab here.
+    pub tabs: Vec<(usize, Rect)>,
 }
 
 impl TabStrip {
-    /// The tab position a drop at `x` opens at: before the first tab whose middle is right of it.
+    /// The document position a drop at `x` opens at: before the first shown tab whose middle is
+    /// right of it, else after the last shown tab.
     pub fn slot(&self, x: f32) -> usize {
-        self.tabs.iter().filter(|r| r.center().x < x).count()
+        match self.tabs.iter().find(|(_, r)| r.center().x >= x) {
+            Some(&(i, _)) => i,
+            None => self.tabs.last().map_or(0, |&(i, _)| i.saturating_add(1)),
+        }
     }
 }
 
@@ -1558,7 +1564,9 @@ fn drop_slot_line(app: &mut PhotocraftApp, ui: &egui::Ui) {
     let at = app.services.cursor_pos.as_mut().and_then(|f| f(ui.ctx()));
     let crate::file_open::DropTarget::Tabs(slot) = app.drop_target(ui.ctx(), at) else { return };
     let Some(tabs) = app.tab_strip.as_ref().map(|s| &s.tabs) else { return };
-    let Some((r, after)) = tabs.get(slot).map(|r| (*r, false)).or_else(|| tabs.last().map(|r| (*r, true))) else { return };
+    let Some((r, after)) = tabs.iter().find(|(i, _)| *i == slot).map(|&(_, r)| (r, false)).or_else(|| tabs.last().map(|&(_, r)| (r, true))) else {
+        return;
+    };
     crate::widgets::drop_line(ui, r, after, true, &crate::theme::Tokens::get(ui.ctx()));
 }
 
@@ -1655,7 +1663,7 @@ fn start_screen(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     app.ui.open_dialog(crate::state::DialogKind::NewDocument, fields);
                 }
                 if crate::widgets::secondary_button(ui, &open_label, 190.0).clicked() {
-                    app.open_dialog_file();
+                    let _ = app.open_dialog_file();
                 }
             });
             ui.add_space(22.0);
@@ -2112,7 +2120,12 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
         {
             crate::canvas_tool_menu::open_transform(app, [p.x, p.y]);
         }
-        let lasso_retracted = tool == Tool::Lasso && response.secondary_clicked() && crate::lasso_ui::undo_last_vertex(app);
+        let lasso_retracted = response.secondary_clicked()
+            && match tool {
+                Tool::Lasso => crate::lasso_ui::undo_last_vertex(app),
+                Tool::PolygonLasso => polygon_retract(app),
+                _ => false,
+            };
         if tool == Tool::Lasso {
             crate::lasso_ui::canvas_input(app, &ctx, &xf, &response);
             (buttons.started, buttons.dragged, buttons.stopped, buttons.clicked) = (false, false, false, false);
@@ -3309,6 +3322,18 @@ fn polygon_click(app: &mut PhotocraftApp, x: f64, y: f64, mods: egui::Modifiers)
     app.ui.polygon.push([x, y]);
 }
 
+/// Remove the Polygonal Lasso's last vertex (⌫, Delete or a right-click while drawing, #1229);
+/// removing the only one cancels the polygon. False when no polygon is being drawn.
+pub fn polygon_retract(app: &mut PhotocraftApp) -> bool {
+    if app.ui.polygon.pop().is_none() {
+        return false;
+    }
+    if app.ui.polygon.is_empty() {
+        app.ui.polygon_mode.clear();
+    }
+    true
+}
+
 /// A new-selection polygonal (or magnetic) lasso is being drawn, so the selection it will replace
 /// is hidden.
 pub fn polygon_replaces_selection(app: &PhotocraftApp) -> bool {
@@ -3577,6 +3602,7 @@ mod tests {
             Tool::Eraser,
             Tool::BackgroundEraser,
             Tool::CloneStamp,
+            Tool::PatternStamp,
             Tool::Smudge,
             Tool::Dodge,
             Tool::Lasso,
@@ -3596,6 +3622,12 @@ mod tests {
         assert!(brush_tip_centre(Tool::Healing, true, false, 20.0));
         assert!(!brush_tip_centre(Tool::Healing, false, false, 20.0));
         assert!(brush_tip_centre(Tool::CloneStamp, false, true, 20.0));
+        assert!(brush_tip_centre(Tool::PatternStamp, false, false, 20.0));
+        assert!(
+            brush_tip_centre(Tool::PatternStamp, true, false, 20.0),
+            "Pattern Stamp keeps the brush centre; Option does not switch it to a clone-source mark"
+        );
+        assert!(!brush_tip_centre(Tool::PatternStamp, false, false, 2.0));
         assert!(brush_tip_centre(Tool::Brush, false, false, 20.0));
         assert!(!brush_tip_centre(Tool::QuickSelection, false, false, 20.0));
         assert!(brush_tip_centre(Tool::BackgroundEraser, false, false, 2.0));

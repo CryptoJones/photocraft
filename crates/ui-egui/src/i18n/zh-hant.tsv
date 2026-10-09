@@ -1391,6 +1391,9 @@
 	Stroke	筆畫
 	Stroke Catch-up	筆畫追補
 	Stroke:	筆畫：
+	Location	位置
+	Location:	位置：
+	Preserve Transparency	保留透明區域
 	Style	樣式
 	Style Options	樣式選項
 	Style Options…	樣式選項…
@@ -2178,6 +2181,18 @@ cameraRaw	Blending	混合
 	Edits that change the whole document, such as a layer's blend mode, opacity or visibility, redraw all of it.	變更整份文件的編輯（例如圖層的混合模式、不透明度或可見度）會重繪整份文件。
 	Its layers don't fit the GPU memory budget. Raising Memory usage in Preferences › Performance raises the budget, up to a quarter of this computer's memory.	圖層超出 GPU 記憶體預算。在 偏好設定 › 效能 中提高記憶體使用量可增加預算，最多為本機記憶體的四分之一。
 	The GPU compositor wasn't used: {reason}	未使用 GPU 合成器：{reason}
-	Location	位置
-	Location:	位置：
-	Preserve Transparency	保留透明區域
+fontWeight	Thin	極細
+fontWeight	ExtraLight	特細
+fontWeight	Light	細體
+fontWeight	Regular	常規
+fontWeight	Medium	中等
+fontWeight	SemiBold	半粗
+fontWeight	Bold	粗體
+fontWeight	ExtraBold	特粗
+fontWeight	Black	黑體
+fontWeight	Italic	斜體
+
+# Pattern Stamp tool
+	Pattern Stamp Tool	圖案圖章工具
+	Pattern Stamp	圖案圖章
+	Impressionist	印象派

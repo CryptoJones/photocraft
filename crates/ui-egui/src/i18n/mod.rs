@@ -686,6 +686,20 @@ mod tests {
         assert_eq!(tr(Lang::EN, "Seafoam"), "Seafoam");
     }
 
+    /// Font style labels are built from dynamic words (weights, "Italic"), so the literal
+    /// scanner cannot cover them; "Light" there is a weight, distinct from the Camera Raw
+    /// "Light" section (`type_tool::style_label`).
+    #[test]
+    fn font_weight_names_are_translated() {
+        const TERMS: &[&str] = &["Thin", "ExtraLight", "Light", "Regular", "Medium", "SemiBold", "Bold", "ExtraBold", "Black", "Italic"];
+        for lang in Lang::all().filter(|l| l.complete_menus()) {
+            for t in TERMS {
+                assert!(lang.0.catalog().contextual("fontWeight", t).is_some(), "{} missing font weight: {t}", lang.code());
+            }
+            assert_ne!(tr_ctx(lang, "cameraRaw", "Light"), tr_ctx(lang, "fontWeight", "Light"), "{}: Camera Raw Light vs the font weight", lang.code());
+        }
+    }
+
     /// Blend mode names come from the colour crate; each must be translated.
     #[test]
     fn blend_mode_names_are_translated() {
@@ -699,6 +713,21 @@ mod tests {
     #[test]
     fn mixer_brush_ui_strings_have_translations_in_every_registered_language() {
         const STRINGS: &[&str] = &["Mixer Brush", "Mixer Brush Tool", "Wet", "Load", "Mix", "Flow", "Sample All Layers"];
+        for lang in Lang::all() {
+            for source in STRINGS {
+                let translated = tr(lang, source);
+                if lang == Lang::EN {
+                    assert_eq!(translated, *source, "English source string {source}");
+                } else {
+                    assert_ne!(translated, *source, "{} is missing {source:?}", lang.code());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pattern_stamp_ui_strings_have_translations_in_every_registered_language() {
+        const STRINGS: &[&str] = &["Pattern Stamp Tool", "Pattern Stamp", "Impressionist", "Aligned"];
         for lang in Lang::all() {
             for source in STRINGS {
                 let translated = tr(lang, source);
