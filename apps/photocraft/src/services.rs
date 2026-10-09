@@ -17,7 +17,7 @@ use std::sync::Arc;
 /// brushes (.abr), gradients (.grd) and swatches (.aco, .ase), which go to the preset libraries.
 const OPEN_EXTS: &[&str] = &[
     "pcraft", "psd", "psb", "psdt", "png", "jpg", "jpeg", "tif", "tiff", "webp", "gif", "bmp", "tga", "ico", "qoi", "exr", "hdr", "pbm", "pgm", "ppm", "pam",
-    "pfm", "heic", "heif", "hif", "dng", "cr2", "cr3", "nef", "nrw", "arw", "pef", "orf", "rw2", "raf", "abr", "grd", "svg", "svgz", "aco", "ase",
+    "pfm", "avif", "heic", "heif", "hif", "dng", "cr2", "cr3", "nef", "nrw", "arw", "pef", "orf", "rw2", "raf", "abr", "grd", "svg", "svgz", "aco", "ase",
 ];
 
 /// File › Save As formats: (filter name, extensions). The filter matching the suggested name's
@@ -29,6 +29,7 @@ const SAVE_FILTERS: &[(&str, &[&str])] = &[
     ("PNG", &["png"]),
     ("JPEG", &["jpg"]),
     ("WebP", &["webp"]),
+    ("AVIF", &["avif"]),
     ("TIFF", &["tif"]),
     ("Targa", &["tga"]),
     ("OpenEXR", &["exr"]),
@@ -247,6 +248,10 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
             if let Some(q) = settings.jpeg_quality {
                 opts.encode.jpeg_quality = q;
             }
+            opts.encode.avif_quality = settings.avif_quality;
+            opts.encode.avif_alpha_quality = settings.avif_alpha_quality;
+            opts.encode.avif_speed = settings.avif_speed;
+            opts.encode.avif_depth = settings.avif_depth;
             opts.encode.webp_lossless = settings.webp_lossless;
             if let Some(q) = settings.webp_quality {
                 opts.encode.webp_quality = q;
@@ -434,13 +439,13 @@ mod tests {
         // Save As, Save a Copy.
         // Files in a format Save As can't write, like .dng, should suggest .psd instead.
         let _ = invoke(&mut app, "file.saveAs");
-        for name in ["cat.pcraft", "cat.jpeg", "cat.gif", "cat.bmp", "cat.dng"] {
+        for name in ["cat.pcraft", "cat.jpeg", "cat.gif", "cat.bmp", "cat.avif", "cat.dng"] {
             app.session.active_mut().unwrap().path = Some(name.into());
             let _ = invoke(&mut app, "file.saveAs");
         }
         let _ = invoke(&mut app, "file.saveACopy");
         // Export As, Quick Export, Save for Web (with and without slices).
-        for format in ["png", "jpg", "webp", "tif", "tga"] {
+        for format in ["png", "jpg", "webp", "avif", "tif", "tga"] {
             dialog(&mut app, "file.export.exportAs", json!({"format": format}));
         }
         for format in ["png", "jpg", "gif", "webp"] {
@@ -460,13 +465,13 @@ mod tests {
         let exts: Vec<&str> = asked.iter().filter_map(|s| s.rsplit_once('.').map(|(_, e)| e)).collect();
         // The extension each save above should suggest, in order.
         let want = [
-            "psd",                       // Save As untitled
-            "pcraft jpeg gif bmp psd",   // Save As opened .pcraft .jpeg .gif .bmp .dng
-            "psd",                       // Save a Copy
-            "png jpg webp tif tga",      // Export As
-            "png jpg gif webp",          // Quick Export
-            "gif png png jpg wbmp html", // Save for Web: gif png8 png24 jpeg wbmp, then with slices
-            "csv pcpresets",             // Measurement Log, Export Presets
+            "psd",                          // Save As untitled
+            "pcraft jpeg gif bmp avif psd", // Save As opened writable formats and .dng
+            "psd",                          // Save a Copy
+            "png jpg webp avif tif tga",    // Export As
+            "png jpg gif webp",             // Quick Export
+            "gif png png jpg wbmp html",    // Save for Web: gif png8 png24 jpeg wbmp, then with slices
+            "csv pcpresets",                // Measurement Log, Export Presets
         ]
         .join(" ");
         assert_eq!(exts, want.split(' ').collect::<Vec<_>>());

@@ -167,6 +167,8 @@ fn avif_default_build_write_unsupported() {
 fn every_warning_has_a_message() {
     let all = [
         W::WriteUnsupported { format: Format::Avif },
+        W::NeedsColorConversion { format: Format::Avif },
+        W::AvifPrecision { bits: 10 },
         W::DepthReduced { from: SampleType::F32, to: SampleType::F16 },
         W::RangeClipped,
         W::AlphaDiscarded,
@@ -195,6 +197,10 @@ fn warnings_match_actual_roundtrip_behaviour() {
             for s in SampleType::ALL {
                 let img = test_image(l, s);
                 let w = warns(&img, f);
+                if w.iter().any(W::is_fatal) {
+                    assert!(encode(&img, f, &EncodeOptions::default()).is_err(), "{f:?} {l:?} {s:?}: fatal planning must reject encoding");
+                    continue;
+                }
                 let back = decode(&encode(&img, f, &EncodeOptions::default()).unwrap()).unwrap();
                 let depth_reduced = w.iter().any(|w| matches!(w, W::DepthReduced { .. }));
                 let lost_depth = back.sample_type() != s && back.sample_type() != SampleType::F32 && s != SampleType::U8;

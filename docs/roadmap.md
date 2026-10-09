@@ -62,6 +62,13 @@ Confidence: moderate — the next users of 0.2.x will move these numbers either 
 
 ### By dimension
 
+2026-10-09: AVIF still-image import/export now reaches the desktop/browser filters,
+Export As, CLI, engine saves and headless RPC/MCP. Import retains 8/10/12-bit pixels;
+export offers lossy 8/10-bit RGB 4:4:4, alpha and ICC, with CMS conversions for other
+document colour modes. Synthetic tests and independent libaom/libdav1d fixtures
+measure pixel error; limits and options fail gracefully. Sequences, grids, geometric
+properties, unsupported HDR encodings and EXIF/XMP remain open. See [AVIF coverage](avif.md).
+
 | Dimension | Measured / evidence (2026-10-05) | Grade | Notes |
 |---|---|---|---|
 | Menu wiring | 626/626 menu items dispatch a command (`parity.md`) | high but shallow | Says nothing about behaviour. |

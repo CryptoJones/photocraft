@@ -1,3 +1,6 @@
+pub(crate) mod avif;
+#[cfg(feature = "avif")]
+mod avif_container;
 pub(crate) mod deep_exr;
 pub(crate) mod exr;
 pub(crate) mod heif;
