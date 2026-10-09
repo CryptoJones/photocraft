@@ -282,7 +282,7 @@ fn main() -> eframe::Result {
     let mut options = native_options(custom_titlebar);
     // winit picks Wayland whenever `WAYLAND_DISPLAY` is set; open on X11 when that was chosen.
     #[cfg(target_os = "linux")]
-    if session == linux_libs::DisplaySession::X11 {
+    if session == linux_libs::DisplaySession::X11 || linux_libs::use_xwayland(|k| std::env::var(k).ok()) {
         use winit::platform::x11::EventLoopBuilderExtX11 as _;
         options.event_loop_builder = Some(Box::new(|builder| {
             builder.with_x11();
