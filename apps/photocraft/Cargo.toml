@@ -50,7 +50,7 @@ fmv-macos-events = "=0.1.0"
 # pointer is when files are dropped (cursor.rs; winit 0.30 drops carry no position). Already in
 # Cargo.lock (winit, photocraft-tablet); pinned exactly to the same versions.
 objc2 = "=0.6.4"
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSGeometry"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSGeometry", "NSProcessInfo"] }
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSApplicationScripting", "NSEvent", "NSResponder", "NSView", "NSWindow"] }
 # The macOS menu bar (mac_menu.rs): Tauri's menu crate, AppKit menus behind a safe API (no GTK
 # with default features off). Pinned exactly: review the diff before bumping.
