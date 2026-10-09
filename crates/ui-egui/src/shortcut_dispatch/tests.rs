@@ -640,3 +640,45 @@ fn f6_while_recording_records_a_named_call_not_the_child_steps() {
     h.state_mut().run("actions.stop", json!({})).unwrap();
     assert_eq!(h.state().session.actions.list[1].steps, [("actions.play".into(), json!({"action":"LivePrint 2R"}))]);
 }
+
+#[test]
+fn delete_clears_selected_pixels_with_selection_tools_and_deletes_with_move() {
+    for key in [Key::Delete, Key::Backspace] {
+        for tool in [
+            Tool::RectMarquee,
+            Tool::EllipseMarquee,
+            Tool::Lasso,
+            Tool::PolygonLasso,
+            Tool::MagneticLasso,
+            Tool::MagicWand,
+            Tool::QuickSelection,
+            Tool::ObjectSelection,
+            Tool::Move,
+        ] {
+            let mut app = PhotocraftApp::new(realistic(), services());
+            app.ui.tool = tool;
+            app.session.edit_prefs(|p| {
+                p.dialogs.insert("layer.delete.confirmation".into(), json!({"skip":true}));
+            });
+            let id = app.session.active().unwrap().active_layer.unwrap();
+            let ctx = egui::Context::default();
+            let input = egui::RawInput {
+                events: vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }],
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                assert!(super::dispatch_pressed(&mut app, ui.ctx(), Focus::None, false));
+            });
+            output.textures_delta.clear();
+            if tool == Tool::Move {
+                assert!(app.session.active().unwrap().doc.layer(id).is_none());
+            } else {
+                assert!(app.session.active().unwrap().doc.layer(id).is_some(), "{tool:?}");
+                let alpha = app.session.active().unwrap().doc.layer(id).unwrap().surface().unwrap().rgba(30, 30)[3];
+                assert_eq!(alpha, 0.0, "{tool:?}");
+                assert!(app.ui.dialogs.is_empty());
+            }
+            assert_eq!(take_log(&ctx).last().unwrap().0, if tool == Tool::Move { "layer.delete" } else { "edit.clear" });
+        }
+    }
+}

@@ -126,7 +126,8 @@ fn reveal_survives_odd_documents() {
     h.run_steps(3);
     h.state_mut().run("layer.new.layer", json!({})).unwrap();
     h.run_steps(3);
-    h.state_mut().run("layer.delete", json!({})).unwrap();
+    let dialog = h.state_mut().run("layer.delete", json!({})).unwrap()["dialog"].as_u64().unwrap();
+    crate::dialogs::confirm(h.state_mut(), dialog).unwrap();
     h.run_steps(3);
     h.state_mut().run("file.close", json!({})).ok();
     h.state_mut().sync_views();

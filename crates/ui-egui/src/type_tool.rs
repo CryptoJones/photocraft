@@ -603,7 +603,7 @@ pub fn commit(app: &mut PhotocraftApp) {
     let Some(ed) = app.ui.text_edit.take() else { return };
     let Some(text) = current_text(app, LayerId(ed.layer)) else { return };
     if text.trim().is_empty() && ed.created {
-        let _ = app.run("layer.delete", json!({"layer": ed.layer}));
+        let _ = app.run_command("layer.delete", json!({"layer": ed.layer}));
     } else if ed.created {
         let name = photocraft_engine::type_cmds::layer_name(&text);
         let _ = app.run("type.edit", json!({"layer": ed.layer, "name": name, "coalesce": ed.session}));
