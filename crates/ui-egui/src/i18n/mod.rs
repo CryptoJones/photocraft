@@ -701,8 +701,17 @@ mod tests {
     fn color_lookup_export_scope_labels_are_translated() {
         for lang in Lang::all().filter(|l| *l != Lang::EN) {
             for source in ["Scope", "Selected"] {
-                assert!(lang.catalog().plain(source).is_some(), "{}: missing LUT export label {source:?}", lang.code());
-                assert_ne!(tr(lang, source), source, "{}: untranslated LUT export label {source:?}", lang.code());
+                assert!(
+                    lang.catalog().plain(source).is_some(),
+                    "{}: missing LUT export label {source:?}",
+                    lang.code()
+                );
+                assert_ne!(
+                    tr(lang, source),
+                    source,
+                    "{}: untranslated LUT export label {source:?}",
+                    lang.code()
+                );
             }
         }
     }
