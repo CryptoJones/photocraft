@@ -17,9 +17,17 @@ const FORMAT: PixelFormat = PixelFormat { mode: ColorMode::Grayscale, sample: Sa
 
 #[derive(Default)]
 struct Cache {
-    map: HashMap<u64, (Surface, u64)>,
+    map: HashMap<u64, CacheEntry>,
     in_flight: HashMap<u64, Weak<OnceLock<Surface>>>,
     tick: u64,
+}
+
+struct CacheEntry {
+    surface: Surface,
+    tick: u64,
+    // The key contains input tile addresses. Keep those tiles alive until eviction:
+    // edits must copy them, and the allocator cannot reuse their addresses for new tiles.
+    _pixel_input: Option<Surface>,
 }
 
 fn cache() -> &'static Mutex<Cache> {
@@ -40,8 +48,8 @@ fn lookup(c: &Mutex<Cache>, k: u64) -> CachedMask {
     c.tick = c.tick.saturating_add(1);
     let tick = c.tick;
     if let Some(e) = c.map.get_mut(&k) {
-        e.1 = tick;
-        return CachedMask::Hit(e.0.clone());
+        e.tick = tick;
+        return CachedMask::Hit(e.surface.clone());
     }
     // The callers own each slot, so completed builds do not retain an extra
     // surface after their last caller returns. Sweep dead weak slots on misses.
@@ -54,29 +62,29 @@ fn lookup(c: &Mutex<Cache>, k: u64) -> CachedMask {
     CachedMask::Pending(slot)
 }
 
-fn finish_mask(c: &Mutex<Cache>, k: u64, slot: &Arc<OnceLock<Surface>>, build: impl FnOnce() -> Surface) -> Surface {
+fn finish_mask(c: &Mutex<Cache>, k: u64, slot: &Arc<OnceLock<Surface>>, pixel_input: Option<Surface>, build: impl FnOnce() -> Surface) -> Surface {
     slot.get_or_init(|| {
         // Never hold the global cache mutex while rasterizing or feathering.
         let surface = build();
         let mut c = c.lock().unwrap_or_else(|e| e.into_inner());
         if c.in_flight.get(&k).and_then(Weak::upgrade).is_some_and(|active| Arc::ptr_eq(&active, slot)) {
             if c.map.len() >= CAPACITY
-                && let Some(old) = c.map.iter().min_by_key(|e| e.1.1).map(|e| *e.0)
+                && let Some(old) = c.map.iter().min_by_key(|e| e.1.tick).map(|e| *e.0)
             {
                 c.map.remove(&old);
             }
             let tick = c.tick;
-            c.map.insert(k, (surface.clone(), tick));
+            c.map.insert(k, CacheEntry { surface: surface.clone(), tick, _pixel_input: pixel_input });
         }
         surface
     })
     .clone()
 }
 
-fn cached_mask(c: &Mutex<Cache>, k: u64, build: impl FnOnce() -> Surface) -> Surface {
+fn cached_mask(c: &Mutex<Cache>, k: u64, pixel_input: Option<Surface>, build: impl FnOnce() -> Surface) -> Surface {
     match lookup(c, k) {
         CachedMask::Hit(surface) => surface,
-        CachedMask::Pending(slot) => finish_mask(c, k, &slot, build),
+        CachedMask::Pending(slot) => finish_mask(c, k, &slot, pixel_input, build),
     }
 }
 
@@ -152,7 +160,8 @@ pub fn combined_mask(layer: &Layer, canvas: Rect) -> Option<Surface> {
     if !layer.vector_mask.as_ref().is_some_and(|v| v.enabled) && !has_feather(layer) {
         return None;
     }
-    Some(cached_mask(cache(), key(layer, canvas), || build_mask(layer, canvas)))
+    let pixel_input = layer.mask.as_ref().map(|m| m.surface.clone());
+    Some(cached_mask(cache(), key(layer, canvas), pixel_input, || build_mask(layer, canvas)))
 }
 
 fn build_mask(layer: &Layer, canvas: Rect) -> Surface {
@@ -217,6 +226,7 @@ fn build_mask(layer: &Layer, canvas: Rect) -> Surface {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use photocraft_doc::LayerMask;
     use photocraft_doc::vector::{Knot, Path, Subpath, VectorMask};
 
     fn pending(c: &Mutex<Cache>, k: u64) -> Arc<OnceLock<Surface>> {
@@ -251,7 +261,7 @@ mod tests {
                     let (c, barrier, builds) = (&c, &barrier, &builds);
                     scope.spawn(move || {
                         barrier.wait();
-                        finish_mask(c, 7, slot, || {
+                        finish_mask(c, 7, slot, None, || {
                             builds.fetch_add(1, Ordering::SeqCst);
                             test_surface()
                         })
@@ -265,7 +275,7 @@ mod tests {
 
         // Evicting the retained result cannot make existing callers build again.
         c.lock().unwrap().map.clear();
-        let again = finish_mask(&c, 7, &slots[0], || panic!("rebuilt an active slot"));
+        let again = finish_mask(&c, 7, &slots[0], None, || panic!("rebuilt an active slot"));
         assert!(Arc::ptr_eq(again.tiles().next().unwrap().1, outputs[0].tiles().next().unwrap().1));
         drop(slots);
         let next = pending(&c, 8);
@@ -286,7 +296,7 @@ mod tests {
         std::thread::scope(|scope| {
             let c = &c;
             let first = scope.spawn(move || {
-                cached_mask(c, 1, || {
+                cached_mask(c, 1, None, || {
                     started_tx.send(()).unwrap();
                     release_rx.recv_timeout(Duration::from_secs(10)).unwrap();
                     test_surface()
@@ -294,7 +304,7 @@ mod tests {
             });
             started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
             let second = scope.spawn(move || {
-                let surface = cached_mask(c, 2, test_surface);
+                let surface = cached_mask(c, 2, None, test_surface);
                 second_tx.send(surface.sample_channel(0, 0, 0)).unwrap();
             });
             assert_eq!(second_rx.recv_timeout(Duration::from_secs(5)).unwrap(), 0.5);
@@ -311,9 +321,9 @@ mod tests {
         c.lock().unwrap().in_flight.clear();
         let current = pending(&c, 1);
         assert!(!Arc::ptr_eq(&old, &current));
-        let old_surface = finish_mask(&c, 1, &old, test_surface);
+        let old_surface = finish_mask(&c, 1, &old, None, test_surface);
         assert!(c.lock().unwrap().map.is_empty());
-        let current_surface = finish_mask(&c, 1, &current, test_surface);
+        let current_surface = finish_mask(&c, 1, &current, None, test_surface);
         assert!(!Arc::ptr_eq(old_surface.tiles().next().unwrap().1, current_surface.tiles().next().unwrap().1));
         assert_eq!(c.lock().unwrap().map.len(), 1);
     }
@@ -364,6 +374,34 @@ mod tests {
         });
         rx.recv_timeout(Duration::from_secs(10)).expect("mask initializer deadlocked inside Rayon");
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn pixel_edits_refresh_cached_masks_at_every_depth() {
+        let canvas = Rect::new(0, 0, 64, 64);
+        for sample in [SampleType::U8, SampleType::U16, SampleType::F32] {
+            let mut layer = Layer::raster("edited mask", PixelFormat::RGBA8);
+            let mut mask = LayerMask::hide_all();
+            mask.surface = Surface::new(PixelFormat { sample, ..FORMAT });
+            mask.surface.fill_rect(canvas, &[1.0]);
+            mask.feather = 4.0;
+            layer.mask = Some(mask);
+
+            let first = combined_mask(&layer, canvas).unwrap();
+            assert!((first.sample_channel(32, 32, 0) - 1.0).abs() < 1e-6);
+            drop(first);
+            // No document/undo snapshot shares the input. Previously this write could
+            // reuse the original tile address and return the old cached white mask.
+            layer.mask.as_mut().unwrap().surface.fill_rect(canvas, &[0.0]);
+            let edited = combined_mask(&layer, canvas).unwrap();
+            assert_eq!(edited.sample_channel(32, 32, 0), 0.0, "{sample:?}");
+
+            layer.mask.as_mut().unwrap().surface.fill_rect(canvas, &[0.5]);
+            let repainted = combined_mask(&layer, canvas).unwrap();
+            assert!((repainted.sample_channel(32, 32, 0) - 0.5).abs() < 0.005, "{sample:?}");
+            let warm = combined_mask(&layer, canvas).unwrap();
+            assert!(repainted.tiles().zip(warm.tiles()).all(|((_, a), (_, b))| Arc::ptr_eq(a, b)));
+        }
     }
 
     #[test]
