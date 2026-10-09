@@ -150,7 +150,7 @@ fn txt2_extras_survive_a_resave_of_unchanged_text() {
     };
     let kept = save("AV");
     let object = kept.path(&["1", "1"]).and_then(E::as_array).unwrap()[0].clone();
-    assert_eq!(object.path(&["21", "1"]).and_then(E::as_array).map(Vec::len), Some(2), "pen positions survive a resave of unchanged text");
+    assert_eq!(object.path(&["21", "1"]).and_then(E::as_array).map(|items| items.len()), Some(2), "pen positions survive a resave of unchanged text");
     let stale = save("AX");
     let object = stale.path(&["1", "1"]).and_then(E::as_array).unwrap()[0].clone();
     assert!(object.get("21").is_none(), "positions of another text are stale and dropped");
