@@ -235,3 +235,10 @@ target = "Rotate View tool: drag to turn the view, Reset View, Match Rotation co
 status = "done"
 issue = 214
 note = "Tool::RotateView in the Hand flyout; view.rotateView / view.resetView; Match Rotation copies views[].rotation; enhanced_controls.rotate_view_with_trackpad is read"
+
+[[item]]
+id = "TOOL-213-19"
+target = "Art History Brush: Y-group, styles, Area, Tolerance, paints from a history state"
+status = "done"
+issue = 213
+note = "paint.artHistoryBrush + Tool::ArtHistoryBrush in the Y flyout; Tight/Loose/Dab/Curl styles, Area, Tolerance"
