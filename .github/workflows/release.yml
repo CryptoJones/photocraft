@@ -245,6 +245,74 @@ jobs:
           path: dist/release/*
           if-no-files-found: error
 
+  linux-i686:
+    name: Linux i686
+    needs: version
+    runs-on: ubuntu-22.04
+    environment: release
+    env:
+      PHOTOCRAFT_VERSION: ${{ needs.version.outputs.version }}
+      PHOTOCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
+      NFPM_VERSION: 2.47.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out craft-fonts (embedded fonts)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: storytold/craft-fonts
+          ref: ${{ env.CRAFT_FONTS_REF }}
+          path: craft-fonts
+      - name: Install packaging tools on host runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsync libc6-i386
+          curl -fsSL -o "$RUNNER_TEMP/nfpm.deb" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_amd64.deb"
+          sudo dpkg -i "$RUNNER_TEMP/nfpm.deb"
+      - name: Build 32-bit binaries and tarball in i386 Bookworm container
+        run: |
+          docker run --rm \
+            --platform linux/386 \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            -e PHOTOCRAFT_VERSION="$PHOTOCRAFT_VERSION" \
+            -e PHOTOCRAFT_BUILD_DATE="$PHOTOCRAFT_BUILD_DATE" \
+            -e PHOTOCRAFT_ARCH="i686" \
+            -e CRAFT_FONTS_DIR="/workspace/craft-fonts" \
+            -e CRAFT_FONTS_REQUIRED="1" \
+            -e INPUT_VERSION="${{ inputs.version }}" \
+            i386/debian:bookworm \
+            linux32 bash -exc '
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential curl ca-certificates git pkg-config \
+                libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-host i686-unknown-linux-gnu --profile minimal
+              . "$HOME/.cargo/env"
+              if [ -n "$INPUT_VERSION" ]; then cargo xtask version set "$PHOTOCRAFT_VERSION"; fi
+              packaging/linux/package.sh --formats "tar"
+              chmod -R a+rwX dist/ target/
+            '
+      - name: Package AppImage, deb and rpm on host runner
+        run: |
+          sudo chown -R "$(id -u)":"$(id -g)" target/ dist/
+          PHOTOCRAFT_ARCH=i686 packaging/linux/package.sh --skip-build --formats "appimage deb rpm"
+      - name: Check the packages
+        run: |
+          dpkg-deb --info dist/release/*.deb
+          dpkg-deb --contents dist/release/*.deb | grep -E 'usr/bin/photocraft$|metainfo|applications'
+          for appimage in dist/release/*.AppImage; do
+            chmod +x "$appimage"
+            # Update information (#349) is embedded, and the .zsync for delta updates sits beside it.
+            "$appimage" --appimage-updateinformation | grep -F 'gh-releases-zsync|'
+            test -s "$appimage.zsync"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-i686
+          path: dist/release/*
+          if-no-files-found: error
+
   flatpak:
     name: Flatpak ${{ matrix.arch }}
     needs: [version, linux]
@@ -372,7 +440,7 @@ jobs:
 
   release:
     name: Draft GitHub Release
-    needs: [version, macos, windows, linux, flatpak, freebsd, web]
+    needs: [version, macos, windows, linux, linux-i686, flatpak, freebsd, web]
     runs-on: ubuntu-latest
     environment: release
     permissions:
