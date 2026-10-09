@@ -243,6 +243,7 @@ fn a_refused_full_flush_falls_back_to_a_plain_fsync_on_apple_only() {
 fn sync_file_flushes_a_local_file() {
     let dir = TempDir::new("sync");
     let path = dir.0.join("f.bin");
-    std::fs::write(&path, b"x").unwrap();
-    sync_file(&std::fs::File::open(&path).unwrap()).unwrap();
+    // Opened for writing, as the saves do: Windows can't flush a read-only handle.
+    let file = std::fs::OpenOptions::new().write(true).create_new(true).open(&path).unwrap();
+    sync_file(&file).unwrap();
 }
