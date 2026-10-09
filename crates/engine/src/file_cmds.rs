@@ -780,7 +780,7 @@ impl OutputClaims {
     }
 }
 
-fn batch(_s: &mut Session, p: &Value) -> Result<Value> {
+fn batch(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "file.automate.batch";
     let steps =
         parse_steps(p.get("steps").or_else(|| p.get("action")).ok_or_else(|| EngineError::BadParams { cmd: cmd.into(), msg: "missing \"steps\"".into() })?)?;

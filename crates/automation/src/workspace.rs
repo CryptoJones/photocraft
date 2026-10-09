@@ -169,7 +169,10 @@ pub fn authorize_engine_command(id: &str, params: &Value) -> Result<(), Automati
     if id.starts_with("file.") && !safe_file_command {
         return Err(command_error(id));
     }
-    if (id.starts_with("layer.smartObjects.") && id != "layer.smartObjects.convertToSmartObject")
+    // Browser authorization and private credentials require a local human UI action.
+    if (id.starts_with("account.chatgpt.") && id != "account.chatgpt.status")
+        || id == "generative.run"
+        || (id.starts_with("layer.smartObjects.") && id != "layer.smartObjects.convertToSmartObject")
         || matches!(
             id,
             "pattern.import"
@@ -448,10 +451,19 @@ mod tests {
             "measurementLog.export",
             "layer.videoLayers.reloadFrame",
             "edit.colorSettings",
+            "account.chatgpt.signIn",
+            "account.chatgpt.select",
+            "account.chatgpt.refresh",
+            "account.chatgpt.signOut",
+            "account.chatgpt.acknowledgeWelcome",
+            "generative.run",
         ] {
             assert!(authorize_engine_command(id, &serde_json::json!({})).is_err());
         }
         assert!(authorize_engine_command("file.new", &serde_json::json!({})).is_ok());
+        assert!(authorize_engine_command("account.chatgpt.status", &serde_json::json!({})).is_ok());
+        assert!(authorize_engine_command("generative.capabilities", &serde_json::json!({})).is_ok());
+        assert!(authorize_engine_command("generative.prepare", &serde_json::json!({})).is_ok());
         // The UI-level examples in docs/control-protocol.md.
         for id in ["view.zoomIn", "window.theme.pro", "edit.search"] {
             assert!(authorize_desktop_engine_command(id, &serde_json::json!({})).is_ok(), "{id}");

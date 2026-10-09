@@ -97,6 +97,9 @@ pub const UI_SET_FIELDS: [&str; 22] = [
     "brushSize",
     "gradientBlendMode",
     "gradientClassic",
+    "contextualTaskbar",
+    "chatgptAccount",
+    "generative",
 ];
 
 /// Most clicks one `ui.click` may queue (#982). Each click is a press and a release that the app
@@ -280,6 +283,46 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             if let Some(field) = p.as_object().and_then(|o| o.keys().find(|k| !UI_SET_FIELDS.contains(&k.as_str()))) {
                 return err(format!("unknown field `{field}` (fields: {})", UI_SET_FIELDS.join(", ")));
             }
+            let taskbar = if let Some(value) = p.get("contextualTaskbar") {
+                let Some(fields) = value.as_object() else { return err("contextualTaskbar must be an object") };
+                if fields.keys().any(|k| k != "visible" && k != "position") {
+                    return err("contextualTaskbar accepts visible and position only");
+                }
+                let mut state = app.ui.contextual_taskbar.clone();
+                if let Some(v) = fields.get("visible") {
+                    let Some(visible) = v.as_bool() else { return err("contextualTaskbar.visible must be a boolean") };
+                    state.visible = visible;
+                }
+                if let Some(v) = fields.get("position") {
+                    if v.is_null() {
+                        state.position = None;
+                    } else {
+                        let Ok(point) = serde_json::from_value::<[f32; 2]>(v.clone()) else {
+                            return err("contextualTaskbar.position must be null or two finite coordinates from 0 to 1");
+                        };
+                        if point.iter().any(|n| !n.is_finite() || !(0.0..=1.0).contains(n)) {
+                            return err("contextualTaskbar.position coordinates must be from 0 to 1");
+                        }
+                        state.position = Some(point);
+                    }
+                }
+                Some(state)
+            } else {
+                None
+            };
+            let account_open = if let Some(value) = p.get("chatgptAccount") {
+                let Some(open) = value.as_bool() else { return err("chatgptAccount must be a boolean") };
+                Some(open)
+            } else {
+                None
+            };
+            let generative = match p.get("generative") {
+                Some(value) => match app.ui.generative.patched(value) {
+                    Ok(state) => Some(state),
+                    Err(error) => return err(error),
+                },
+                None => None,
+            };
             let gradient_blend = if let Some(value) = p.get("gradientBlendMode") {
                 let Some(name) = value.as_str() else { return err("gradientBlendMode must be a blend mode name") };
                 let Some(mode) = photocraft_engine::commands::blend_from_str(name).filter(|m| photocraft_color::BlendMode::LAYER_MODES.contains(m)) else {
@@ -761,6 +804,10 @@ pub fn inspect(app: &PhotocraftApp, ctx: &egui::Context) -> Value {
     json!({
         "window": {"width": screen.width(), "height": screen.height(), "pixelsPerPoint": ctx.pixels_per_point()},
         "tool": app.ui.tool,
+        "contextualTaskbar": app.ui.contextual_taskbar,
+        "chatgptAccountOpen": app.ui.chatgpt_account_open,
+        "generative": app.ui.generative,
+        "chatgpt": app.session.chatgpt_status(),
         "toolOptions": app.ui.tool_options,
         "magnetic": app.ui.magnetic,
         "textEdit": app.ui.text_edit,
@@ -946,6 +993,42 @@ mod tests {
         let r = call(&mut app, &ctx, "ui.menu.invoke", json!({"id": "filter.blur.gaussianBlur"}));
         assert!(r.to_string().contains("dialog"), "ui.menu.invoke should open the dialog: {r}");
         assert_eq!(app.session.active().unwrap().revision, rev, "opening a dialog must not edit the document");
+    }
+
+    #[test]
+    fn contextual_bar_control_rejects_bad_positions_and_can_restore_hidden_actions() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        assert_eq!(call(&mut app, &ctx, "ui.set", json!({"contextualTaskbar":{"visible":false,"position":[0.2,0.8]}}))["ok"], true);
+        assert!(!app.ui.contextual_taskbar.visible);
+        let before = app.ui.contextual_taskbar.clone();
+        for bad in [json!({"position":[-1,0]}), json!({"position":[0,2]}), json!({"position":[0]}), json!({"visible":"yes"}), json!({"prompt":"x"})] {
+            assert_eq!(call(&mut app, &ctx, "ui.set", json!({"contextualTaskbar":bad}))["ok"], false);
+            assert_eq!(app.ui.contextual_taskbar, before);
+        }
+        crate::menus::invoke(&mut app, &ctx, "window.contextualTaskbar", json!({})).unwrap();
+        assert!(app.ui.contextual_taskbar.visible);
+        assert_eq!(call(&mut app, &ctx, "ui.set", json!({"contextualTaskbar":{"position":null},"chatgptAccount":true}))["ok"], true);
+        assert!(app.ui.chatgpt_account_open);
+        assert!(app.ui.contextual_taskbar.position.is_none());
+    }
+
+    #[test]
+    fn generative_controls_are_local_and_invalid_patches_change_nothing() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        let before = app.ui.clone();
+        for bad in [json!({"width":0}), json!({"operation":"wrong"}), json!({"prompt":true}), json!({"endpoint":"https://example.invalid"})] {
+            assert_eq!(call(&mut app, &ctx, "ui.set", json!({"tool":"move","generative":bad}))["ok"], false);
+            assert_eq!(app.ui, before);
+        }
+        assert_eq!(
+            call(&mut app, &ctx, "ui.set", json!({"generative":{"open":true,"operation":"generate","prompt":"A blue bicycle","width":1024,"height":768}}))["ok"],
+            true
+        );
+        assert_eq!(call(&mut app, &ctx, "ui.inspect", json!({}))["result"]["generative"]["open"], true);
+        assert_eq!(call(&mut app, &ctx, "engine.execute", json!({"command":"generative.run"}))["ok"], false);
+        assert!(app.session.active().is_none());
     }
 
     #[test]

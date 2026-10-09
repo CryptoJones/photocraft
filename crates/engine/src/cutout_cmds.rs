@@ -1,7 +1,7 @@
-//! Remove Background, Photoshop's Quick Action for a pixel layer (Properties › Quick Actions):
-//! Select Subject with a light edge refinement, turned into a layer mask, in one history step.
-//! Like Photoshop it is non-destructive (the pixels stay; the mask hides the background), turns
-//! the Background layer into a normal layer first and has no menu item.
+//! Remove Background for pixel and rendered Smart Object layers. The configured subject
+//! method becomes an editable layer mask in one history step. Classical selection adds light
+//! edge refinement; downloaded matting models preserve their alpha. Pixels and placed source
+//! content stay intact, and a Background layer becomes a normal layer first.
 
 use photocraft_algo::matting::{self, RefineParams};
 use photocraft_algo::segment::subject;
@@ -18,7 +18,8 @@ const CMD: &str = "layer.removeBackground";
 /// edges and hair get partial coverage instead of a hard cut.
 const REFINE: RefineParams = RefineParams { radius: 2.0, smart_radius: true, smooth: 10.0, feather: 0.5, contrast: 10.0, shift_edge: 0.0 };
 
-/// Remove Background needs an unlocked pixel layer.
+/// Placed photos are Smart Objects by default. Their rendered cache has already been placed
+/// in document coordinates; the mask belongs to the layer, preserving the embedded source.
 fn check(doc: &Document, l: &Layer) -> std::result::Result<(), String> {
     if !matches!(l.content, LayerContent::Raster(_)) {
         return Err(format!("the layer is {} {} layer, not a pixel layer", l.content.article(), l.content.kind_name()));
@@ -41,17 +42,26 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
     check(doc, doc.layer(id).ok_or(EngineError::NoLayer(id))?).map_err(EngineError::Other)?;
     let sample_all = p.get("sampleAllLayers").and_then(Value::as_bool).unwrap_or(false);
     let refine = p.get("refine").and_then(Value::as_bool).unwrap_or(true);
+    let model = crate::model_cmds::subject_model(s, p)?;
+    let backend = model.map(|_| crate::model_cmds::backend(s)).transpose()?;
     crate::jobs::edit_job(
         s,
         "Remove Background",
         move |doc, _, ctx| {
             ctx.progress(0.1, "Finding subject");
-            let found = with_doc_sampler(doc, Some(id), sample_all, |smp, d| subject::select_subject(smp, d.bounds()));
+            let found = match (model, backend.as_ref()) {
+                (Some(model), Some(backend)) => with_doc_sampler(doc, Some(id), sample_all, |smp, d| {
+                    crate::model_cmds::infer_region(backend.as_ref(), model, smp, d, photocraft_ml::Prompt::Subject, ctx)
+                })?,
+                _ => with_doc_sampler(doc, Some(id), sample_all, |smp, d| subject::select_subject(smp, d.bounds())),
+            };
             let mut region = found.ok_or_else(|| EngineError::Other("no subject found".into()))?;
             if ctx.cancelled() {
                 return Err(EngineError::Cancelled);
             }
-            if refine {
+            // BiRefNet already estimates a soft alpha matte. Classical edge refinement would
+            // threshold or change those opacities, so it applies only to the classical selector.
+            if refine && model.is_none() {
                 ctx.progress(0.6, "Refining edge");
                 let refined = with_doc_sampler(doc, Some(id), sample_all, |smp, d| {
                     matting::refine_mask(smp, &matting::region_reader(&region), region.bbox, d.bounds(), &REFINE)
@@ -67,7 +77,7 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
             let b = region.bbox;
             Ok([b.x0, b.y0, b.width() as i32, b.height() as i32])
         },
-        move |bounds| json!({ "layer": id.0, "bounds": bounds }),
+        move |bounds| json!({ "layer": id.0, "bounds": bounds, "model": model.map_or("classical", |m| m.name()) }),
     )
 }
 
@@ -78,7 +88,7 @@ pub fn specs() -> Vec<CommandSpec> {
         label: "Remove Background",
         menu: &[],
         shortcut: None,
-        params: r##"{"layer":id?,"sampleAllLayers":bool=false,"refine":bool=true} → {layer,bounds} (adds a layer mask from Select Subject; the Background becomes a normal layer)"##,
+        params: r##"{"layer":id?,"sampleAllLayers":bool=false,"refine":bool=true,"model":"classical|birefnet-hr-matting"?} → {layer,bounds,model} (model defaults to Preferences; refine applies to classical only; replaces the layer mask; the Background becomes a normal layer)"##,
         enabled,
         run,
         journal: true,
@@ -198,6 +208,27 @@ mod tests {
         assert_eq!(l.name, "Layer 0");
         assert!(!l.locks.transparency && !l.locks.position);
         assert!(l.mask.is_some());
+    }
+
+    #[test]
+    fn smart_photo_mask_preserves_source_and_undoes() {
+        for depth in [8, 16, 32] {
+            let (mut s, inside) = disc(depth);
+            s.execute("layer.smartObjects.convertToSmartObject", json!({})).unwrap();
+            let id = active_id(&s);
+            let before = layer(&s, id).content.clone();
+            let steps = s.active().unwrap().history.past_len();
+            assert!(s.is_enabled(CMD));
+            s.execute(CMD, json!({"refine":false})).unwrap();
+            assert_eq!(layer(&s, id).content, before, "embedded source and placed cache must stay intact at depth {depth}");
+            assert_eq!(s.active().unwrap().history.past_len(), steps + 1);
+            assert!(mask_iou(&s, 200, 160, &inside) >= 0.75);
+            s.execute("edit.undo", json!({})).unwrap();
+            assert!(layer(&s, id).mask.is_none());
+            assert_eq!(layer(&s, id).content, before);
+            s.execute("edit.redo", json!({})).unwrap();
+            assert!(layer(&s, id).mask.is_some());
+        }
     }
 
     #[test]

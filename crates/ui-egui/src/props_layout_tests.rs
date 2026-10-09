@@ -115,7 +115,8 @@ fn pixel_layer_shows_remove_background_quick_action() {
     let shown: Vec<&str> = visible_quick_actions(app, &layer_of(app, pixel).content).iter().map(|(_, id)| *id).collect();
     assert!(shown.contains(&"layer.removeBackground"), "{shown:?}");
     assert!(crate::menus::is_live("layer.removeBackground"));
-    assert!(h.query_by_label("Remove Background").is_some());
+    // Both the dock Quick Action and the floating viewport action are visible.
+    assert_eq!(h.query_all_by_label("Remove Background").count(), 2);
 }
 
 #[test]

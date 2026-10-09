@@ -787,6 +787,12 @@ pub struct ColorPanelState {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UiState {
+    #[serde(default)]
+    pub contextual_taskbar: crate::contextual_taskbar::TaskbarState,
+    #[serde(default)]
+    pub chatgpt_account_open: bool,
+    #[serde(default)]
+    pub generative: crate::generative_ui::GenerativeState,
     pub tool: Tool,
     /// Recently opened file paths, most-recent first (File › Open Recent). Capped; de-duplicated.
     #[serde(default)]
@@ -952,6 +958,9 @@ pub struct UiState {
 impl Default for UiState {
     fn default() -> Self {
         Self {
+            contextual_taskbar: Default::default(),
+            chatgpt_account_open: false,
+            generative: Default::default(),
             tool: Tool::Brush,
             recent_files: Vec::new(),
             text_edit: None,

@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod account_cmds;
 pub mod actions_cmds;
 pub mod adjust_cmds;
 pub mod adjust_params;
@@ -60,6 +61,7 @@ pub mod magnetic_cmds;
 pub mod mask_view_cmds;
 mod migrate_cmds;
 pub mod mode_cmds;
+pub mod model_cmds;
 pub mod multichannel_cmds;
 pub mod notes_cmds;
 pub mod paint_cmds;
@@ -299,6 +301,11 @@ pub struct Session {
     color_restrict: Option<usize>,
     /// Edit › Preferences, keyboard shortcuts, menu and toolbar customisation (see `prefs`).
     pub prefs: prefs::PrefsStore,
+    /// Optional native model service, injected by a platform frontend. An ordinary/test/web
+    /// session has none: creating a Session never downloads models or accesses a model directory.
+    pub model_backend: Option<Arc<dyn photocraft_ml::InferenceBackend>>,
+    /// Optional, app-owned ChatGPT service. Tokens stay behind the backend boundary.
+    pub chatgpt_accounts: Option<Arc<dyn photocraft_chatgpt::Accounts>>,
     /// Edit menu state: Fade source, custom shape library (see `edit_menu_cmds`).
     pub edit_state: edit_menu_cmds::EditState,
     /// The pattern library (Window › Patterns; see `pattern.*`).
