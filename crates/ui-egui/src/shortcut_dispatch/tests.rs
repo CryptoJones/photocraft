@@ -477,7 +477,67 @@ fn delete_without_a_selection_deletes_every_selected_layer() {
     assert_eq!(names(&h).len(), n - 2);
 }
 
-/// A selection keeps Edit › Clear: the selected pixels go, the layer stays.
+/// A selection doesn't stop Delete deleting several selected layers: Clear only clears one.
+#[test]
+fn delete_with_a_selection_deletes_several_selected_layers() {
+    for key in ["Delete", "Backspace"] {
+        let mut h = harness();
+        put_focus(&mut h, Place::Canvas);
+        let s = &mut h.state_mut().session;
+        let paint = s.active().unwrap().active_layer.unwrap();
+        let other = photocraft_doc::LayerId(s.execute("layer.new.layer", json!({"name": "other"})).unwrap()["layer"].as_u64().unwrap());
+        s.execute("layer.select", json!({"layer": paint.0})).unwrap();
+        s.execute("layer.select", json!({"layer": other.0, "mode": "add"})).unwrap();
+        assert!(s.active().unwrap().doc.selection.is_some());
+        h.run_steps(2);
+        let before = names(&h);
+        press(&mut h, key);
+        assert_eq!(logged(&h), ["layer.delete"], "{key}");
+        let doc = &h.state().session.active().unwrap().doc;
+        assert!(doc.layer(paint).is_none() && doc.layer(other).is_none(), "{key}: both selected layers are gone");
+        assert_eq!(names(&h).len(), before.len() - 2, "{key}: only they");
+        press(&mut h, "Cmd+Z");
+        assert_eq!(names(&h), before, "{key}: one undo brings them back");
+    }
+}
+
+/// With a selection on a layer Clear can't clear (an adjustment layer), Delete deletes the layer
+/// instead of saying Clear needs a pixel layer.
+#[test]
+fn delete_with_a_selection_deletes_a_layer_without_pixels() {
+    let mut h = harness();
+    put_focus(&mut h, Place::Canvas);
+    let s = &mut h.state_mut().session;
+    let adj = photocraft_doc::LayerId(s.execute("layer.newAdjustmentLayer.invert", json!({})).unwrap()["layer"].as_u64().unwrap());
+    assert!(s.active().unwrap().doc.selection.is_some());
+    h.run_steps(2);
+    let n = names(&h).len();
+    press(&mut h, "Delete");
+    assert_eq!(logged(&h), ["layer.delete"]);
+    assert!(h.state().session.active().unwrap().doc.layer(adj).is_none(), "the adjustment layer is gone");
+    assert_eq!(names(&h).len(), n - 1);
+}
+
+/// Clicking an adjustment layer's row targets its mask (as the Layers panel does); Delete still
+/// deletes the layer rather than handing the key to Clear, which can't clear it.
+#[test]
+fn delete_deletes_an_adjustment_layer_whose_mask_is_targeted() {
+    let mut h = harness();
+    put_focus(&mut h, Place::Canvas);
+    let s = &mut h.state_mut().session;
+    s.execute("select.deselect", json!({})).unwrap();
+    let adj = photocraft_doc::LayerId(s.execute("layer.newAdjustmentLayer.invert", json!({})).unwrap()["layer"].as_u64().unwrap());
+    // A new adjustment layer may already carry its mask.
+    let _ = s.execute("layer.layerMask.revealAll", json!({}));
+    assert!(s.active().unwrap().doc.layer(adj).unwrap().mask.is_some());
+    h.state_mut().ui.mask_target = true;
+    h.run_steps(2);
+    press(&mut h, "Delete");
+    assert_eq!(logged(&h), ["layer.delete"]);
+    assert!(h.state().session.active().unwrap().doc.layer(adj).is_none(), "the adjustment layer is gone");
+}
+
+/// A selection on a single pixel layer keeps Edit › Clear: the selected pixels go, the layer stays.
 #[test]
 fn delete_with_a_selection_clears_it() {
     let mut h = harness();

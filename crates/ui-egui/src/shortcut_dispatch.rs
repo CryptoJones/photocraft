@@ -241,18 +241,26 @@ pub fn dispatch_pressed(app: &mut PhotocraftApp, ctx: &egui::Context, focus: Foc
     ran
 }
 
-/// Clear's key (Delete / Backspace) with nothing selected deletes the selected layers, of any
-/// kind, as in Photoshop (#1077): Edit › Clear only clears pixel layers, so on an adjustment, fill,
-/// type or shape layer the key did nothing. A selection, a targeted layer mask, a single channel
-/// or Quick Mask keeps Clear.
+/// Clear's key (Delete / Backspace) deletes the selected layers, of any kind (#1077): Edit › Clear
+/// only clears one pixel layer, so on an adjustment, fill, type or shape layer, or with several
+/// layers selected, the key did nothing. Clear keeps the key only where it has something to
+/// clear: a single pixel layer with a selection or its layer mask targeted, a single channel or
+/// Quick Mask. (Clicking an adjustment or fill layer's row targets its mask, which must not hand
+/// the key to Clear.)
 fn delete_key_command(app: &PhotocraftApp, id: String) -> String {
     if id != "edit.clear" {
         return id;
     }
     let Some(st) = app.session.active() else { return id };
     let composite = st.channel_view.target == photocraft_engine::channel_cmds::ChannelTarget::Composite && st.doc.quick_mask.is_none();
-    let mask = app.ui.mask_target && st.active_layer.and_then(|l| st.doc.layer(l)).is_some_and(|l| l.mask.is_some());
-    if st.doc.selection.is_some() || !composite || mask {
+    if !composite {
+        return id;
+    }
+    let active = st.active_layer.and_then(|l| st.doc.layer(l));
+    let mask = app.ui.mask_target && active.is_some_and(|l| l.mask.is_some());
+    let several = photocraft_engine::layer_multi_cmds::multi(&app.session, &serde_json::Value::Null);
+    let pixels = active.is_some_and(|l| matches!(l.content, photocraft_doc::LayerContent::Raster(_)));
+    if pixels && !several && (mask || st.doc.selection.is_some()) {
         return id;
     }
     "layer.delete".into()
