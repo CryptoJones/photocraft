@@ -95,6 +95,8 @@ Confidence: moderate — the next users of 0.2.x will move these numbers either 
 | Stability | Never-crash lint series, crash guard, `panic_hunt` fuzzing in the gate | medium-high | No field crash data yet. |
 | Camera RAW | DNG, CR2, Sony ARW (lossless + compressed), Nikon NEF (lossless + lossy compressed), RW2, uncompressed ORF | medium | CR3, RAF, Nikon "lossy after split" and calibrated colour for non-DNG cameras still open (#50). |
 | AI / generative | none | ~0% | Deferred by decision (#41). |
+| Camera RAW | DNG, CR2, Sony ARW (lossless + compressed), RW2, uncompressed ORF | medium | Nikon compressed NEF, CR3, RAF blocked by clean-room limits (#50). |
+| AI / generative | Optional OpenAI image commands: generate, fill, expand, variations | early | Opt-in via `OPENAI_API_KEY`; privacy and limits below (decision #41). |
 | Ecosystem | Sandboxed WebAssembly plug-ins instead of .8BF; no ExtendScript/UXP/.atn; no Adobe Fonts/Libraries/cloud docs | low | By design for 8BF; scripting compatibility open. |
 | Platforms | macOS (notarized), Windows, Linux (AppImage/deb/rpm/Flatpak bundle), web | medium-high | Flathub later (#173); Windows signing material pending. |
 | Localisation | 2026-10-07: 10 UI languages; menu, `tl!`, blend mode, preference and brush-section coverage enforced by tests; live switching and scoped Preferences previews | medium | Engine errors/status messages still partly English; CJK web fonts, browser-locale detection, and RTL remain open. |
@@ -156,8 +158,16 @@ unchanged.
 5. **Complex-document performance** (#125/#128) and GPU tiling beyond the texture limit (#49).
 6. **Recurring visual QA** (`cargo run -p photocraft-engine --example designer_psd`) and fast
    turnaround on user reports (OS, document size, layer count, screenshot).
-7. Later / needs decisions: generative AI backend (#41), scripting compatibility (ExtendScript /
+7. Later / needs decisions: additional generative AI backends (#41), scripting compatibility (ExtendScript /
    UXP / .atn), Flathub (#173), Wayland pen pressure (#79).
+
+### Optional generative images (decision #41)
+
+The four OpenAI image commands are opt-in: they are disabled until `OPENAI_API_KEY` is set in the desktop app's environment. The key is used only in an HTTPS Authorization header and is never stored in `.pcraft`, command journals, logs or error messages. Removing the variable disables them. The web build cannot send these requests.
+
+**Privacy:** `image.ai.generate` sends the prompt to OpenAI. `edit.ai.generativeFill` sends the prompt and a flattened PNG crop around the active selection (with a 64 px margin), plus a transparent PNG mask. `image.ai.expandCanvas` sends the prompt, a downscaled composite and mask of the new canvas. `layer.ai.variations` sends the visible document composite and prompt by default; `source: "layer"` sends only the active raster layer. Review [OpenAI's API data policies](https://platform.openai.com/docs/guides/your-data) before using these commands with sensitive images.
+
+The provider defaults to `gpt-image-1`; `model` can select another `gpt-image` model. Generate accepts `prompt` and optional `size` (`1024x1024`, `1024x1536`, `1536x1024`, or `auto`). Fill requires a selection and prompt. Expand accepts `pixels` (1–1024 per side) and prompt. Variations has an optional prompt and `source` (`composite` by default, or `layer`) and creates a full-canvas layer. `Session::start` runs these as cancelable jobs; a successful result creates a new layer and one undo step. Canceling discards the result locally, but an HTTP request already sent may still finish remotely. The edit mask's transparent pixels mark the area to repaint. PhotoCraft scales the PNG result back into document coordinates, overlays only the selected or expanded area, and converts it to the document's color mode and sample depth. See the [official Images API reference](https://developers.openai.com/api/reference/resources/images).
 
 ## Current focus (infrastructure before the long tail)
 
