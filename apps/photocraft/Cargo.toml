@@ -30,7 +30,8 @@ photocraft-io = { workspace = true }
 photocraft-format = { workspace = true }
 photocraft-automation = { workspace = true }
 photocraft-ui-egui = { workspace = true }
-# Pen tablet pressure/tilt on macOS and X11 (the workspace's one isolated unsafe helper crate).
+# Pen tablet pressure/tilt and pen buttons on macOS, Windows and X11 (the workspace's one
+# isolated unsafe helper crate).
 photocraft-tablet = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "wayland", "x11", "persistence"] }
 egui = { workspace = true }
@@ -82,6 +83,9 @@ winit = { version = "=0.30.13", default-features = false, features = ["x11"] }
 # Safe Windows screen-capture bindings; Linux uses the pure-Rust X11 client/portal.
 xcap = "=0.9.8"
 winsafe = { version = "=0.0.29", default-features = false, features = ["user"] }
+# The pen monitor subclasses the eframe window: read the window's HWND from the creation context
+# through its raw handle. Already in Cargo.lock (eframe/winit pull it in); pinned exactly.
+raw-window-handle = "=0.6.2"
 
 # tests/mac_menu_appkit.rs: reads AppKit's menu bar back and sends it real key events.
 [target.'cfg(target_os = "macos")'.dev-dependencies]

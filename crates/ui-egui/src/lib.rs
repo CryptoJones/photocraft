@@ -352,6 +352,9 @@ pub struct PhotocraftApp {
     press_stroke: bool,
     /// End of the last painting stroke: ⇧-click draws a straight line from it (#178).
     last_stroke_end: Option<(DocId, [f64; 2])>,
+    /// A press-and-hold right click cancelled the pen contact: suppress every tool event until
+    /// the (emulated left) button comes back up — the cancel can land a frame before the up.
+    pub(crate) pen_cancel_gesture: bool,
     /// Control+Alt-drag brush resize in progress (`brush_resize`, #231).
     pub(crate) brush_resize: Option<brush_resize::Resize>,
     /// A ⌘⌥⌃-click layer pick is in progress; its drag and release are swallowed (`quick_pick`).
@@ -359,6 +362,9 @@ pub struct PhotocraftApp {
     /// The next tool `Down` is an Alt+right-drag that resizes the brush (#297). `tool_event`
     /// takes it on every event, so a press another handler consumes can't leave it set.
     pub(crate) brush_resize_armed: bool,
+    /// The press that opened the Brush Preset picker is this frame's (`paint_mouse`): the picker's
+    /// outside-press close must not consume it, or press-to-open would close it the same frame.
+    pub(crate) brush_picker_open_press: bool,
     /// This press began with ⌥ (Alt) held on a painting tool, so it samples colours instead of
     /// painting until it is released (`canvas::alt_eyedropper`, #417).
     pub(crate) alt_sampling: bool,
@@ -520,9 +526,11 @@ impl PhotocraftApp {
             defer_live_stroke: false,
             press_stroke: false,
             last_stroke_end: None,
+            pen_cancel_gesture: false,
             brush_resize: None,
             quick_pick: false,
             brush_resize_armed: false,
+            brush_picker_open_press: false,
             alt_sampling: false,
             opacity_keys: None,
             control_rx: None,
