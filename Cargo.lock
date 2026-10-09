@@ -3703,9 +3703,9 @@ dependencies = [
  "photocraft-heif",
  "png 0.18.1",
  "proptest",
+ "rav1d",
  "ravif",
  "rayon",
- "sqzer-rav1d",
  "thiserror 2.0.21",
  "tiff",
  "zune-core 0.5.3",
@@ -4361,6 +4361,28 @@ name = "range-alloc"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08"
+
+[[package]]
+name = "rav1d"
+version = "1.1.0"
+source = "git+https://github.com/memorysafety/rav1d?rev=d3d1cd67059f47803919be8276650e5870c9fd02#d3d1cd67059f47803919be8276650e5870c9fd02"
+dependencies = [
+ "assert_matches",
+ "atomig",
+ "av-data",
+ "bitflags 2.13.2",
+ "cc",
+ "cfg-if",
+ "libc",
+ "nasm-rs",
+ "parking_lot",
+ "paste",
+ "raw-cpuid",
+ "static_assertions",
+ "strum",
+ "to_method",
+ "zerocopy 0.7.35",
+]
 
 [[package]]
 name = "rav1e"
@@ -5106,29 +5128,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9571ea910ebd84c86af4b3ed27f9dbdc6ad06f17c5f96146b2b671e2976744f"
 dependencies = [
  "bitflags 2.13.2",
-]
-
-[[package]]
-name = "sqzer-rav1d"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "675eb2751acb31481c926e230087fd69ce497d5a6f8887ec5ba1c653c09b7cbb"
-dependencies = [
- "assert_matches",
- "atomig",
- "av-data",
- "bitflags 2.13.2",
- "cc",
- "cfg-if",
- "libc",
- "nasm-rs",
- "parking_lot",
- "paste",
- "raw-cpuid",
- "static_assertions",
- "strum",
- "to_method",
- "zerocopy 0.7.35",
 ]
 
 [[package]]

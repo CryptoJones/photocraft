@@ -174,7 +174,11 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(tl!("Format")).color(t.text_dim));
                 let mut fmt = s_fmt(f);
-                let opts: Vec<(String, &str)> = FORMATS.iter().map(|(k, l)| (k.to_string(), *l)).collect();
+                let opts: Vec<(String, &str)> = FORMATS
+                    .iter()
+                    .filter(|(k, _)| *k != "avif" || photocraft_codecs::caps(photocraft_codecs::Format::Avif).write)
+                    .map(|(k, l)| (k.to_string(), *l))
+                    .collect();
                 if crate::widgets::dropdown(ui, "export-format", &mut fmt, &opts, 130.0) {
                     set_format_defaults(f, &fmt, &app.session.prefs().export);
                 }
@@ -280,6 +284,9 @@ pub fn confirm(app: &mut PhotocraftApp, f: &Map<String, Value>) -> Result<Value,
             params.insert("avifQuality".into(), q.clone());
         }
         photocraft_engine::file_cmds::apply_avif_params(&Value::Object(params), &mut photocraft_codecs::EncodeOptions::default()).map_err(|e| e.to_string())?;
+        if !photocraft_codecs::caps(photocraft_codecs::Format::Avif).write {
+            return Err("AVIF support isn't included in this build of PhotoCraft".into());
+        }
     }
     let doc = source_document(app, f)?;
     let stem = doc.name.rsplit_once('.').map_or(doc.name.as_str(), |(a, _)| a).to_string();
@@ -394,7 +401,22 @@ mod tests {
     }
 
     #[test]
+    fn unavailable_avif_export_does_not_open_a_save_dialog() {
+        if photocraft_codecs::caps(photocraft_codecs::Format::Avif).write {
+            return;
+        }
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        let mut fields = Map::new();
+        set_format_defaults(&mut fields, "avif", &Default::default());
+        assert!(confirm(&mut app, &fields).unwrap_err().contains("isn't included"));
+        assert!(!app.file_dialog_open());
+    }
+
+    #[test]
     fn drawing_avif_controls_keeps_options_valid_for_confirmation() {
+        if !photocraft_codecs::caps(photocraft_codecs::Format::Avif).write {
+            return;
+        }
         use crate::file_dialog::{FileDialogAnswer, FileDialogRequest};
         use std::{cell::RefCell, rc::Rc};
         let calls = Rc::new(RefCell::new(Vec::new()));

@@ -306,6 +306,9 @@ mod tests {
 
     #[test]
     fn avif_save_open_and_invalid_options_through_rpc() {
+        if !photocraft_codecs::caps(photocraft_codecs::Format::Avif).write {
+            return;
+        }
         let root = std::env::temp_dir().join(format!("pc-rpc-avif-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let workspace = crate::AuthorizedWorkspace::new(Some(&root), Some(&root)).unwrap();

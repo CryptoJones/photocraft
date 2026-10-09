@@ -733,6 +733,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn headless_mcp_saves_avif_and_rejects_invalid_options() {
+        if !photocraft_codecs::caps(photocraft_codecs::Format::Avif).write {
+            return;
+        }
         let root = std::env::temp_dir().join(format!("pc-mcp-avif-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let workspace = AuthorizedWorkspace::new(Some(&root), Some(&root)).unwrap();

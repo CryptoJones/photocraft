@@ -1,27 +1,27 @@
 //! AVIF still pictures through safe Rust APIs. Dependencies are pinned, assembly is disabled.
 
-#[cfg(feature = "avif")]
+#[cfg(all(feature = "avif", not(target_arch = "wasm32")))]
 use crate::{ChannelLayout as L, SampleType as S};
 use crate::{CodecError, EncodeOptions, Format, Image, Limits};
 const F: Format = Format::Avif;
 
-#[cfg(not(feature = "avif"))]
+#[cfg(not(all(feature = "avif", not(target_arch = "wasm32"))))]
 pub(crate) fn decode(_: &[u8], _: &Limits) -> Result<Image, CodecError> {
     Err(CodecError::unsupported(F, "AVIF support isn't included in this build of PhotoCraft"))
 }
-#[cfg(not(feature = "avif"))]
+#[cfg(not(all(feature = "avif", not(target_arch = "wasm32"))))]
 pub(crate) fn encode(_: &Image, _: &EncodeOptions) -> Result<Vec<u8>, CodecError> {
     Err(CodecError::unsupported(F, "AVIF support isn't included in this build of PhotoCraft"))
 }
 
-#[cfg(feature = "avif")]
+#[cfg(all(feature = "avif", not(target_arch = "wasm32")))]
 fn guard<T>(f: impl FnOnce() -> Result<T, CodecError>) -> Result<T, CodecError> {
     // The upstream safe API still contains assertions; malformed data must not escape them.
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
         .unwrap_or_else(|_| Err(CodecError::malformed(F, "the AVIF codec rejected malformed or unsupported data")))
 }
 
-#[cfg(feature = "avif")]
+#[cfg(all(feature = "avif", not(target_arch = "wasm32")))]
 fn picture(data: &[u8], limits: &Limits) -> Result<rav1d::Picture, CodecError> {
     let md = avif_parse::AV1Metadata::parse_av1_bitstream(data).map_err(|e| CodecError::malformed(F, e))?;
     // AVIF 1.2 §2.1 permits a general AV1 sequence header for a single image item.
@@ -31,7 +31,7 @@ fn picture(data: &[u8], limits: &Limits) -> Result<rav1d::Picture, CodecError> {
     // 64 bytes/pixel covers reference planes, padded borders and output for this single frame.
     limits.check_bytes(md.max_frame_width.get(), md.max_frame_height.get(), 64)?;
     let mut settings = rav1d::Settings::new();
-    settings.set_n_threads(1); // Works on wasm without atomics and bounds per-image worker memory.
+    settings.set_n_threads(1); // Bounds per-image worker memory and avoids nested worker pools.
     settings.set_max_frame_delay(1);
     settings.set_frame_size_limit(limits.max_pixels.min(limits.max_alloc / 64).clamp(1, u64::from(u32::MAX)) as u32);
     settings.set_strict_std_compliance(true);
@@ -57,7 +57,7 @@ fn picture(data: &[u8], limits: &Limits) -> Result<rav1d::Picture, CodecError> {
     }
 }
 
-#[cfg(feature = "avif")]
+#[cfg(all(feature = "avif", not(target_arch = "wasm32")))]
 fn sample(pic: &rav1d::Picture, component: rav1d::PlanarImageComponent, x: u32, y: u32) -> Result<f64, CodecError> {
     let depth = pic.bits_per_component().ok_or_else(|| CodecError::malformed(F, "invalid AV1 bit depth"))?.0;
     let bps = if depth == 8 { 1usize } else { 2 };
@@ -75,12 +75,12 @@ fn sample(pic: &rav1d::Picture, component: rav1d::PlanarImageComponent, x: u32, 
     Ok(f64::from(value))
 }
 
-#[cfg(feature = "avif")]
+#[cfg(all(feature = "avif", not(target_arch = "wasm32")))]
 pub(crate) fn decode(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError> {
     guard(|| decode_inner(bytes, limits))
 }
 
-#[cfg(feature = "avif")]
+#[cfg(all(feature = "avif", not(target_arch = "wasm32")))]
 fn decode_inner(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError> {
     use rav1d::{PixelLayout as P, PlanarImageComponent as C};
     if bytes.len() as u64 > limits.max_alloc {
@@ -192,7 +192,7 @@ fn decode_inner(bytes: &[u8], limits: &Limits) -> Result<Image, CodecError> {
     Ok(img)
 }
 
-#[cfg(feature = "avif")]
+#[cfg(all(feature = "avif", not(target_arch = "wasm32")))]
 pub(crate) fn encode(src: &Image, opts: &EncodeOptions) -> Result<Vec<u8>, CodecError> {
     if !(1..=100).contains(&opts.avif_quality)
         || !(1..=100).contains(&opts.avif_alpha_quality)

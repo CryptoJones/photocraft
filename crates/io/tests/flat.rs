@@ -54,6 +54,9 @@ codec_rt!(tiff_gray8, "tiff", ColorMode::Grayscale, SampleType::U8, false, 0.0);
 
 #[test]
 fn avif_depth_profile_and_colour_managed_conversion() {
+    if !photocraft_codecs::caps(photocraft_codecs::Format::Avif).write {
+        return;
+    }
     use photocraft_cms::Builtin;
     for depth in [SampleType::U8, SampleType::U16, SampleType::F32] {
         let mut d = single(ColorMode::Rgb, depth, true);

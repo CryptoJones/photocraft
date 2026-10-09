@@ -25,6 +25,9 @@ fn write_png(path: &Path, w: u32, h: u32, seed: u8) {
 
 #[test]
 fn avif_convert_options_and_detection_work_end_to_end() {
+    if !photocraft_codecs::caps(photocraft_codecs::Format::Avif).write {
+        return;
+    }
     let dir = tmp("avif");
     let source = dir.join("source.png");
     let target = dir.join("image.avif");

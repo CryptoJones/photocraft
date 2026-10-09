@@ -156,7 +156,7 @@ fn ico_oversize_is_fatal() {
 #[test]
 fn avif_default_build_write_unsupported() {
     let w = warns(&test_image(ChannelLayout::Rgb, SampleType::U8), Format::Avif);
-    if cfg!(feature = "avif") {
+    if cfg!(all(feature = "avif", not(target_arch = "wasm32"))) {
         assert!(w.contains(&W::LossyCompression));
     } else {
         assert_eq!(w, vec![W::WriteUnsupported { format: Format::Avif }]);

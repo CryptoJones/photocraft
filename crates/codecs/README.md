@@ -44,7 +44,7 @@ let out = encode(&img, Format::Tiff, &EncodeOptions::default())?;
 | QOI | yes | yes | U8 | RGB, RGBA | yes | no | no | no | no | no | no | `image` |
 | OpenEXR | yes | yes | F16, F32 | Y, YA, RGB, RGBA | yes | no | no | no | no | no | no | `exr` |
 | Radiance HDR | yes | yes | F32 | RGB | no | no | no | no | no | no | yes (RGBE) | `image` |
-| AVIF | yes | yes | U8, U16 (10-bit storage) | RGB, RGBA | yes | yes | no | no | no | no | yes | `sqzer-rav1d` + `ravif` |
+| AVIF | native feature `avif` | native feature `avif` | U8, U16 (10-bit storage) | RGB, RGBA | yes | yes | no | no | no | no | yes | official `rav1d` (pinned Git revision) + `ravif` |
 | HEIF/HEIC | with feature `heif` | **no** | U8, U16 (10/12-bit decodes to U16) | RGB, RGBA | yes (auxiliary alpha) | yes (`colr` prof) | yes | yes | no | no | n/a | `heic-rs` |
 
 "Native" means the data is stored and read back without conversion. Anything else is converted by
@@ -76,7 +76,7 @@ the same.
   decodes to RGB. Image sequences, overlays and identity derivations, multilayer HEVC and some
   4:2:2/4:4:4 streams return `CodecError::Unsupported` or `Malformed`, never wrong pixels. Writing
   needs an HEVC encoder and every mature one is C, so HEIF is listed in `ASYMMETRIC_EXCEPTIONS`.
-* **AVIF.** Default-enabled symmetric Rust still-picture support: 8/10/12-bit import and
+* **AVIF (native, opt-in feature `avif`).** Symmetric Rust still-picture support: 8/10/12-bit import and
   8/10-bit lossy RGB/RGBA export with ICC, validated quality/speed/depth/alpha settings.
   See [AVIF capabilities and limitations](../../docs/avif.md). Sequences, derived images,
   container transforms and unsupported colour encodings return errors.

@@ -1,6 +1,6 @@
 //! Synthetic pixels; no third-party assets. ravif and rav1d are independent encoder/decoder
 //! implementations. An additional FFmpeg/libdav1d oracle check is opt-in below.
-#![cfg(feature = "avif")]
+#![cfg(all(feature = "avif", not(target_arch = "wasm32")))]
 use photocraft_codecs::*;
 
 fn image(sample: SampleType, alpha: bool) -> Image {
@@ -89,6 +89,36 @@ fn random_container_bytes_never_panic() {
         let mut b = value.to_be_bytes().to_vec();
         b.extend_from_slice(b"ftypavif\0\0\0\0");
         assert!(decode_as(Format::Avif, &b).is_err());
+    }
+}
+
+#[test]
+fn independent_fixtures_reject_truncation_and_corrupt_av1_payloads() {
+    let options = DecodeOptions { limits: Limits { max_width: 128, max_height: 128, max_pixels: 128 * 128, max_alloc: 1024 * 1024 }, ..Default::default() };
+    for bytes in [include_bytes!("fixtures/avif/gradient12.avif").as_slice(), include_bytes!("fixtures/avif/gradient-general-header.avif").as_slice()] {
+        // First establish that the same budgets allow the intact independent fixture.
+        assert_eq!(decode_with(bytes, &options).unwrap().dimensions(), (32, 18));
+        for end in 0..bytes.len() {
+            assert!(decode_as_with(Format::Avif, &bytes[..end], &options).is_err(), "truncated at {end}");
+        }
+        let mut reader = bytes;
+        let payload = avif_parse::read_avif(&mut reader).unwrap();
+        let start = bytes.windows(payload.primary_item.len()).position(|window| window == payload.primary_item.as_slice()).unwrap();
+        // Preserve the container and its offsets, corrupt only the AV1 bytes.
+        for value in [0, 255] {
+            let mut corrupt = bytes.to_vec();
+            corrupt[start..start + payload.primary_item.len()].fill(value);
+            assert!(decode_with(&corrupt, &options).is_err(), "invalid AV1 payload filled with {value}");
+        }
+        // Keep the sequence header valid so metadata checks pass and rav1d itself
+        // receives the malformed trailing OBUs (forbidden header bits set).
+        let header_end =
+            (1..payload.primary_item.len()).find(|end| avif_parse::AV1Metadata::parse_av1_bitstream(&payload.primary_item[..*end]).is_ok()).unwrap();
+        let mut corrupt = bytes.to_vec();
+        corrupt[start + header_end..start + payload.primary_item.len()].fill(255);
+        assert!(avif_parse::AV1Metadata::parse_av1_bitstream(&corrupt[start..start + payload.primary_item.len()]).is_ok());
+        assert!(matches!(decode_with(&corrupt, &options), Err(CodecError::Malformed { .. })));
+        println!("{} truncations, two corrupt payloads and malformed trailing AV1 OBUs rejected", bytes.len());
     }
 }
 

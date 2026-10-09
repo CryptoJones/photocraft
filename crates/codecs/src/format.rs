@@ -19,7 +19,7 @@ pub enum Format {
     OpenExr,
     /// Radiance RGBE.
     Hdr,
-    /// Rust still-image decode/encode behind the default `avif` feature.
+    /// Rust still-image decode/encode behind the opt-in native `avif` feature.
     Avif,
     /// HEIF/HEIC (HEVC-coded): read-only; see [`ASYMMETRIC_EXCEPTIONS`].
     Heif,
@@ -200,7 +200,14 @@ pub fn caps(format: Format) -> FormatCaps {
         Format::OpenExr => FormatCaps { depths: &[S::F16, S::F32], layouts: RGB_GRAY, ..base },
         Format::Hdr => FormatCaps { depths: &[S::F32], layouts: &[L::Rgb], alpha: false, lossy: true, ..base },
         // U16 input retains high precision through 10-bit storage (not all 16 bits).
-        Format::Avif => FormatCaps { read: cfg!(feature = "avif"), write: cfg!(feature = "avif"), depths: &[S::U8, S::U16], icc: true, lossy: true, ..base },
+        Format::Avif => FormatCaps {
+            read: cfg!(all(feature = "avif", not(target_arch = "wasm32"))),
+            write: cfg!(all(feature = "avif", not(target_arch = "wasm32"))),
+            depths: &[S::U8, S::U16],
+            icc: true,
+            lossy: true,
+            ..base
+        },
         Format::Heif => {
             FormatCaps { read: cfg!(feature = "heif"), write: false, depths: &[S::U8, S::U16], icc: true, exif: true, xmp: true, lossy: true, ..base }
         }

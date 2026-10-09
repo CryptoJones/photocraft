@@ -1,9 +1,22 @@
 # AVIF in PhotoCraft
 
-AVIF still-image import and export are included by default. Open, Open As, drag-and-drop,
-Place Embedded, Save As, Export As, CLI conversions/batch, engine Save a Copy, control and
-headless MCP use the same codec/I/O implementation. Desktop and browser file filters include
-`.avif`. Save As uses codec defaults; Export As exposes the controls below.
+AVIF still-image import and export are experimental and **opt-in on native builds**.
+Build the desktop app or CLI with the non-default `avif` feature:
+
+```text
+cargo build -j12 -p photocraft --features avif
+cargo build -j12 -p photocraft-cli --features avif
+```
+
+`photocraft-codecs` and `photocraft-io` also expose this feature for library consumers.
+Default builds recognise AVIF files but report that support is not included; AVIF is
+omitted from the export format selector and native save filters. The browser build
+has no AVIF decoding or encoding, even if a consumer enables the feature on wasm.
+AVIF dependencies are native-target dependencies and are not compiled into wasm.
+
+When enabled, Open, Open As, drag-and-drop, Place Embedded, Save As, Export As,
+CLI conversions/batch, engine Save a Copy, control and headless MCP use the same
+codec/I/O implementation. Save As uses codec defaults; Export As exposes these controls.
 
 | Option | Values | Default |
 |---|---|---|
@@ -50,8 +63,7 @@ Dimensions and allocation budgets are checked before pixel decode. The decoder r
 conservative 64 bytes per declared pixel for working memory; a tight allocation budget can
 therefore reject an image whose final RGB buffer alone would fit. Export is capped at 120 MP
 and 65536 pixels per side. Third-party codec calls are guarded against escaped Rust panics on
-native builds. Browser wasm has the existing panic-abort limitation; structural checks and
-codec limits are still applied there.
+native builds. AVIF is unavailable on browser wasm.
 
 ## Agent and CLI options
 
@@ -72,20 +84,23 @@ Reviewed on 2026-10-09 against upstream documentation and crate sources:
 
 * [`ravif` 0.13.0](https://docs.rs/ravif/0.13.0/ravif/struct.Encoder.html), BSD-3-Clause,
   MSRV 1.85, backed by Rust `rav1e`. Assembly and threading features are disabled.
-* [`sqzer-rav1d` 0.1.0](https://crates.io/crates/sqzer-rav1d/0.1.0), BSD-2-Clause,
-  MSRV 1.79, fork of upstream main d3d1cd6 carrying the upstream safe Rust API and wasm
-  libc shim. No local unsafe code; dependency internals contain unsafe Rust. Assembly is disabled.
+* Official [`memorysafety/rav1d`](https://github.com/memorysafety/rav1d), BSD-2-Clause,
+  MSRV 1.79, pinned to upstream commit
+  [`d3d1cd67059f47803919be8276650e5870c9fd02`](https://github.com/memorysafety/rav1d/commit/d3d1cd67059f47803919be8276650e5870c9fd02).
+  The published 1.1.0 crate predates its safe Rust API, so this version uses an exact
+  Git revision. The former `sqzer-rav1d` fork is removed. No local unsafe code is added;
+  the official decoder's internals contain unsafe Rust. Assembly is disabled, although
+  upstream still declares `cc` and `nasm-rs` build dependencies; its assembly-disabled
+  build script does not invoke a C compiler or assembler.
 * [`avif-parse` 2.1.0](https://github.com/kornelski/avif-parse), MPL-2.0, MSRV 1.90,
-  fallible container/AV1 header parsing. No source modifications are vendored.
-* `zenavif` / `rav1d-safe` were considered and rejected because their current published
-  licensing is AGPL/commercial. `avif-decode` 3.0 requires Rust 1.98 and enables x86 assembly;
-  it does not fit PhotoCraft's Rust 1.95 baseline.
+  fallible container/AV1 header parsing. It remains an optional, unmodified dependency.
+  **Maintainer acceptance of this licence remains required before merging.** Opt-in
+  gating does not resolve that licensing decision.
 
-No system codec libraries, NASM installation, external image command, or JS UI are required.
-The scalar Rust path is architecture-portable; Windows x64 and wasm compilation are verified
-locally. macOS, Linux, ARM and Windows x86 execution need their CI/platform runs before being
-claimed verified. Wasm compilation alone does not establish browser runtime behaviour or
-download-size budget compliance.
+No system codec libraries, NASM installation or external image command are required.
+The official decoder does not include the fork's wasm libc shim; this first version
+therefore supports native builds only. Default release and browser builds stay unchanged
+unless their native packaging explicitly enables `avif`.
 
 Synthetic tests cover quality/depth/profile/alpha, independent 12-bit libaom output and
 libdav1d decode pixels, sniffing, truncation, hostile dimensions and validation. Fixture
@@ -93,25 +108,17 @@ provenance and reproducible generation live in
 [`crates/codecs/tests/fixtures/avif/README.md`](../crates/codecs/tests/fixtures/avif/README.md).
 The test's maximum source round-trip channel error at quality 100 is bounded by 0.012.
 
-Local validation on Windows x64 (2026-10-09): eight AVIF correctness/oracle tests,
-27 codec fidelity tests, 32 I/O flat tests and five export-dialog tests pass. The
-export drawing test verifies destination selection, decodable output and the
-displayed saved path. A user-supplied 920 × 1280 still with a general AV1 header
-also decoded successfully; that private image is not a committed fixture.
-Engine adversarial `panic_hunt`, dependency layers, all workspace wasm checks,
-the actual web app check, disabled-feature check and strict clippy for the
-codec/I/O/UI/automation/CLI/desktop targets pass. The AVIF Export As dialog was
-rendered offscreen and visually inspected.
+The original handoff reported Windows x64 correctness, I/O, UI, automation, corpus
+and wasm checks using the previous decoder. Its offscreen Export As screenshots
+remain useful UI evidence, but those runs do not validate the replacement decoder.
+Current Linux validation with the official decoder is recorded in the PR description.
+Tests include every truncation of two independent libaom fixtures, corrupt AV1 payloads,
+hostile dimensions and allocation limits, plus disabled-feature import/export checks.
+Native CI explicitly enables `heif,avif`; a separate Linux pass tests default builds.
+Browser CI checks the workspace without AVIF and checks the feature-enabled codec stub.
 
-The full pinned codec/I/O release corpus suite passes, including PSD oracle and
-round-trip floors, smart/text/TIFF corpora and adversarial mutations. The generic
-mutation seed generator uses unprofiled grayscale for AVIF: raw profiled-gray
-conversion is deliberately rejected, while the RGB seeds still exercise ICC boxes.
-
-The final full UI unit run passes 917 tests (three ignored), with only an unchanged
-eyedropper cursor assertion failure excluded after reproducing it alone. Strict
-clippy including engine unit tests hits two existing
-`manual_range_contains` warnings under Rust 1.97; those engine files are unchanged.
+The following performance figure is historical handoff data using the former decoder;
+it has not been remeasured with the official dependency.
 
 A 24 MP synthetic RGB8 gradient at quality 90/speed 8 in the release scalar,
 single-thread path took 18445 ms to encode and 1244 ms to decode (15486 bytes).
@@ -120,5 +127,5 @@ an enforced budget or representative photographic compression ratio. There is
 no before measurement because this build adds AVIF decoding. Reproduce with:
 
 ```text
-cargo test --release -p photocraft-codecs --features corpus,heif --test avif avif_24mp_release_timing -- --ignored --nocapture
+cargo test -j12 --release -p photocraft-codecs --features avif --test avif avif_24mp_release_timing -- --ignored --nocapture
 ```
