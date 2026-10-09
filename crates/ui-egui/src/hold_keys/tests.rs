@@ -347,3 +347,147 @@ fn release(h: &mut Harness<'static, PhotocraftApp>, x: f32, y: f32, m: Modifiers
     let p = screen(h, x, y);
     button(h, p, false, m);
 }
+
+/// A layer with a red square at (100, 100)–(160, 160) to move: the Background can't be moved.
+fn with_layer(h: &mut Harness<'static, PhotocraftApp>) -> photocraft_doc::LayerId {
+    let app = h.state_mut();
+    app.run("layer.new.layer", json!({})).unwrap();
+    let id = app.session.active().unwrap().active_layer.unwrap();
+    app.session
+        .edit("paint", |doc, a| {
+            doc.layer_mut(a.unwrap()).unwrap().surface_mut().unwrap().fill_rect(Rect::new(100, 100, 160, 160), &[1.0, 0.0, 0.0, 1.0]);
+            Ok(())
+        })
+        .unwrap();
+    app.ui.tool_options.move_auto_select = false;
+    // Snapping would shift the expected offsets.
+    app.ui.extras.snap = false;
+    app.ui.view.show.smart_guides = false;
+    h.run_steps(2);
+    id
+}
+
+fn bounds(h: &Harness<'static, PhotocraftApp>, id: photocraft_doc::LayerId) -> Rect {
+    h.state().session.active().unwrap().doc.layer(id).unwrap().surface().unwrap().content_bounds()
+}
+
+/// Press at (x, y), drag to (x2, y2) and release, with `m` held throughout.
+fn drag_with(h: &mut Harness<'static, PhotocraftApp>, m: Modifiers, x: f32, y: f32, x2: f32, y2: f32) {
+    h.event(Event::ModifiersChanged(platform(m)));
+    h.run_steps(1);
+    let p = screen(h, x, y);
+    h.event(Event::PointerMoved(p));
+    h.run_steps(1);
+    button(h, p, true, m);
+    move_to(h, x + 8.0, y + 6.0);
+    move_to(h, x2, y2);
+    release(h, x2, y2, m);
+    h.event(Event::ModifiersChanged(Modifiers::NONE));
+    h.run_steps(2);
+}
+
+#[test]
+fn cmd_drag_with_a_marquee_is_the_move_tool() {
+    let mut h = harness(Tool::RectMarquee);
+    let id = with_layer(&mut h);
+    h.event(Event::ModifiersChanged(platform(Modifiers::COMMAND)));
+    h.run_steps(1);
+    assert_eq!(held_tool(h.state(), &h.ctx), Some(Temporary::Move));
+    drag_with(&mut h, Modifiers::COMMAND, 130.0, 130.0, 170.0, 150.0);
+    assert_eq!(held_tool(h.state(), &h.ctx), None);
+    let st = h.state().session.active().unwrap();
+    assert!(st.doc.selection.is_none(), "no marquee was drawn");
+    assert_eq!(bounds(&h, id), Rect::new(140, 120, 200, 180), "the layer moved by (40, 20)");
+    assert_eq!(st.history.undo_label(), Some("Move"));
+    assert_eq!(h.state().ui.tool, Tool::RectMarquee, "the marquee is back");
+
+    // Without ⌘ the marquee draws a selection and the layer stays.
+    drag_with(&mut h, Modifiers::NONE, 20.0, 20.0, 60.0, 50.0);
+    assert_eq!(selection(&h), Rect::new(20, 20, 60, 50));
+    assert_eq!(bounds(&h, id), Rect::new(140, 120, 200, 180));
+}
+
+#[test]
+fn cmd_released_mid_drag_keeps_moving_until_the_button_comes_up() {
+    let mut h = harness(Tool::Lasso);
+    let id = with_layer(&mut h);
+    h.event(Event::ModifiersChanged(platform(Modifiers::COMMAND)));
+    h.run_steps(1);
+    let p = screen(&h, 130.0, 130.0);
+    h.event(Event::PointerMoved(p));
+    h.run_steps(1);
+    button(&mut h, p, true, Modifiers::COMMAND);
+    move_to(&mut h, 150.0, 140.0);
+    h.event(Event::ModifiersChanged(Modifiers::NONE));
+    move_to(&mut h, 170.0, 150.0);
+    release(&mut h, 170.0, 150.0, Modifiers::NONE);
+    h.run_steps(2);
+    assert_eq!(bounds(&h, id), Rect::new(140, 120, 200, 180));
+    assert!(h.state().session.active().unwrap().doc.selection.is_none(), "no lasso was drawn");
+}
+
+#[test]
+fn cmd_alt_drag_duplicates_the_layer_then_moves_the_copy() {
+    let mut h = harness(Tool::Brush);
+    let orig = with_layer(&mut h);
+    let n0 = h.state().session.active().unwrap().doc.layers.len();
+    let h0 = h.state().session.active().unwrap().history.past_len();
+    drag_with(&mut h, Modifiers::COMMAND | Modifiers::ALT, 130.0, 130.0, 170.0, 150.0);
+    let st = h.state().session.active().unwrap();
+    assert_eq!(st.doc.layers.len(), n0 + 1, "one copy");
+    let copy = st.active_layer.unwrap();
+    assert_ne!(copy, orig);
+    assert_eq!(bounds(&h, orig), Rect::new(100, 100, 160, 160), "the original stays");
+    assert_eq!(bounds(&h, copy), Rect::new(140, 120, 200, 180), "the copy moved");
+    assert_eq!(st.history.past_len(), h0 + 1, "one undo step");
+    assert_eq!(st.history.undo_label(), Some(crate::move_mods::DUPLICATE_MOVE_LABEL));
+    assert_eq!(h.state().ui.tool, Tool::Brush);
+}
+
+#[test]
+fn cmd_drag_inside_the_selection_still_floats_the_selected_pixels() {
+    let mut h = harness(Tool::RectMarquee);
+    let id = with_layer(&mut h);
+    h.state_mut().run("select.rect", json!({"x": 110, "y": 110, "width": 40, "height": 40})).unwrap();
+    h.run_steps(1);
+    let n0 = h.state().session.active().unwrap().doc.layers.len();
+    drag_with(&mut h, Modifiers::COMMAND, 130.0, 130.0, 170.0, 150.0);
+    let st = h.state().session.active().unwrap();
+    let f = photocraft_engine::float_cmds::floating(st).expect("a floating piece");
+    assert_eq!((f.layer, f.offset), (id, (40, 20)));
+    assert_eq!(st.doc.layers.len(), n0, "no layer was added");
+}
+
+#[test]
+fn cmd_click_with_a_marquee_picks_the_layer_under_the_pointer() {
+    let mut h = harness(Tool::EllipseMarquee);
+    let red = with_layer(&mut h);
+    let bg = h.state().session.active().unwrap().doc.layers.first().unwrap().id;
+    h.state_mut().run("layer.select", json!({"layer": bg.0})).unwrap();
+    h.run_steps(1);
+    h.event(Event::ModifiersChanged(platform(Modifiers::COMMAND)));
+    h.run_steps(1);
+    click(&mut h, 130.0, 130.0, Modifiers::COMMAND);
+    h.event(Event::ModifiersChanged(Modifiers::NONE));
+    h.run_steps(2);
+    let st = h.state().session.active().unwrap();
+    assert_eq!(st.active_layer, Some(red));
+    assert!(st.doc.selection.is_none());
+}
+
+#[test]
+fn cmd_is_not_the_move_tool_for_hand_zoom_pen_shape_or_type_tools() {
+    for tool in [Tool::Hand, Tool::Zoom, Tool::Pen, Tool::Rectangle, Tool::Type, Tool::VerticalType, Tool::Crop, Tool::PathSelection, Tool::Move] {
+        assert!(!cmd_moves(tool), "{tool:?}");
+        let h = harness(tool);
+        h.ctx.input_mut(|i| i.modifiers = platform(Modifiers::COMMAND));
+        // ⌘ held with these tools is not a temporary tool at all.
+        let mut h = h;
+        h.event(Event::ModifiersChanged(platform(Modifiers::COMMAND)));
+        h.run_steps(1);
+        assert_eq!(held_tool(h.state(), &h.ctx), None, "{tool:?}");
+    }
+    for tool in [Tool::RectMarquee, Tool::Lasso, Tool::MagicWand, Tool::Brush, Tool::Eraser, Tool::Gradient, Tool::CloneStamp, Tool::Eyedropper] {
+        assert!(cmd_moves(tool), "{tool:?}");
+    }
+}

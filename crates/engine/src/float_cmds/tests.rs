@@ -48,6 +48,72 @@ fn float_moves_a_cut_piece_without_touching_the_document_until_dropped() {
     assert_eq!(alpha(&s.active().unwrap().doc, id, 12, 12), 1.0);
 }
 
+/// `copy`: the piece is a copy, the layer keeps its pixels, and the drop is a duplicate.
+#[test]
+fn float_copy_lifts_a_copy_and_leaves_the_layer_whole() {
+    let (mut s, id) = session();
+    let steps = s.active().unwrap().history.past_len();
+    s.execute("select.float", json!({"dx": 25, "dy": 0, "copy": true})).unwrap();
+    let st = s.active().unwrap();
+    assert!(floating(st).unwrap().copy);
+    let shown = displayed(st, (0, 0)).unwrap();
+    assert!(alpha(&shown, id, 12, 12) == 1.0 && alpha(&shown, id, 37, 12) == 1.0, "original and copy both show");
+    // A second call moves the same copy; "copy" is read only when the piece is cut.
+    s.execute("select.float", json!({"dx": 0, "dy": 5})).unwrap();
+    s.execute("select.drop", json!({})).unwrap();
+    let st = s.active().unwrap();
+    assert_eq!(st.history.past_len(), steps + 1);
+    assert_eq!(st.history.undo_label(), Some("Duplicate Selected Pixels"));
+    assert!(alpha(&st.doc, id, 12, 12) == 1.0 && alpha(&st.doc, id, 37, 17) == 1.0 && alpha(&st.doc, id, 37, 12) == 0.0);
+    assert_eq!(st.doc.selection.as_ref().unwrap().content_bounds(), Rect::new(35, 15, 55, 35));
+    // Bad params never panic.
+    s.undo();
+    assert!(s.execute("select.float", json!({"copy": "yes", "dx": "x"})).is_ok());
+}
+
+/// The Background (transparency- and position-locked) floats its selected pixels anyway, and the
+/// hole takes the background colour, as in Photoshop; other locks refuse.
+#[test]
+fn background_floats_and_fills_the_hole_with_the_background_colour() {
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 80, "height": 60})).unwrap();
+    s.execute("tools.setColors", json!({"background": "#0000ff"})).unwrap();
+    let id = s.active().unwrap().active_layer.unwrap();
+    let doc = &s.active().unwrap().doc;
+    let l = doc.layer(id).unwrap();
+    assert!(l.locks.transparency && l.locks.position && !locked_for_float(doc, l));
+    s.execute("select.rect", json!({"x": 10, "y": 10, "width": 20, "height": 20})).unwrap();
+    s.execute("select.float", json!({"dx": 30, "dy": 0})).unwrap();
+    s.execute("select.drop", json!({})).unwrap();
+    let doc = &s.active().unwrap().doc;
+    let px = |x, y| doc.layer(id).unwrap().surface().unwrap().rgba(x, y);
+    assert_eq!(px(12, 12), [0.0, 0.0, 1.0, 1.0], "the hole is the background colour, not transparent");
+    assert_eq!(px(42, 12), [1.0, 1.0, 1.0, 1.0], "the white piece moved");
+    // A copy leaves no hole.
+    s.undo();
+    s.execute("select.float", json!({"dx": 30, "dy": 0, "copy": true})).unwrap();
+    s.execute("select.drop", json!({})).unwrap();
+    assert_eq!(s.active().unwrap().doc.layer(id).unwrap().surface().unwrap().rgba(12, 12), [1.0, 1.0, 1.0, 1.0]);
+    // Locked all over, pixel-locked, or position-locked (not the Background): no float.
+    let (mut s, id) = session();
+    for set in [
+        |l: &mut photocraft_doc::Layer| l.locks.all = true,
+        |l: &mut photocraft_doc::Layer| l.locks.pixels = true,
+        |l: &mut photocraft_doc::Layer| l.locks.position = true,
+    ] {
+        s.edit("lock", |doc, _| {
+            let l = doc.layer_mut(id).unwrap();
+            l.locks = Default::default();
+            set(l);
+            Ok(())
+        })
+        .unwrap();
+        let err = s.execute("select.float", json!({"dx": 5, "dy": 0})).unwrap_err().to_string();
+        assert!(err.contains("locked"), "{err}");
+        assert!(floating(s.active().unwrap()).is_none());
+    }
+}
+
 #[test]
 fn any_other_command_drops_it_and_undo_puts_it_back() {
     let (mut s, id) = session();

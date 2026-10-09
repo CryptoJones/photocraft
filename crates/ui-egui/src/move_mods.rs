@@ -79,8 +79,9 @@ fn past_len(app: &PhotocraftApp) -> Option<usize> {
     app.session.active().map(|st| st.history.past_len())
 }
 
+/// A Move drag of layers (not of the selected pixels: `Drag::sel_move`, which ⌥ copies instead).
 fn moving(app: &PhotocraftApp) -> bool {
-    app.drag.as_ref().is_some_and(|d| d.tool == Tool::Move)
+    app.drag.as_ref().is_some_and(|d| d.tool == Tool::Move && d.sel_move.is_none())
 }
 
 /// Duplicates the selected layers (the copies become the selection), remembering the history
@@ -113,7 +114,7 @@ fn fold_history(app: &mut PhotocraftApp, from: usize) {
 /// Rewrites a Move-tool pointer event for the held modifiers: ⇧ locks it to an axis, and the
 /// first real movement of an ⌥-drag duplicates the layers being moved. Other tools pass through.
 pub fn filter_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers) -> ToolEvent {
-    if app.ui.tool != Tool::Move || app.ui.transform.is_some() {
+    if app.active_tool() != Tool::Move || app.ui.transform.is_some() {
         app.move_mods = MoveDrag::default();
         return ev;
     }

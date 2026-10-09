@@ -53,6 +53,7 @@ impl CutParts {
         if !b.is_empty() {
             let n = with_alpha.channels();
             let a = n - 1;
+            let fill_px = fill.filter(|_| !copy).map(|c| photocraft_raster::from_rgba(&with_alpha, c));
             let mut rp = rest.read_region(b);
             let mut pp = rp.clone();
             let w = b.width() as usize;
@@ -100,6 +101,8 @@ pub struct Floating {
     pub offset: (i32, i32),
     pub revision: u64,
     pub parts: Arc<CutParts>,
+    /// The piece is a copy: the layer keeps its pixels (`select.float {"copy": true}`).
+    pub copy: bool,
 }
 
 /// The floating piece of `st`, if it is still valid (the document hasn't changed under it).
@@ -116,6 +119,15 @@ pub fn displayed(st: &DocState, extra: (i32, i32)) -> Option<Document> {
 
 fn int_param(p: &Value, key: &str) -> i32 {
     p.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).map_or(0, |v| v.round().clamp(-1e7, 1e7) as i32)
+}
+
+/// Can't move `l`'s selected pixels: locked all over, pixel-locked, or position-locked (its own
+/// locks or an enclosing group's, `Document::effective_locks`). The Background's own position
+/// lock doesn't count: Photoshop moves its selected pixels and fills the hole with the background
+/// colour.
+pub fn locked_for_float(doc: &Document, l: &photocraft_doc::Layer) -> bool {
+    let locks = doc.effective_locks(l.id);
+    locks.all || locks.pixels || (locks.position && !crate::extra_cmds::is_background(l))
 }
 
 fn can_float(s: &Session) -> std::result::Result<(), String> {

@@ -297,10 +297,16 @@ pub fn popup_value_field(ui: &mut Ui, name: &str, value: &mut f32, range: std::o
 /// rounds it would cut `5/2*2` short. `changed()` means a new value, not just a keystroke.
 fn number_edit(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, fine: bool) -> Response {
     let (id, ctx) = (ui.next_auto_id(), ui.ctx().clone());
+    // Tab in a dialog goes from one of these to the next (field_tab.rs).
+    crate::field_tab::register(&ctx, id);
     let held = id.with("arithmetic");
-    let math = ui.memory(|m| m.has_focus(id)) && ui.data(|d| d.get_temp(held)).unwrap_or(false);
+    let focused = ui.memory(|m| m.has_focus(id));
+    let math = focused && ui.data(|d| d.get_temp(held)).unwrap_or(false);
     ui.data_mut(|d| d.insert_temp(held, math));
     let before = *value;
+    // ↑ / ↓ in the field step the value by 1 (0.01 in a two-decimal field) and ⇧↑ / ⇧↓ by ten
+    // times that, as in Photoshop; the text follows and stays selected.
+    let stepped = focused && arrow_step(ui, value, &range, fine);
     let mut resp = ui.add(
         egui::DragValue::new(value)
             .range(range)
@@ -318,6 +324,10 @@ fn number_edit(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32
                 v
             }),
     );
+    if stepped {
+        let text = if fine { fmt_num2(f64::from(*value)) } else { fmt_num(f64::from(*value)) };
+        crate::field_tab::select_all(ui.ctx(), id, &text);
+    }
     resp.flags.set(egui::response::Flags::CHANGED, *value != before);
     resp
 }
