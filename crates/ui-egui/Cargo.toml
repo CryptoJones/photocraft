@@ -11,6 +11,7 @@ workspace = true
 avif = ["photocraft-io/avif"]
 
 [dependencies]
+photocraft-tablet = { workspace = true }
 photocraft-geom = { workspace = true }
 photocraft-color = { workspace = true }
 photocraft-cms = { workspace = true }
