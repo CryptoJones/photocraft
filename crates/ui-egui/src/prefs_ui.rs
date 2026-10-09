@@ -925,17 +925,6 @@ fn prefs_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Va
             ui.set_width(540.0);
             let title = SECTIONS.iter().find(|(id, _)| *id == section).map_or("General", |(_, t)| *t);
             ui.label(RichText::new(tl!(&title)).font(crate::theme::semibold(14.0)).color(t.text));
-            if section == "interface" {
-                if ui.add_enabled(app.services.locales.is_some(), egui::Button::new(tl!("Reload Translations"))).clicked()
-                    && let Err(error) = crate::menus::invoke(app, ui.ctx(), "ui.i18n.reload", json!({}))
-                {
-                    app.localizations.last_error = Some(error.clone());
-                    app.ui.localizations.error = Some(error);
-                }
-                if let Some(error) = &app.ui.localizations.error {
-                    ui.label(RichText::new(error).color(t.text_dim));
-                }
-            }
             ui.add_space(6.0);
             egui::ScrollArea::vertical().max_height(390.0).id_salt("prefs-scroll").show(ui, |ui| {
                 let order: Vec<String> =
@@ -1138,7 +1127,7 @@ fn section_fields(ui: &mut egui::Ui, section: &str, obj: &mut Map<String, Value>
                 Value::String(s) if path == "interface.language" => {
                     ui.label(RichText::new(tl!(&label)).color(t.text_dim));
                     let mut names = vec![("auto".to_string(), tl!("Auto").to_string())];
-                    names.extend(crate::i18n::Lang::all().map(|l| (l.code().to_string(), l.name().into_owned())));
+                    names.extend(crate::i18n::Lang::all().map(|l| (l.code().to_string(), l.name().to_string())));
                     let pairs: Vec<_> = names.iter().map(|(code, name)| (code.clone(), name.as_str())).collect();
                     let mut cur = s.clone();
                     crate::widgets::dropdown(ui, &format!("pref-{path}"), &mut cur, &pairs, 220.0);

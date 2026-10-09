@@ -47,7 +47,7 @@ pub enum NameMode {
 impl NameMode {
     pub const ALL: [NameMode; 3] = [NameMode::Username, NameMode::DisplayName, NameMode::RealName];
 
-    pub fn label(self) -> std::borrow::Cow<'static, str> {
+    pub fn label(self) -> &'static str {
         match self {
             NameMode::Username => crate::i18n::t("Username"),
             NameMode::DisplayName => crate::i18n::t("Display name"),
@@ -86,16 +86,16 @@ impl SortKey {
     ];
 
     /// Menu label and table header, in the UI language.
-    pub fn label(self) -> (std::borrow::Cow<'static, str>, std::borrow::Cow<'static, str>) {
+    pub fn label(self) -> (&'static str, &'static str) {
         match self {
             SortKey::Name => (crate::i18n::t("Name (A–Z)"), crate::i18n::t("Name")),
-            SortKey::Prs => (crate::i18n::t("Merged PRs"), "PRs".into()),
+            SortKey::Prs => (crate::i18n::t("Merged PRs"), "PRs"),
             SortKey::Commits => (crate::i18n::t("Commits"), crate::i18n::t("Commits")),
-            SortKey::LinesAdded => (crate::i18n::t("Lines added"), "+LOC".into()),
-            SortKey::LinesDeleted => (crate::i18n::t("Lines deleted"), "−LOC".into()),
-            SortKey::LinesDelta => (crate::i18n::t("Line delta"), "ΔLOC".into()),
-            SortKey::BinaryAdded => (crate::i18n::t("Binary assets added"), "+Bin".into()),
-            SortKey::BinaryDeleted => (crate::i18n::t("Binary assets removed"), "−Bin".into()),
+            SortKey::LinesAdded => (crate::i18n::t("Lines added"), "+LOC"),
+            SortKey::LinesDeleted => (crate::i18n::t("Lines deleted"), "−LOC"),
+            SortKey::LinesDelta => (crate::i18n::t("Line delta"), "ΔLOC"),
+            SortKey::BinaryAdded => (crate::i18n::t("Binary assets added"), "+Bin"),
+            SortKey::BinaryDeleted => (crate::i18n::t("Binary assets removed"), "−Bin"),
             SortKey::FirstCommit => (crate::i18n::t("First commit"), crate::i18n::t("First")),
             SortKey::LastCommit => (crate::i18n::t("Last commit"), crate::i18n::t("Last")),
         }

@@ -51,7 +51,9 @@ fn fonts() -> Arc<usvg::fontdb::Database> {
     DB.get_or_init(|| {
         let mut db = usvg::fontdb::Database::new();
         for f in photocraft_text::CRAFT_FONTS {
-            db.load_font_data(f.bytes.to_vec());
+            if let Ok(bytes) = f.bytes() {
+                db.load_font_data(bytes.to_vec());
+            }
         }
         #[cfg(not(target_arch = "wasm32"))]
         db.load_system_fonts();

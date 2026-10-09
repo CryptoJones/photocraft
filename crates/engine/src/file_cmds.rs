@@ -198,7 +198,7 @@ pub(crate) fn import(name: &str, bytes: &[u8]) -> Result<Document> {
 }
 
 /// What a headless save writes beyond the format: JPEG/AVIF quality and TIFF layers.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct SaveOpts {
     /// Photoshop's 0–12 JPEG scale.
     pub quality: Option<f64>,

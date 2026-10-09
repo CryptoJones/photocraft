@@ -491,6 +491,7 @@ fn run(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, p: &Value) -> Res
     }
     if id == "view.resetView" {
         return crate::rotate_view::reset(app);
+    }
     if let Some(k) = id.strip_prefix("type.fontPreviewSize.") {
         app.run("prefs.set", json!({"values": {"type.fontPreview": k}}))?;
         return Ok(json!(k));

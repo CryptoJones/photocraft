@@ -81,22 +81,6 @@ pub const CATEGORIES: &[(&str, &[Preset])] = &[
 
 const DEPTH_OPTIONS: &[(u64, &str, &str)] = &[(8, "8 bit", "Integer"), (16, "16 bit", "Integer"), (32, "32 bit (float)", "Floating point")];
 
-fn set_resolution(f: &mut Map<String, Value>, ppi: f32) {
-    if !ppi.is_finite() {
-        return;
-    }
-    let old = get_f(f, "resolution", 72.0);
-    let new = ppi.clamp(1.0, 30_000.0);
-    if get_s(f, "__unit", "px") != "px" && old.is_finite() && old > 0.0 {
-        for key in ["width", "height"] {
-            let physical = to_unit(get_f(f, key, 1.0), "in", old);
-            f.insert(key.into(), px_value(from_unit(physical, "in", new)));
-        }
-    }
-    f.insert("resolution".into(), json!(new));
-    f.remove("__preset");
-}
-
 /// Width/Height units: (key, label, units per inch; 0 = pixels).
 pub const UNITS: &[(&str, &str, f32)] =
     &[("px", "Pixels", 0.0), ("in", "Inches", 1.0), ("cm", "Centimeters", 2.54), ("mm", "Millimeters", 25.4), ("pt", "Points", 72.0), ("pica", "Picas", 6.0)];
@@ -717,7 +701,9 @@ mod tests {
         apply_preset(&mut f, &(CLIPBOARD, 20, 30, 72.0));
         assert!(f.get("__savedPreset").is_none());
         assert_eq!((f["width"].as_u64(), f["height"].as_u64()), (Some(20), Some(30)));
+    }
 
+    #[test]
     fn physical_size_changes_pixel_dimensions_with_resolution() {
         let mut f = crate::state::UiState::new_document_fields();
         f.insert("__unit".into(), json!("in"));

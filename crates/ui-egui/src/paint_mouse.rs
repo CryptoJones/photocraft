@@ -200,17 +200,13 @@ pub fn show_picker(app: &mut PhotocraftApp, ctx: &egui::Context) {
     });
     // Not a press on a menu the picker opened (the gear, a preset's context menu), nor on the
     // options-bar chip, whose click toggles the picker.
-    let press = ctx.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
-    let outside = press.is_some_and(|p| !area.response.rect.contains(p) && !crate::brush_picker::on_chip(ctx, p)) && !egui::Popup::is_any_open(ctx);
-    if outside || key_close || area.inner {
-        crate::brush_picker::close(&mut app.ui);
-
     // Press-to-open: the press that opened the picker is this frame's, so skip the outside-press
     // close once — otherwise the picker would close in the frame it opened.
     let opened_this_press = std::mem::take(&mut app.brush_picker_open_press);
-    let outside = !opened_this_press && ctx.input(|i| i.pointer.any_pressed() && i.pointer.interact_pos().is_some_and(|p| !area.response.rect.contains(p)));
-    if outside {
-        app.ui.brush_picker = None;
+    let press = ctx.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos()).flatten());
+    let outside = !opened_this_press && press.is_some_and(|p| !area.response.rect.contains(p) && !crate::brush_picker::on_chip(ctx, p)) && !egui::Popup::is_any_open(ctx);
+    if outside || key_close || area.inner {
+        crate::brush_picker::close(&mut app.ui);
     }
 }
 
@@ -477,6 +473,7 @@ mod tests {
         press(&mut h, far, PointerButton::Primary, true);
         press(&mut h, far, PointerButton::Primary, false);
         assert!(h.state().ui.brush_picker.is_none() && h.state().ui.brush_picker_list.renaming.is_none());
+    }
 
     /// Windows Ink press-and-hold: the tip contact goes down as a plain left drag/tap first, and
     /// the pen monitor reports the system's cancel (`photocraft-tablet` › `Signal::Cancel`, fed

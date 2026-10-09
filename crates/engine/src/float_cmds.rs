@@ -53,7 +53,6 @@ impl CutParts {
         if !b.is_empty() {
             let n = with_alpha.channels();
             let a = n - 1;
-            let fill_px = fill.filter(|_| !copy).map(|c| photocraft_raster::from_rgba(&with_alpha, c));
             let mut rp = rest.read_region(b);
             let mut pp = rp.clone();
             let w = b.width() as usize;
@@ -158,7 +157,7 @@ fn float(s: &mut Session, p: &Value) -> Result<Value> {
     if floating(st).is_none() {
         let layer = st.active_layer.ok_or_else(|| EngineError::Other("no active layer".into()))?;
         let parts = CutParts::new(&st.doc, layer, copy, background)?;
-        st.floating = Some(Floating { layer, offset: (0, 0), revision: st.revision, parts: Arc::new(parts) });
+        st.floating = Some(Floating { layer, offset: (0, 0), revision: st.revision, parts: Arc::new(parts), copy });
     }
     let f = st.floating.as_mut().ok_or(EngineError::NoDocument)?;
     f.offset = (f.offset.0.saturating_add(dx), f.offset.1.saturating_add(dy));

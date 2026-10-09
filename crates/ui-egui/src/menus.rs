@@ -178,10 +178,6 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
     if let Some(r) = crate::prefs_ui::invoke(app, ctx, id, &params) {
         return r;
     }
-    if let Some(r) = crate::i18n::runtime::invoke(app, ctx, id, &params) {
-        return r;
-    }
-    // Save for Web, Print and the other File-menu dialogs added with slices.
     if let Some(r) = crate::file_ui::invoke(app, ctx, id, &params) {
         return r;
     }

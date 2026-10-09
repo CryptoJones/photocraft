@@ -1013,7 +1013,7 @@ fn draw(app: &mut PhotocraftApp, ctx: &egui::Context, own_window: bool) {
                         let name = crate::i18n::tr_ctx(crate::i18n::current(), "cameraRaw", source);
                         let response = widgets::pill_tab(ui, &name, d.mixer_tab == i);
                         response
-                            .widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), d.mixer_tab == i, name.as_ref()));
+                            .widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), d.mixer_tab == i, name));
                         if response.clicked() {
                             d.mixer_tab = i;
                         }

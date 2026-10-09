@@ -306,7 +306,7 @@ fn number_edit(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32
     let before = *value;
     // ↑ / ↓ in the field step the value by 1 (0.01 in a two-decimal field) and ⇧↑ / ⇧↓ by ten
     // times that, as in Photoshop; the text follows and stays selected.
-    let stepped = focused && arrow_step(ui, value, &range, fine);
+    let stepped = focused && number_edit_arrow_step(ui, value, &range, fine);
     let mut resp = ui.add(
         egui::DragValue::new(value)
             .range(range)
@@ -330,6 +330,36 @@ fn number_edit(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32
     }
     resp.flags.set(egui::response::Flags::CHANGED, *value != before);
     resp
+}
+
+/// Applies this frame's ↑ / ↓ (⇧: ×10) presses to `value`, clamped to `range`. `true` when it
+/// changed. The keys are taken from the input so the field's text edit never sees them.
+fn number_edit_arrow_step(ui: &mut Ui, value: &mut f32, range: &std::ops::RangeInclusive<f32>, fine: bool) -> bool {
+    let steps = ui.input_mut(|i| {
+        let mut steps = 0.0;
+        i.events.retain(|e| match e {
+            egui::Event::Key { key: key @ (egui::Key::ArrowUp | egui::Key::ArrowDown), pressed: true, modifiers, .. }
+                if !modifiers.alt && !modifiers.ctrl && !modifiers.command && !modifiers.mac_cmd =>
+            {
+                let size = if modifiers.shift { 10.0 } else { 1.0 };
+                steps += if *key == egui::Key::ArrowUp { size } else { -size };
+                false
+            }
+            _ => true,
+        });
+        steps
+    });
+    if steps == 0.0 {
+        return false;
+    }
+    let unit = if fine { 0.01 } else { 1.0 };
+    let v = (*value + steps * unit).clamp(*range.start(), *range.end());
+    let v = (v * 100.0).round() / 100.0;
+    if v == *value {
+        return false;
+    }
+    *value = v;
+    true
 }
 
 /// Increments a numerical field with the up/down arrow keys. Increments by 1 by default, 10 with shift, and 0.1 with ctrl/cmd.

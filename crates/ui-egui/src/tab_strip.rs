@@ -152,7 +152,7 @@ fn tabs_in(
         let galley = elided(ui, name, font.clone(), t.text, (w - pad / 3.0).max(1.0));
         let cut = galley.size().x + pad + 0.5 < natural.get(i).copied().unwrap_or(0.0) && galley.size().x + pad / 3.0 >= w - 0.5;
         paint_tab(ui, r, i, galley, &resp, active(i));
-        let resp = if cut { resp.on_hover_text(*name) } else { resp };
+        let resp = if cut { resp.on_hover_text((*name).to_string()) } else { resp };
         out.double_clicked |= resp.double_clicked();
         if resp.clicked() {
             *selected = i;

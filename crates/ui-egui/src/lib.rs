@@ -14,6 +14,13 @@ macro_rules! tl {
     };
 }
 
+/// Translate a stable Fluent message id without arguments.
+macro_rules! tl_id {
+    ($id:literal) => {
+        $crate::i18n::id($crate::i18n::current(), $id)
+    };
+}
+
 pub mod account_ui;
 pub mod actions;
 pub mod adjust_dialog;
@@ -44,6 +51,7 @@ pub mod chrome_ui;
 pub mod cjk_fonts;
 pub mod clip_line_ui;
 pub mod color_picker_ui;
+pub mod color_panel_ui;
 pub mod color_range_ui;
 pub mod comps_ui;
 pub mod contextual_taskbar;
@@ -60,6 +68,7 @@ pub mod dock;
 pub mod enable_rules;
 pub mod eraser_ui;
 pub mod export_dialog;
+pub mod field_tab;
 pub mod file_dialog;
 pub mod file_open;
 pub mod file_ui;
@@ -177,6 +186,11 @@ pub type ImportFn = Box<dyn Fn(&str, &[u8]) -> Result<(Document, Vec<String>), S
 /// Encoder settings chosen in Export As (the file format comes from the name's extension).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExportSettings {
+    /// AVIF colour/alpha quality (1–100), speed (1–10), depth (0 = auto, 8 or 10).
+    pub avif_quality: u8,
+    pub avif_alpha_quality: u8,
+    pub avif_speed: u8,
+    pub avif_depth: u8,
     /// JPEG/AVIF quality 1–100 (None = codec default).
     pub jpeg_quality: Option<u8>,
     /// WebP: lossless (VP8L) rather than lossy (VP8 at [`Self::webp_quality`]).
@@ -338,7 +352,6 @@ pub struct PhotocraftApp {
     pub session: Session,
     pub ui: UiState,
     pub services: Services,
-    pub(crate) localizations: i18n::runtime::Runtime,
     /// Canvas caches per (document, display): CPU textures hold monitor values; the GPU
     /// canvas state is shared (`canvas::GPU_OUTPUT`).
     canvases: HashMap<(DocId, u32), canvas::CanvasCache>,
@@ -552,7 +565,6 @@ impl PhotocraftApp {
             session,
             ui: UiState::default(),
             services,
-            localizations: i18n::runtime::Runtime::default(),
             canvases: HashMap::new(),
             navigator_textures: HashMap::new(),
             monitors: Default::default(),
@@ -652,8 +664,6 @@ impl PhotocraftApp {
             live_tokens: theme::live::LiveTokens::from_env(),
         };
         // Saved preferences (and recovered documents) are in place before the first frame.
-        app.localizations.activate();
-        app.ui.localizations = app.localizations.status();
         prefs_ui::load(&mut app);
         notices::wayland_file_drop_guidance(&mut app);
         // File › Scripts › Script Events Manager: "Start Application".

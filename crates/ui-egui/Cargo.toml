@@ -40,6 +40,8 @@ serde_json = { workspace = true }
 log = { workspace = true }
 base64 = "0.22"
 percent-encoding = "2.3.2"
+fluent-bundle = "0.16"
+unic-langid = { version = "0.9", features = ["macros"] }
 
 # eframe's Android accessibility backend requires GameActivity. The experimental Android
 # shell uses NativeActivity; keep accessibility enabled for desktop and web.

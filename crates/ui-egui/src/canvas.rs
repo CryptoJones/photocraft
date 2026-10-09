@@ -3586,17 +3586,19 @@ fn inside_selection(app: &PhotocraftApp, p: [f64; 2]) -> bool {
 /// `Some(false)` just the outline (no ⇧ / ⌥ and the options bar on New Selection, so a combining
 /// drag still draws).
 pub fn selection_drag_kind(app: &PhotocraftApp, tool: Tool, p: [f64; 2], mods: egui::Modifiers) -> Option<bool> {
-    // Click-driven selection tools (a press places a point or samples): only ⌘ drags the
-    // selection, and not while a polygon is being drawn.
-    let clicky = matches!(tool, Tool::PolygonLasso | Tool::MagicWand);
-    if !(clicky || matches!(tool, Tool::RectMarquee | Tool::EllipseMarquee | Tool::Lasso)) || (clicky && !app.ui.polygon.is_empty()) {
+    // ⌘ in the modifiers counts too: automation and tests reach `tool_event` without the canvas
+    // having resolved the held key into the tool.
+    let move_tool = tool == Tool::Move || (mods.command && crate::hold_keys::cmd_moves(tool));
+    if !move_tool && !matches!(tool, Tool::RectMarquee | Tool::EllipseMarquee | Tool::Lasso) {
         return None;
     }
-    // ⌘ cuts, ⌘⌥ copies (`select.float`'s `copy`).
-    let cut = mods.command && !mods.shift;
-    if let Some(f) = app.session.active().and_then(photocraft_engine::float_cmds::floating) {
+    let st = app.session.active()?;
+    if let Some(f) = photocraft_engine::float_cmds::floating(st) {
+        if move_tool {
+            return Some(true);
+        }
         let on = inside_selection(app, [p[0] - f64::from(f.offset.0), p[1] - f64::from(f.offset.1)]);
-        return (on && !mods.shift && (!mods.alt || mods.command) && (cut || !clicky)).then_some(true);
+        return (on && !mods.shift && !mods.alt).then_some(true);
     }
     if move_tool {
         return st.doc.selection.as_ref().map(|_| true);
@@ -3604,10 +3606,7 @@ pub fn selection_drag_kind(app: &PhotocraftApp, tool: Tool, p: [f64; 2], mods: e
     if !inside_selection(app, p) {
         return None;
     }
-    if cut {
-        return Some(true);
-    }
-    (!clicky && !mods.command && selection_mode(app, mods) == "replace").then_some(false)
+    (selection_mode(app, mods) == "replace").then_some(false)
 }
 
 /// Does a ⌘ (⌘⌥) press with selection tool `tool` at `p` move the whole layer (a duplicate with
@@ -3617,6 +3616,36 @@ fn command_moves_layer(app: &PhotocraftApp, tool: Tool, p: [f64; 2], mods: egui:
     let selection_tool = matches!(tool, Tool::RectMarquee | Tool::EllipseMarquee | Tool::Lasso | Tool::PolygonLasso | Tool::MagicWand);
     let floating = app.session.active().is_some_and(|st| photocraft_engine::float_cmds::floating(st).is_some());
     selection_tool && mods.command && !mods.shift && !floating && app.ui.polygon.is_empty() && !inside_selection(app, p)
+}
+
+/// Photoshop's cursor over a selection: what a press (or the drag under way) would do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelCursor {
+    /// Arrow with a dashed box: a marquee inside the selection moves the outline.
+    Outline,
+    /// Arrow with scissors: the Move tool (⌘ with a marquee) cuts and moves the selected pixels.
+    Cut,
+    /// Arrow with a second arrow: ⌥ lifts a copy of them instead.
+    Copy,
+    /// Plain arrow: a floating piece, moved again by a plain drag until it is dropped.
+    Piece,
+    /// Hollow arrowhead: the outline or piece is being dragged.
+    Dragging,
+}
+
+/// The cursor at document point `p` with `tool` in effect and `mods` held (`None`: not over a
+/// selection the press would move).
+pub fn selection_cursor(app: &PhotocraftApp, tool: Tool, p: [f64; 2], mods: egui::Modifiers) -> Option<SelCursor> {
+    if let Some(d) = &app.drag {
+        return d.sel_move.is_some().then_some(SelCursor::Dragging);
+    }
+    let floating = app.session.active().and_then(photocraft_engine::float_cmds::floating).is_some();
+    Some(match (selection_drag_kind(app, tool, p, mods)?, floating) {
+        (false, _) => SelCursor::Outline,
+        (true, true) => SelCursor::Piece,
+        (true, false) if mods.alt => SelCursor::Copy,
+        (true, false) => SelCursor::Cut,
+    })
 }
 
 /// Whole-pixel offset of a selection drag in progress (`Drag::sel_move`).

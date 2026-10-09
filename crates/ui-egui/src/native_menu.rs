@@ -1075,7 +1075,6 @@ mod tests {
         assert_eq!(px, vec![[255u8, 0, 0, 255]; 16]);
         assert!(app.ui.text_edit.is_none());
     }
-    }
 
     /// With the Mac menu bar the title bar draws no menu titles: each title shows once fewer.
     #[test]

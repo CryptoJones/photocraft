@@ -118,7 +118,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Tool; 52] = [
+    pub const ALL: [Tool; 53] = [
         Tool::Move,
         Tool::RectMarquee,
         Tool::EllipseMarquee,
@@ -777,13 +777,7 @@ pub struct DockTabs {
     pub character: usize,
 }
 
-/// Color panel state.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ColorPanelState {
-    /// The panel edits the background colour (its chip was clicked), not the foreground.
-    pub background: bool,
-}
+pub use crate::color_panel_ui::{ColorPanelMode, ColorPanelState};
 
 /// Agent-readable localisation status; catalogs stay outside persisted view state.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -801,6 +795,8 @@ pub struct UiState {
     pub chatgpt_account_open: bool,
     #[serde(default)]
     pub generative: crate::generative_ui::GenerativeState,
+    #[serde(default)]
+    pub localizations: LocalizationStatus,
     pub tool: Tool,
     /// Recently opened file paths, most-recent first (File › Open Recent). Capped; de-duplicated.
     #[serde(default)]

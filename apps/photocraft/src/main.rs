@@ -334,14 +334,6 @@ fn main() -> eframe::Result {
             created_in_callback.store(true, std::sync::atomic::Ordering::Relaxed);
             let automation = control.as_ref().map(|(_, _, workspace)| workspace.clone());
             let mut services = services::native(automation);
-            if let Some(dir) =
-                std::env::var_os("PHOTOCRAFT_LOCALES_DIR").map(std::path::PathBuf::from).or_else(|| services::config_dir().map(|dir| dir.join("Locales")))
-            {
-                match photocraft_ui_egui::i18n::native::watch(dir, cc.egui_ctx.clone()) {
-                    Ok(source) => services.locales = Some(Box::new(source)),
-                    Err(error) => log::warn!("PhotoCraft translations: {error}"),
-                }
-            }
             services.preset_store = presets;
             #[cfg(target_os = "linux")]
             let display = tablet::DisplayKind::of(cc);
@@ -610,9 +602,11 @@ mod tests {
             assert_eq!(super::native_options(true).viewport.decorations, Some(false));
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
 
+    #[test]
     fn presentation_prioritizes_pointer_latency() {
-        let surface = super::native_options().wgpu_options.surface;
+        let surface = super::native_options(super::CUSTOM_TITLEBAR).wgpu_options.surface;
         assert_eq!(surface.desired_maximum_frame_latency, Some(1));
         assert_eq!(surface.present_mode, eframe::wgpu::PresentMode::AutoVsync);
     }

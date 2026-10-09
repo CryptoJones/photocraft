@@ -1072,7 +1072,6 @@ fn apply_tiled_with_impl(
             Some(kernel(params, src, *t, &ctx))
         }) else {
             return (*t, Vec::new());
-        }
         };
         if let Some(sel) = selection {
             mix_selection(&mut data, *t, sel, src);

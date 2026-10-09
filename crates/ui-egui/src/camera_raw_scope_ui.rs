@@ -53,7 +53,7 @@ impl ToneZone {
             Self::Whites => "Whites",
         }
     }
-    fn label(self) -> std::borrow::Cow<'static, str> {
+    fn label(self) -> &'static str {
         crate::i18n::tr_ctx(crate::i18n::current(), "cameraRaw", self.name())
     }
     fn range(self) -> [f32; 2] {

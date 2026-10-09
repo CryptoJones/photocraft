@@ -223,7 +223,7 @@ fn match_expand_colors(generated: &mut Surface, original: &Surface, area: Rect, 
 fn place(s: &mut Session, label: &str, rgb: Surface, area: Rect, mask: Option<Surface>, expand: Option<u32>) -> Result<Value> {
     let id = s.edit(label, |doc, active| {
         if let Some(n) = expand {
-            crate::image_cmds::translate_doc(doc, n as i32, n as i32);
+            crate::image_cmds::translate_doc(doc, label, n as i32, n as i32)?;
             doc.size = Size::new(area.width(), area.height());
             crate::canvas_geom::refresh(doc, crate::canvas_geom::Refresh::Shapes);
         }

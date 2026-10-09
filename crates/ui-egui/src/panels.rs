@@ -3430,6 +3430,7 @@ mod type_flyout_tests {
         let hand = TOOL_SECTIONS.iter().flat_map(|section| section.iter()).find(|slot| slot.contains(&Tool::Hand)).expect("Hand group");
         assert_eq!(*hand, [Tool::Hand, Tool::RotateView]);
         assert_eq!(Tool::RotateView.key(), 'R');
+    }
 
     #[test]
     fn long_press_y_button_selects_art_history() {

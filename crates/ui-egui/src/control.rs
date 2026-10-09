@@ -74,7 +74,7 @@ pub enum Outcome {
 /// field's value is validated before the first one is applied, so a typo, an unknown field, a
 /// bad value or a bad nested key can't reply with success while nothing — or only half of it —
 /// changed (#412).
-pub const UI_SET_FIELDS: [&str; 22] = [
+pub const UI_SET_FIELDS: [&str; 25] = [
     "tool",
     "panels",
     "dock",
@@ -698,7 +698,6 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
             for _ in 0..clicks {
                 app.synthetic.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: Default::default() });
                 app.synthetic.push(egui::Event::PointerButton { pos, button, pressed: false, modifiers: Default::default() });
-            }
             }
             ctx.request_repaint();
             Outcome::AfterInput
