@@ -697,7 +697,7 @@ pub const MAX_TEXT_INDEX: i32 = 0xFFFF;
 /// runs, so they are dropped rather than left stale.
 pub fn build_txt2(objects: &[(i32, &TextLayer)], previous: Option<&[u8]>) -> Vec<u8> {
     let prev = previous.and_then(parse_txt2);
-    let prev_objects: &[E] = prev.as_ref().and_then(|p| p.path(&["1", "1"]).and_then(E::as_array)).map(Vec::as_slice).unwrap_or(&[]);
+    let prev_objects: &[E] = prev.as_ref().and_then(|p| p.path(&["1", "1"]).and_then(E::as_array)).unwrap_or(&[]);
     let mut slots: Vec<E> = Vec::new();
     for (index, layer) in objects {
         if !(0..=MAX_TEXT_INDEX).contains(index) {
