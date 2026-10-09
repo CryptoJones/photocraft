@@ -814,7 +814,6 @@ fn font_picker_in(ui: &mut egui::Ui, current: &mut String, width: f32, families:
     });
     changed
 }
-
 /// The type layer the options bar edits: the one being edited, else the active layer if it is type.
 fn target(app: &PhotocraftApp) -> Option<(u64, Option<[usize; 2]>)> {
     if let Some(ed) = &app.ui.text_edit {
@@ -911,7 +910,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             app.ui.status_error = true;
         }
     }
-    if font_picker(ui, &mut fam, 170.0) {
+    if crate::font_menu::picker(app, ui, "type-font", &mut fam, 170.0) {
         app.ui.tool_options.type_font = fam.clone();
         let st = styles(&fam);
         style = if st.contains(&style) { style } else { st.first().cloned().unwrap_or_else(|| "Regular".into()) };
@@ -1213,7 +1212,7 @@ fn type_sections(app: &mut PhotocraftApp, ui: &mut egui::Ui, character: bool, pa
         let w = field_width(full, 2, LABEL_W);
         let mut fam = c.font_family.clone();
         row(ui, &mut |ui| {
-            if font_picker(ui, &mut fam, full) {
+            if crate::font_menu::picker(app, ui, "type-font-panel", &mut fam, full) {
                 app.ui.tool_options.type_font = fam.clone();
                 let st = styles(&fam);
                 let style = if st.contains(&c.font_style) { c.font_style.clone() } else { st.first().cloned().unwrap_or_else(|| tl!("Regular").into()) };
