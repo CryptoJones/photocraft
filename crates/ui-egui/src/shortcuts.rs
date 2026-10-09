@@ -280,12 +280,25 @@ pub fn handle(app: &mut PhotocraftApp, ctx: &egui::Context) {
     if focus == Focus::None && crate::move_mods::arrow_keys(app, ctx) {
         return;
     }
+    // Moved pixels still floating: ↩ drops them.
+    if focus == Focus::None
+        && app.session.active().is_some_and(|st| photocraft_engine::float_cmds::floating(st).is_some())
+        && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter))
+    {
+        if let Err(e) = app.run("select.drop", json!({})) {
+            app.ui.status = e;
+            app.ui.status_error = true;
+        }
+        return;
+    }
     // A Pen path's points are uncommitted gesture state, not History entries (#1466).
     // Intercept Cmd/Ctrl+Z before the normal Edit › Undo shortcut, as well as unmodified
     // Backspace/Delete. Once the last anchor is removed, regular Undo works again.
     if app.ui.pen.as_ref().is_some_and(|pen| !pen.knots.is_empty()) {
         let mods = ctx.input(|i| i.modifiers);
-        let command_undo = mods.command && !mods.alt && !mods.shift && ctx.input_mut(|i| i.consume_key(mods, Key::Z));
+        let command_undo = effective_shortcut(app, "edit.undo", default_shortcut("edit.undo").as_deref())
+            .and_then(|shortcut| parse(&shortcut))
+            .is_some_and(|shortcut| consume(ctx, &shortcut));
         let remove = !mods.command
             && !mods.ctrl
             && !mods.shift
@@ -318,6 +331,15 @@ pub fn handle(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let mods = ctx.input(|i| i.modifiers);
         if !mods.command && !mods.ctrl && !mods.shift && ctx.input_mut(|i| i.consume_key(mods, Key::Backspace) || i.consume_key(mods, Key::Delete)) {
             crate::lasso_ui::undo_last_vertex(app);
+            return;
+        }
+    }
+    // The Polygonal Lasso tool likewise: ⌫/Delete removes the last vertex (#1229), and never
+    // reaches Edit › Clear while a polygon is being drawn.
+    if !app.ui.polygon.is_empty() {
+        let mods = ctx.input(|i| i.modifiers);
+        if !mods.command && !mods.ctrl && !mods.shift && ctx.input_mut(|i| i.consume_key(mods, Key::Backspace) || i.consume_key(mods, Key::Delete)) {
+            crate::canvas::polygon_retract(app);
             return;
         }
     }
@@ -407,7 +429,7 @@ mod tests {
             };
             ctx.begin_pass(raw);
             handle(app, &ctx);
-            ctx.end_pass();
+            ctx.end_pass().textures_delta.clear();
         };
 
         press(&mut app, Key::Z, Modifiers::COMMAND);
@@ -421,6 +443,35 @@ mod tests {
         // No unfinished Pen points remain, so regular Undo can now affect the document.
         app.run("edit.undo", serde_json::json!({})).unwrap();
         assert_eq!(app.session.active().unwrap().history.past_len(), history - 1);
+    }
+
+    #[test]
+    fn pen_custom_undo_binding_and_menu_retract_pending_points() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        app.run("file.new", serde_json::json!({"width": 200, "height": 200})).unwrap();
+        app.ui.tool = crate::state::Tool::Pen;
+        for (x, y) in [(10.0, 10.0), (50.0, 10.0)] {
+            crate::vector_ui::pen_down(&mut app, x, y);
+            crate::vector_ui::pen_up(&mut app);
+        }
+        app.session.prefs.edit(|p| p.shortcuts.insert("edit.undo".into(), "Cmd+Shift+Y".into()));
+        let ctx = egui::Context::default();
+        let press = |app: &mut PhotocraftApp, key: Key, modifiers: Modifiers| {
+            ctx.begin_pass(egui::RawInput {
+                events: vec![egui::Event::ModifiersChanged(modifiers), egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers }],
+                ..Default::default()
+            });
+            handle(app, &ctx);
+            ctx.end_pass().textures_delta.clear();
+        };
+        // Once rebound, the default key must no longer intercept pending points.
+        press(&mut app, Key::Z, Modifiers::COMMAND);
+        assert_eq!(app.ui.pen.as_ref().unwrap().knots.len(), 2);
+        press(&mut app, Key::Y, Modifiers::COMMAND | Modifiers::SHIFT);
+        assert_eq!(app.ui.pen.as_ref().unwrap().knots.len(), 1);
+        assert!(crate::menus::is_enabled(&app, "edit.undo"));
+        crate::menus::invoke(&mut app, &ctx, "edit.undo", serde_json::json!({})).unwrap();
+        assert!(app.ui.pen.is_none());
     }
 
     #[test]
