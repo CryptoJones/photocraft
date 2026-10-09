@@ -8,7 +8,7 @@ use egui_kittest::{
     Harness,
     kittest::{NodeT, Queryable},
 };
-use photocraft_ui_egui::{ExportSettings, PhotocraftApp, Services, export_dialog, i18n, theme::ThemeKind};
+use photocraft_ui_egui::{ExportSettings, FileDialogAnswer, FileDialogRequest, PhotocraftApp, Services, export_dialog, i18n, theme::ThemeKind};
 use serde_json::json;
 
 const LIMITS: &str = "AVIF uses 8-bit sRGB. ICC, EXIF and XMP metadata are not preserved.";
@@ -92,9 +92,10 @@ fn confirming_avif_passes_quality_and_writes_the_selected_extension() {
     let receives_export = encoded.clone();
     let receives_write = written.clone();
     let services = Services {
-        pick_save: Some(Box::new(|suggested| {
+        file_dialog: Some(Box::new(|request, _parent, reply| {
+            let FileDialogRequest::Save { suggested } = request else { panic!("expected a Save dialog") };
             assert_eq!(suggested, "sample.avif");
-            Some(suggested.into())
+            reply.send(Some(FileDialogAnswer::SaveTo(suggested)));
         })),
         export: Some(Box::new(move |doc, path, settings: &ExportSettings| {
             receives_export.lock().unwrap().push((path.to_string(), doc.size, settings.clone()));
@@ -118,6 +119,12 @@ fn confirming_avif_passes_quality_and_writes_the_selected_extension() {
     fields.insert("metadata".into(), json!("all"));
     let fields = fields.clone();
     let result = export_dialog::confirm(&mut app, &fields).unwrap();
+    assert_eq!(result, json!({"fileDialog": "save"}));
+    assert!(app.file_dialog_open());
+    assert!(encoded.lock().unwrap().is_empty(), "encoding waits for the chosen save path");
+    assert!(written.lock().unwrap().is_empty());
+    app.poll_file_dialog(&egui::Context::default(), None);
+    assert!(!app.file_dialog_open());
     let received = encoded.lock().unwrap();
     assert_eq!(received.len(), 1);
     assert_eq!(received[0].0, "sample.avif");
@@ -126,11 +133,10 @@ fn confirming_avif_passes_quality_and_writes_the_selected_extension() {
     assert_eq!(received[0].2.webp_quality, None);
     assert!(!received[0].2.xmp_all);
     assert_eq!(written.lock().unwrap().as_slice(), &[("sample.avif".into(), vec![1; 2400])]);
-    assert_eq!(result["bytes"], 2400);
-    assert_eq!(result["warnings"], json!(["lossy compression"]));
     assert!(app.ui.status.contains("sample.avif"));
     assert!(app.ui.status.contains("(2K)"), "warnings preserve the exported file size in the status");
     let notice = app.ui.notices.last().expect("lossy export notice");
+    assert_eq!(notice.lines, ["lossy compression"]);
     assert!(notice.title.contains("sample.avif"));
     assert!(notice.title.contains("(2K)"), "warnings preserve the exported file size in the notice title");
     assert!(Arc::ptr_eq(&original, &app.session.active().unwrap().doc), "export preserves the source document");
