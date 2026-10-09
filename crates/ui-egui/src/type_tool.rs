@@ -4,7 +4,7 @@
 //! typing session is one "Edit Type" history step and automation sees exactly what the user does.
 //! Offsets in [`TextEdit`] are character indices (the engine's unit); the layout works in bytes.
 
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use egui::{Color32, Pos2, Stroke};
 use photocraft_doc::{Document, LayerContent, LayerId, TextLayer};
@@ -74,31 +74,11 @@ fn hit_layer(app: &mut PhotocraftApp, x: f64, y: f64) -> Option<LayerId> {
 /// Photoshop's pixels until it is edited, and with substituted fonts or a different line layout
 /// they sit somewhere else than the glyphs the caret and selection are placed on.
 fn shows_own_layout(doc: &Document, t: &TextLayer) -> bool {
-    let Some((ours, have)) = layout_and_cache_bounds(doc, t) else { return false };
-    [(ours.x0, have.x0), (ours.y0, have.y0), (ours.x1, have.x1), (ours.y1, have.y1)].iter().all(|(a, b)| (a - b).abs() <= 1)
-}
-
-/// The bounds of PhotoCraft's text layout and the Photoshop pixels retained from an imported PSD.
-fn layout_and_cache_bounds(doc: &Document, t: &TextLayer) -> Option<(photocraft_geom::Rect, photocraft_geom::Rect)> {
-    let cache = t.cache.as_ref()?;
-    let Ok(mut eng) = photocraft_text::shared().lock() else { return None };
+    let Some(cache) = &t.cache else { return false };
+    let mut eng = photocraft_text::shared().lock().unwrap_or_else(PoisonError::into_inner);
     let ours = eng.render(t, doc.resolution_dpi, doc.pixel_format()).1.surface.content_bounds();
     let have = cache.content_bounds();
-    (!ours.is_empty() && !have.is_empty()).then_some((ours, have))
-}
-
-/// Some PSDs use a legacy text origin that puts the TySh translation far outside the canvas.
-/// Their cached Photoshop pixels are correctly positioned, but replacing that cache on the first
-/// edit makes the text appear to jump away. Keep the existing linear transform and translate the
-/// internal layout back onto the cached pixels before beginning the edit.
-fn cached_text_alignment(doc: &Document, t: &TextLayer) -> Option<[f64; 2]> {
-    let (ours, have) = layout_and_cache_bounds(doc, t)?;
-    let delta = [f64::from(have.x0 - ours.x0), f64::from(have.y0 - ours.y0)];
-    let canvas = photocraft_geom::Rect::from_size(doc.size);
-    // Font substitution can shift glyph bounds by a few pixels; retain the ordinary behaviour in
-    // that case. The legacy origin is distinguishable because our layout is entirely off-canvas
-    // while Photoshop's retained pixels are visible on it.
-    (canvas.intersect(&ours).is_empty() && !canvas.intersect(&have).is_empty() && delta.iter().all(|v| v.is_finite())).then_some(delta)
+    [(ours.x0, have.x0), (ours.y0, have.y0), (ours.x1, have.x1), (ours.y1, have.y1)].iter().all(|(a, b)| (a - b).abs() <= 1)
 }
 
 /// Start editing an existing type layer. Like Photoshop, editing shows the text as the type
@@ -110,14 +90,7 @@ fn begin_edit(app: &mut PhotocraftApp, id: LayerId, key: &str) -> Result<(), Str
     if let Some(t) = text_layer(&doc, id)
         && !shows_own_layout(&doc, t)
     {
-        let mut params = json!({"layer": id.0, "coalesce": key});
-        if let Some([dx, dy]) = cached_text_alignment(&doc, t) {
-            let mut transform = t.transform.m;
-            transform[4] += dx;
-            transform[5] += dy;
-            params["transform"] = json!(transform);
-        }
-        app.run("type.edit", params)?;
+        app.run("type.edit", json!({"layer": id.0, "coalesce": key}))?;
     }
     Ok(())
 }

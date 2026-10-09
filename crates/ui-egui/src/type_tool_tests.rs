@@ -198,31 +198,6 @@ fn editing_psd_type_shows_our_layout_and_cancel_restores_it() {
     assert_eq!(h.state().session.active().unwrap().history.entries().len(), steps);
 }
 
-/// PSDs can carry a legacy TySh origin far outside the document while their retained Photoshop
-/// pixels are in the right place. Entering Type mode must align the replacement layout to those
-/// pixels instead of making the text disappear off-canvas (#1469).
-#[test]
-fn editing_psd_type_with_a_legacy_origin_stays_on_its_cached_pixels() {
-    let mut app = new_app();
-    let id = LayerId(app.run("type.create", json!({"text": "Name", "size": 120, "x": 300, "y": 420})).unwrap()["layer"].as_u64().unwrap());
-    let expected = text(&app, id).cache.unwrap();
-    let hit = expected.content_bounds();
-
-    let st = app.session.active_mut().unwrap();
-    let mut doc = (*st.doc).clone();
-    if let Some(LayerContent::Text(t)) = doc.layer_mut(id).map(|l| &mut l.content) {
-        t.transform = Affine { m: [1.0, 0.0, 0.0, 1.0, -32375.0, -32887.5] };
-        t.cache = Some(expected.clone());
-    }
-    st.doc = std::sync::Arc::new(doc);
-    st.revision += 1;
-
-    assert!(super::pointer_down(&mut app, f64::from(hit.x0 + 1), f64::from(hit.y0 + 1), false));
-    let repaired = text(&app, id);
-    assert_eq!(repaired.cache.unwrap().content_bounds(), hit);
-    assert!(repaired.transform.m[4] > 0.0 && repaired.transform.m[5] > 0.0, "{:?}", repaired.transform.m);
-}
-
 fn size_at(app: &PhotocraftApp, id: LayerId, ci: usize) -> f32 {
     let t = text(app, id);
     let b = t.text.char_indices().nth(ci).map_or(t.text.len(), |(b, _)| b);
