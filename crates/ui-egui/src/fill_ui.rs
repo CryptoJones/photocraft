@@ -134,7 +134,7 @@ pub fn body(app: &PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>) 
     ui.spacing_mut().item_spacing.y = 6.0;
     let mut contents = get_str(f, "contents", "foreground");
     ui.horizontal(|ui| {
-        label(ui, "Contents:");
+        label(ui, tl!("Contents:"));
         let opts: Vec<(String, &str)> = CONTENTS.iter().map(|(k, l)| (k.to_string(), *l)).collect();
         if crate::widgets::dropdown(ui, "fill-contents", &mut contents, &opts, 170.0) {
             f.insert("contents".into(), json!(contents));
@@ -143,7 +143,7 @@ pub fn body(app: &PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>) 
     match contents.as_str() {
         "color" => {
             ui.horizontal(|ui| {
-                label(ui, "Color:");
+                label(ui, tl!("Color:"));
                 let mut rgb = parse_hex(&get_str(f, "color", "#000000"));
                 if egui::color_picker::color_edit_button_srgb(ui, &mut rgb).changed() {
                     f.insert("color".into(), json!(format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2])));
@@ -152,7 +152,7 @@ pub fn body(app: &PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Value>) 
         }
         "pattern" => {
             ui.horizontal(|ui| {
-                label(ui, "Custom Pattern:");
+                label(ui, tl!("Custom Pattern:"));
                 let mut pat = get_str(f, "pattern", "");
                 let opts: Vec<(String, &str)> = app.session.patterns.items.iter().map(|p| (p.id.clone(), p.display_name())).collect();
                 if opts.is_empty() {

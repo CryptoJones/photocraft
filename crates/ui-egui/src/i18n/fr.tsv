@@ -1781,6 +1781,7 @@
 	Maximize psd compatibility	Maximiser la compatibilité PSD
 	Medium gray	Gris moyen
 	Memory usage mb	Utilisation de la mémoire (Mo)
+	Low resolution previews	Aperçus en basse résolution
 	Missing glyph protection	Protection contre les glyphes manquants
 	Modern	Moderne
 	Nearest neighbor	Au plus proche
@@ -1932,6 +1933,8 @@
 	Brush Settings…  (F5): every option of this brush	Paramètres du pinceau…  (F5) : toutes les options de ce pinceau
 	Rename Brush…	Renommer le pinceau…
 	Delete Brush	Supprimer le pinceau
+	New Brush Preset…	Nouveau préréglage de pinceau…
+	Brush Preset Options	Options des préréglages de pinceau
 	Group name	Nom du groupe
 	Brush name	Nom du pinceau
 	Grid view	Vue en grille
@@ -2541,6 +2544,7 @@ cameraRaw	Blending	Fusion
 	Frequency	Fréquence
 	Use tablet pressure to change pen width	Utiliser la pression de la tablette pour modifier la largeur de la plume
 
+
 # About ▸ Contributors / Models (credits, craftrules standards/contributors.md)
 	About	À propos
 	Contributors	Contributeurs
@@ -2572,5 +2576,52 @@ cameraRaw	Blending	Fusion
 	% of all commits	% de tous les commits
 	Lines +/−	Lignes +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login} : {prs} PR, {commits} commits, +{added} / −{deleted} lignes (Δ {delta}), +{binAdded} / −{binDeleted} fichiers binaires, {first} – {last}
+
+# Swatches panel
+	Create new swatch	Créer une nouvelle nuance
+	New Swatch…	Nouvelle nuance…
+	New Swatch Group…	Nouveau groupe de nuances…
+	Import Swatches…	Importer des nuances…
+	Replace Swatches…	Remplacer les nuances…
+	Export Swatches…	Exporter les nuances…
+	Export Swatches for Exchange…	Exporter les nuances pour l'échange…
+	Reset Swatches	Réinitialiser les nuances
+	Add to Swatches	Ajouter au nuancier
+# Layer Style > Blending Options (Advanced Blending)
+	Blend If:	Fusion si :
+	Channels:	Couches :
+	Knockout	Masquage
 	Apply At Canvas Bounds	Appliquer l’effet aux limites de la zone de travail
+
+# Fill dialog, layer style contours and Image Size
+	Contents:	Contenu :
+	Custom Pattern:	Motif personnalisé :
+	Foreground Color	Couleur de premier plan
+	Color…	Couleur…
+	50% Gray	Gris 50 %
+	{size} (was {old})	{size} (auparavant {old})
+	Cone	Cône
+	Cone (Inverted)	Cône (inversé)
+	Domed	Bombé
+	Domed (Inverted)	Bombé (inversé)
+	Diagonal (Descending)	Diagonale (descendante)
+
+	Red Eye Tool	Outil Yeux rouges
+	Pupil Size	Taille de la pupille
+	Darken Amount	Quantité d'assombrissement
+	Click a red pupil to neutralize it	Cliquez sur une pupille rouge pour la corriger
+	open source	code source ouvert
+	…and {n} more	…et {n} de plus
+
+	Eyedroppers:	Pipettes :
+	Set Black Point	Définir le point noir
+	Set Neutral Gray Point	Définir le point gris neutre
+	Set White Point	Définir le point blanc
+	Unavailable in this color mode	Indisponible dans ce mode colorimétrique
+
+# Layer colour labels.
+	Seafoam	Écume de mer
+	Indigo	Indigo
+	Fuchsia	Fuchsia
+	Violet	Violet
 	Location:	Emplacement :

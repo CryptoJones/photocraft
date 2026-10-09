@@ -90,6 +90,7 @@ pub enum Tool {
     Healing,
     Patch,
     ContentAwareMove,
+    RedEye,
     CloneStamp,
     HistoryBrush,
     Blur,
@@ -114,7 +115,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Tool; 49] = [
+    pub const ALL: [Tool; 50] = [
         Tool::Move,
         Tool::RectMarquee,
         Tool::EllipseMarquee,
@@ -143,6 +144,7 @@ impl Tool {
         Tool::Healing,
         Tool::Patch,
         Tool::ContentAwareMove,
+        Tool::RedEye,
         Tool::CloneStamp,
         Tool::HistoryBrush,
         Tool::Blur,
@@ -198,6 +200,7 @@ impl Tool {
             Tool::Healing => "Healing Brush Tool",
             Tool::Patch => "Patch Tool",
             Tool::ContentAwareMove => "Content-Aware Move Tool",
+            Tool::RedEye => "Red Eye Tool",
             Tool::CloneStamp => "Clone Stamp Tool",
             Tool::HistoryBrush => "History Brush Tool",
             Tool::Blur => "Blur Tool",
@@ -259,7 +262,7 @@ impl Tool {
             Tool::Type | Tool::VerticalType => 'T',
             Tool::Hand => 'H',
             Tool::Zoom => 'Z',
-            Tool::SpotHealing | Tool::Healing | Tool::Patch | Tool::ContentAwareMove => 'J',
+            Tool::SpotHealing | Tool::Healing | Tool::Patch | Tool::ContentAwareMove | Tool::RedEye => 'J',
             Tool::CloneStamp => 'S',
             Tool::HistoryBrush => 'Y',
             Tool::Blur | Tool::Sharpen | Tool::Smudge => '\0',
@@ -494,6 +497,11 @@ pub struct ToolOptions {
     pub magnetic_contrast: f32,
     pub magnetic_frequency: f32,
     pub magnetic_pressure: bool,
+    /// Red Eye: pupil search size (1–100) and how far corrected pixels darken (0–100).
+    #[serde(default = "fifty")]
+    pub red_eye_pupil_size: f32,
+    #[serde(default = "fifty")]
+    pub red_eye_darken: f32,
 }
 
 fn yes() -> bool {
@@ -510,6 +518,10 @@ fn default_marquee_style() -> String {
 
 fn one() -> f32 {
     1.0
+}
+
+fn fifty() -> f32 {
+    50.0
 }
 
 impl Default for ToolOptions {
@@ -573,6 +585,8 @@ impl Default for ToolOptions {
             magnetic_contrast: 10.0,
             magnetic_frequency: 57.0,
             magnetic_pressure: false,
+            red_eye_pupil_size: 50.0,
+            red_eye_darken: 50.0,
         }
     }
 }
@@ -666,6 +680,16 @@ pub struct TextEdit {
     pub preedit: Option<(usize, usize)>,
 }
 
+/// Temporary Type-tool drag. The document is unchanged until release; this frame is view state.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TypeTransform {
+    pub document: u64,
+    pub revision: u64,
+    pub original: photocraft_geom::Affine,
+    pub frame: TransformSession,
+    pub(crate) gesture: crate::transform_tool::Gesture,
+}
+
 /// View-menu overlays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -715,6 +739,12 @@ pub struct UiState {
     /// Inline type editing session, if any.
     #[serde(default)]
     pub text_edit: Option<TextEdit>,
+    /// Ctrl/Cmd Type-tool gesture, exposed to automation but never restored as a held pointer.
+    #[serde(default, skip_deserializing)]
+    pub type_transform: Option<TypeTransform>,
+    /// Reference point for the current type editing session (document coordinates).
+    #[serde(skip)]
+    pub type_transform_pivot: Option<[f64; 2]>,
     /// Free Transform session, if any.
     #[serde(default)]
     pub transform: Option<TransformSession>,
@@ -730,9 +760,13 @@ pub struct UiState {
     /// tools edit it (#196). Never set together with `mask_target`.
     #[serde(default)]
     pub vector_mask_target: bool,
-    /// Brush Preset picker opened by a right-click on the canvas: its screen position (points).
+    /// Brush Preset picker opened by a right-click on the canvas or the options-bar brush chip:
+    /// its screen position (points).
     #[serde(default)]
     pub brush_picker: Option<[f32; 2]>,
+    /// The Brush Preset picker's preset list: search, collapsed groups, view, a rename in progress.
+    #[serde(default = "crate::brush_picker::list_state")]
+    pub brush_picker_list: crate::brush_panel::BrushesPanelState,
     /// Layers under the pointer, listed by a right-click on the canvas with the Move tool or
     /// ⌘/Ctrl+right-click with any tool (`layer_pick_ui`, #307).
     #[serde(default)]
@@ -854,10 +888,13 @@ impl Default for UiState {
             tool: Tool::Brush,
             recent_files: Vec::new(),
             text_edit: None,
+            type_transform: None,
+            type_transform_pivot: None,
             transform: None,
             mask_target: false,
             vector_mask_target: false,
             brush_picker: None,
+            brush_picker_list: crate::brush_picker::list_state(),
             layer_menu: None,
             canvas_tool_menu: None,
             smoothing_tool: None,
@@ -949,6 +986,11 @@ mod tests {
         assert_eq!(Tool::from_name("Eraser Tool"), Some(Tool::Eraser));
         assert_eq!(Tool::from_name("mixerBrush"), Some(Tool::MixerBrush));
         assert_eq!(Tool::from_name("Mixer Brush Tool"), Some(Tool::MixerBrush));
+        assert_eq!(Tool::from_name("redEye"), Some(Tool::RedEye));
+        assert_eq!(Tool::from_name("Red Eye Tool"), Some(Tool::RedEye));
+        assert_eq!(Tool::RedEye.key(), 'J');
+        assert!(!Tool::RedEye.is_brushlike());
+        assert_eq!(Tool::ALL.len(), 50);
         assert_eq!(Tool::from_name("nope"), None);
     }
 
