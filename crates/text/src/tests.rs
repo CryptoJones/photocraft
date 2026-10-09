@@ -601,9 +601,9 @@ fn txt2_keeps_a_kept_objects_extras_and_drops_them_with_its_text() {
     let out = crate::psd::parse_txt2(&crate::psd::build_txt2(&[(0, &t)], Some(&prev))).unwrap();
     assert_eq!(out.get("extra").and_then(E::as_i64), Some(3), "block extras survive");
     let object = out.path(&["1", "1"]).and_then(E::as_array).unwrap()[0].clone();
-    assert_eq!(object.path(&["21", "1"]).and_then(E::as_array).map(Vec::len), Some(2), "pen positions survive an unchanged text");
+    assert_eq!(object.path(&["21", "1"]).and_then(E::as_array).map(|items| items.len()), Some(2), "pen positions survive an unchanged text");
     assert_eq!(object.path(&["0", "keep"]).and_then(E::as_i64), Some(7), "model extras survive");
-    assert_eq!(object.path(&["0", "6", "0"]).and_then(E::as_array).map(Vec::len), Some(2), "the style runs are regenerated");
+    assert_eq!(object.path(&["0", "6", "0"]).and_then(E::as_array).map(|items| items.len()), Some(2), "the style runs are regenerated");
     // Changed text: the extras go stale with the old runs and are dropped.
     let t = runs_of("XY", &[(1, style(Kerning::Optical, 0.0)), (1, style(Kerning::Metrics, 0.0))]);
     let out = crate::psd::parse_txt2(&crate::psd::build_txt2(&[(0, &t)], Some(&prev))).unwrap();
