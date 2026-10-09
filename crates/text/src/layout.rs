@@ -26,6 +26,10 @@ use photocraft_doc::text::{Caps, CharStyle, Kerning, Orientation, TextAlign, Tex
 
 use crate::fonts::FontDb;
 
+/// Photoshop synthesizes small caps for faces without an OpenType `smcp` table. Keep the same
+/// readable hierarchy for every font instead of silently rendering lowercase text unchanged.
+const SYNTHETIC_SMALL_CAPS_SCALE: f32 = 0.7;
+
 /// Index of the character run whose style a glyph uses, plus the vertical-type class of its
 /// characters ([`VClass`] as `u8`; always 0 in horizontal type).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -449,6 +453,10 @@ impl Layouter {
             };
             let mut ptext = String::with_capacity(prefix.len() + content.len());
             ptext.push_str(prefix);
+            // Ranges in `ptext` for lowercase characters rendered as synthetic small caps.
+            // They have the same UTF-8 length as their uppercase form, so the layer's byte-based
+            // run and caret offsets remain unchanged.
+            let mut synthetic_small_caps: Vec<(Range<usize>, f32)> = Vec::new();
             for (i, ch) in content.char_indices() {
                 // A forced line break ends the line but not the paragraph. The line breaker knows
                 // it as a newline, which has the same length, so text offsets don't move.
@@ -456,11 +464,16 @@ impl Layouter {
                     ptext.push('\n');
                     continue;
                 }
-                let caps = out.styles[style_at(prange.start + i)].caps;
-                if caps == Caps::AllCaps {
+                let style = &out.styles[style_at(prange.start + i)];
+                let caps = style.caps;
+                if matches!(caps, Caps::AllCaps | Caps::SmallCaps) {
                     let up: String = ch.to_uppercase().collect();
                     if up.len() == ch.len_utf8() {
                         ptext.push_str(&up);
+                        if caps == Caps::SmallCaps && ch.is_lowercase() {
+                            let end = ptext.len();
+                            synthetic_small_caps.push((end - up.len()..end, style.size_pt * k * SYNTHETIC_SMALL_CAPS_SCALE));
+                        }
                         continue;
                     }
                 }
@@ -516,6 +529,9 @@ impl Layouter {
                             flush(&mut b, from, piece.len(), c);
                         }
                     }
+                }
+                for (range, size) in synthetic_small_caps {
+                    b.push(StyleProperty::FontSize(size), range);
                 }
                 b.build(&ptext)
             };
@@ -1027,9 +1043,6 @@ fn feature_list(st: &CharStyle) -> Vec<String> {
     }
     if st.discretionary_ligatures {
         feats.push("\"dlig\" 1".into());
-    }
-    if st.caps == Caps::SmallCaps {
-        feats.push("\"smcp\" 1".into());
     }
     for f in &st.features {
         if f.tag.len() == 4 && f.tag.is_ascii() {
