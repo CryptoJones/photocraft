@@ -1803,6 +1803,7 @@
 	Maximize psd compatibility	Maximizar la compatibilidad de PSD
 	Medium gray	Gris medio
 	Memory usage mb	Uso de memoria (MB)
+	Low resolution previews	Previsualizaciones de baja resolución
 	Missing glyph protection	Protección de glifos faltantes
 	Modern	Moderno
 	Nearest neighbor	Vecino más cercano
@@ -1960,6 +1961,8 @@
 	Brush Settings…  (F5): every option of this brush	Ajustes del pincel…  (F5): todas las opciones de este pincel
 	Rename Brush…	Cambiar el nombre del pincel…
 	Delete Brush	Eliminar pincel
+	New Brush Preset…	Nuevo preajuste de pincel…
+	Brush Preset Options	Opciones de preajustes de pincel
 	Group name	Nombre del grupo
 	Brush name	Nombre del pincel
 	Grid view	Vista de cuadrícula
@@ -2181,6 +2184,7 @@ cameraRaw	Amount	Cantidad
 	Frequency	Frecuencia
 	Use tablet pressure to change pen width	Usar la presión de la tableta para cambiar la anchura del lápiz
 
+
 # About ▸ Contributors / Models (credits, craftrules standards/contributors.md)
 	About	Acerca de
 	Contributors	Colaboradores
@@ -2212,6 +2216,55 @@ cameraRaw	Amount	Cantidad
 	% of all commits	% de todos los commits
 	Lines +/−	Líneas +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login}: {prs} PR, {commits} commits, +{added} / −{deleted} líneas (Δ {delta}), +{binAdded} / −{binDeleted} archivos binarios, {first} – {last}
+
+# Swatches panel
+	Create new swatch	Crear una muestra nueva
+	New Swatch…	Muestra nueva…
+	New Swatch Group…	Grupo de muestras nuevo…
+	Import Swatches…	Importar muestras…
+	Replace Swatches…	Reemplazar muestras…
+	Export Swatches…	Exportar muestras…
+	Export Swatches for Exchange…	Exportar muestras para intercambio…
+	Reset Swatches	Restablecer muestras
+	Add to Swatches	Añadir a muestras
+# Layer Style > Blending Options (Advanced Blending)
+	Blend If:	Combinar si:
+	Channels:	Canales:
+	Knockout	Cobertura
 	Apply At Canvas Bounds	Aplicar efecto en los límites del lienzo
+
+# Fill dialog, layer style contours and Image Size
+	Contents:	Contenido:
+	Custom Pattern:	Patrón personalizado:
+	Foreground Color	Color frontal
+	Color…	Color…
+	50% Gray	Gris al 50%
+	{size} (was {old})	{size} (antes {old})
+	Cone	Cono
+	Cone (Inverted)	Cono (invertido)
+	Domed	Abovedado
+	Domed (Inverted)	Abovedado (invertido)
+	Diagonal (Descending)	Diagonal (descendente)
+
+	Red Eye Tool	Herramienta Ojos rojos
+	Red Eye	Ojos rojos
+	Pupil Size	Tamaño de pupila
+	Darken Amount	Cantidad de oscurecimiento
+	Click a red pupil to neutralize it	Haga clic en una pupila roja para corregirla
+	open source	código abierto
+	…and {n} more	…y {n} más
+
+	Eyedroppers:	Cuentagotas:
+	Set Black Point	Definir punto negro
+	Set Neutral Gray Point	Definir punto gris neutro
+	Set White Point	Definir punto blanco
+	Unavailable in this color mode	No disponible en este modo de color
+
+# Layer colour labels.
+	Seafoam	Espuma de mar
+	Indigo	Índigo
+	Fuchsia	Fucsia
+	Violet	Violeta
+	Reset	Restaurar
 	Scope	Alcance
 	Selected	Seleccionadas

@@ -1810,6 +1810,7 @@
 	Maximize psd compatibility	最大化 PSD 兼容性
 	Medium gray	中灰色
 	Memory usage mb	内存使用量 (MB)
+	Low resolution previews	低分辨率预览
 	Missing glyph protection	缺失字形保护
 	Modern	现代
 	Nearest neighbor	邻近
@@ -2016,6 +2017,8 @@ cameraRaw	Blending	混合
 	Brush Settings…  (F5): every option of this brush	画笔设置…  （F5）：此画笔的全部选项
 	Rename Brush…	重命名画笔…
 	Delete Brush	删除画笔
+	New Brush Preset…	新建画笔预设…
+	Brush Preset Options	画笔预设选项
 	Group name	组名称
 	Brush name	画笔名称
 	Grid view	网格视图
@@ -2117,6 +2120,7 @@ cameraRaw	Blending	混合
 	Frequency	频率
 	Use tablet pressure to change pen width	使用绘图板压力以更改钢笔宽度
 
+
 # About ▸ Contributors / Models (credits, craftrules standards/contributors.md)
 	About	关于
 	Contributors	贡献者
@@ -2149,6 +2153,56 @@ cameraRaw	Blending	混合
 	% of all commits	占全部提交的 %
 	Lines +/−	行数 +/−
 	@{login}: {prs} PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}	@{login}：{prs} 个 PR，{commits} 次提交，行 +{added} / −{deleted}（Δ {delta}），二进制文件 +{binAdded} / −{binDeleted}，{first} – {last}
+
+# Swatches panel
+	Create new swatch	创建新色板
+	New Swatch…	新建色板…
+	New Swatch Group…	新建色板组…
+	Import Swatches…	导入色板…
+	Replace Swatches…	替换色板…
+	Export Swatches…	导出色板…
+	Export Swatches for Exchange…	导出色板以供交换…
+	Reset Swatches	复位色板
+	Add to Swatches	添加到色板
+# Layer Style > Blending Options (Advanced Blending)
+	Blend If:	混合颜色带:
+	Channels:	通道:
+	Knockout	挖空
 	Apply At Canvas Bounds	应用画布边界的效果
+
+# Fill dialog, layer style contours and Image Size
+	Contents:	内容：
+	Custom Pattern:	自定义图案：
+	Foreground Color	前景色
+	Color…	颜色…
+	50% Gray	50% 灰色
+	Color Adaptation	颜色自适应
+	{size} (was {old})	{size}（原为 {old}）
+	Cone	锥形
+	Cone (Inverted)	锥形（反转）
+	Domed	圆顶
+	Domed (Inverted)	圆顶（反转）
+	Diagonal (Descending)	对角线（下降）
+
+	Red Eye Tool	红眼工具
+	Red Eye	红眼
+	Pupil Size	瞳孔大小
+	Darken Amount	变暗程度
+	Click a red pupil to neutralize it	单击红色瞳孔以消除反光
+	open source	开源
+	…and {n} more	…以及另外 {n} 项
+
+	Eyedroppers:	吸管：
+	Set Black Point	设置黑场
+	Set Neutral Gray Point	设置中性灰场
+	Set White Point	设置白场
+	Unavailable in this color mode	此颜色模式下不可用
+
+# Layer colour labels.
+	Seafoam	海沫色
+	Indigo	靛蓝色
+	Fuchsia	紫红色
+	Violet	紫罗兰色
+	Reset	复位
 	Scope	范围
 	Selected	已选
