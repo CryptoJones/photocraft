@@ -49,6 +49,7 @@ pub fn terminate_later() {
         Some(mtm) => NSApplication::sharedApplication(mtm).terminate(None),
         None => log::warn!("quit: the main queue ran off the main thread; not terminating"),
     });
+}
 
 /// Use the macOS 27+ integrated "Liquid Glass" traffic-light appearance.
 pub fn apply_liquid_glass_traffic_lights() {
