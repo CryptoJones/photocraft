@@ -5,6 +5,7 @@
 
 mod corpus;
 mod corpus_pins;
+mod i18n;
 mod i18n_coverage;
 mod ico;
 mod layers;
